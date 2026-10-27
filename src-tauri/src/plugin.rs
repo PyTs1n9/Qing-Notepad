@@ -34,10 +34,21 @@ const MAX_ENTRIES: usize = 2000;
 const STORAGE_QUOTA_BYTES: usize = 1024 * 1024;
 const LOG_LINES: usize = 100;
 const INDEX_TTL_SECS: u64 = 24 * 60 * 60;
-const INDEX_URLS: [(&str, &str); 2] = [
+/// Where the marketplace index comes from, tried in order.
+///
+/// Order is by freshness: the source of truth first, then the mirror that has
+/// no CDN cache, then the CDN (which can lag behind `main` until its cache is
+/// purged — see `Qing-Notepad-Plugins/CONTRIBUTING.md`). `gitee` exists
+/// because `raw.githubusercontent.com` is unreachable from some networks; it
+/// is kept in sync by pushing the same commits to both remotes.
+const INDEX_URLS: [(&str, &str); 3] = [
     (
         "github",
         "https://raw.githubusercontent.com/PyTs1n9/Qing-Notepad-Plugins/main/index.json",
+    ),
+    (
+        "gitee",
+        "https://gitee.com/PyTs1N9/Qing-Notepad-Plugins/raw/main/index.json",
     ),
     (
         "jsdelivr",
