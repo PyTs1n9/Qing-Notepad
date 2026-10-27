@@ -261,7 +261,9 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 ### P1b｜独立扩展宿主进程（12–18 人日，体积 ±0）
 
-> **前提已验证（第 −1 步实测，2026-10-27）**：隐藏 webview **真的拿到独立 renderer 进程**，崩溃隔离收益成立——**走方向甲**。三条实测：① 单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 **19 个**（+7），按 `--type` 分类 3 browser / 5 renderer / 6 utility / 3 gpu，**renderer 每个 webview 独立**；② 杀掉便签 renderer（PID 59276，90 MB）主窗口照常存活、CDP 正常应答；③ 在便签**页面主线程**（不是 Worker）跑 `while(true)` 25 秒，主窗口 `alive: true`——**页面级 renderer 隔离成立**。
+> **前提已验证（第 −1 步实测，2026-10-27）**：隐藏 webview **真的拿到独立 renderer 进程**，崩溃隔离收益成立——**走方向甲**。三条实测：① 单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 **19 个**（进程总数 +7），按 `--type` 分类 3 browser / 5 renderer / 6 utility / 3 gpu，**renderer 每个 webview 独立**；② 杀掉便签 renderer（PID 59276，90 MB）主窗口照常存活、CDP 正常应答；③ 在便签**页面主线程**（不是 Worker）跑 `while(true)` 25 秒，主窗口 `alive: true`——**页面级 renderer 隔离成立**。
+>
+> **进程数口径（必须看这行，否则两组数字看起来打架）**：浏览器共享进程（browser/gpu/utility）在主窗口起来时**已付过一次**，之后新增 webview **只加自己的 renderer**。所以**线性的是 renderer 数，不是进程总数**——便签 +7（含额外 utility，内容更重）与隐藏扩展宿主 +1（纯 renderer）是同一机制的两种表现，**不矛盾**。记进程数时「renderer 数」与「进程总数」要分成两列记。
 >
 > **真实收益要说准**：`while(true)` 在 **Worker** 里卡住的是 worker 线程，**两种模式下宿主页面都活着**（靠 5 s `RPC_TIMEOUT_MS` 判死，in-process 现在就有）。P1b 的差异化收益是**内存炸弹 / renderer 崩溃只带走扩展宿主**。验收因此拆成两条（2a 两种模式都有 / 2b 仅 ext-host），见 `plan-plugin-p1b-extension-host.md` §7。
 >
@@ -287,7 +289,7 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 **剩余未验证项**（只剩一条，不影响开工）：
 - `register_asynchronous_uri_scheme_protocol` 与 blob worker 的 CSP 共存时序（连通性已证，残余是时序；第 4 步 Worker 池搬迁时自然验到。失败则退化为经隐藏窗口 `postMessage` 转发，不改语义）。
 
-**内存基线已测**（2026-10-27）：扩展宿主 **+1 进程、+193 MB / 会话**（renderer 基线，不是脚本开销；对照便签单 renderer 约 90 MB）。**"隐藏 webview 很便宜"不成立，是真实的内存换隔离**——但默认 in-process 用户一分不付，这正是"四条验收全绿才切默认"的价值。与 5–15 ms 单次 RPC 并列为 protocol 模式的两个已知代价（详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络）。
+**内存基线已测但两次数字分歧**（2026-10-27）：team-lead 测 **+1 进程、+193 MB / 会话**，software-engineer 测 **+1 进程、+99.9 MB**（T1 基线差 79 MB，测量时应用状态不同）。**规划取上界约 190 MB / 会话，第 7 步后用正式页复测定稿**。无论哪个数：这是 renderer 基线不是脚本开销（对照便签单 renderer 约 90 MB），**"隐藏 webview 很便宜"不成立，是真实的内存换隔离**——但默认 in-process 用户一分不付。另：隐藏 webview **只加 1 个进程**（browser/gpu/utility 共享），进程总数不随 webview 数线性涨。与 5–15 ms 单次 RPC 并列为 protocol 模式的两个已知代价（详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络）。
 
 ### P2｜可选 Node 后端（10–15 人日，体积 ±0）
 
@@ -426,7 +428,7 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 - ~~隐藏 WebView2 是否分进程~~ **已实测通过**（2026-10-27，方向甲）：单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 19 个，renderer 每 webview 独立；杀 renderer 主窗口存活；`while(true)` 25 秒不牵连。三条实测见 `plan-plugin-p1b-extension-host.md` §0。
 - ~~CSP 里自定义协议写法~~ **已验证**（`d1553a8`）：裸 `qing-plugin-rpc://` 被拦，Tauri 重写形态 `http://qing-plugin-rpc.localhost` **`ok-200`**；`connect-src` 必须写两个形态。结论见 `plan-plugin-p1b-extension-host.md` §4.3。
 - **云笔记**（`Workspace/CloudNoteEditor.tsx`，CM6 + `yCollab` + Hocuspocus）在协同在场时，插件驱动的写回是否与远程事务正确合并——**这项尚未验证，且当前不触碰**：P1a-1 已定不覆盖云笔记，`CloudNoteEditor` 不发布为活动编辑器，`qing.editor.*` 直接返回 `E_NO_EDITOR`。只有将来明确决定接云笔记时，这条才变成排期前提；到那时仍不能当已验证来估。
-- ~~隐藏窗口内存基线~~ **已测**（2026-10-27）：扩展宿主 **+1 进程、+193 MB / 会话**（renderer 基线，不是脚本开销）。默认 in-process 用户一分不付；详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络。
+- ~~隐藏窗口内存基线~~ **已测但两次数字分歧**（2026-10-27）：+193 MB（team-lead）vs +99.9 MB（software-engineer），规划取上界约 190 MB / 会话，第 7 步后用正式页复测定稿。默认 in-process 用户一分不付；详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络。
 - `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序（连通性已证，残余是时序，**唯一剩余未验证项**）；
 - **市场一键安装**（从索引列表点装，非本地文件/文件夹）**未验证**：CDN 上的 `index.json` 仍发旧 `download` 地址，`download` 字段正在改钉 SHA。P1a 端到端只覆盖了「文件夹安装」路径；一键安装要等索引侧收口后补验。
 
