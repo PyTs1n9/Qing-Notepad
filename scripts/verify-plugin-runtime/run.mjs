@@ -644,8 +644,8 @@ section("Transport abstraction (P1b step 1): execution lives behind one interfac
       /createInProcessTransport/.test(headlessSource),
   );
   check(
-    "PluginTransport covers the lifecycle: start, send, onMessage, onError, dispose",
-    ["start(", "send(", "onMessage(", "onError(", "dispose("].every((needle) =>
+    "PluginTransport covers the lifecycle: kind, start, send, onMessage, onError, dispose",
+    ["kind:", "start(", "send(", "onMessage(", "onError(", "dispose("].every((needle) =>
       transportSource.includes(needle),
     ),
   );

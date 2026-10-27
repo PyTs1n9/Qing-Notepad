@@ -14,8 +14,16 @@
  *   it, but nothing about the plugin *contract* depends on that.
  * - **Process** (`createProtocolTransport`, P1b): the same messages, but the
  *   worker lives in a separate hidden webview and the messages travel over the
- *   `qing-plugin-rpc` custom protocol. A plugin that `while(true){}`s then takes
- *   only that renderer down.
+ *   `qing-plugin-rpc` custom protocol.
+ *
+ * **What that second one buys is a question, not an answer.** Whether a hidden
+ *   WebView2 really is an independent renderer — and therefore whether a plugin
+ *   that eats memory or crashes takes *only that* process down — is exactly
+ *   what P1b's process-model probe measures before anything is claimed of it.
+ *   Do not write "isolated process" into a comment or a commit message as
+ *   though it were established; until the numbers are in, it is a design
+ *   expectation. What *is* established either way: the message contract is
+ *   identical, so a plugin cannot tell the difference.
  *
  * The split exists so the second one is a *deployment* change, not a redesign:
  * the permission table (`bridge.ts`), the message shapes and the worker prelude
@@ -64,6 +72,13 @@ export type TransportErrorHandler = (pluginId: string, message: string) => void;
 
 export interface PluginTransport {
   /**
+   * Which backend this is. The plugin never sees it; the mode switch in
+   * settings (P1b step 7) reads it to decide whether a session that keeps
+   * crashing the host should fall back to the other one.
+   */
+  readonly kind: "inprocess" | "protocol";
+
+  /**
    * Load `body` (the prelude plus the plugin's main, one file) and start
    * delivering messages. Throws if the execution context cannot be created —
    * that is a startup failure, not a crash.
@@ -77,9 +92,9 @@ export interface PluginTransport {
   onMessage(handler: TransportMessageHandler): void;
 
   /**
-   * The plugin's execution context died: a crash, an unserialisable message, a
-   * renderer process gone. Not called for a body that simply never starts —
-   * `start` covers that.
+   * The plugin's execution context is gone and will not answer again: a crash,
+   * an unserialisable message, or a backend whose process went away. Not called
+   * for a body that simply never starts — `start` covers that.
    */
   onError(handler: TransportErrorHandler): void;
 
@@ -105,6 +120,8 @@ export function createInProcessTransport(): PluginTransport {
   let errorHandler: TransportErrorHandler = () => undefined;
 
   return {
+    kind: "inprocess",
+
     start(pluginId: string, body: string): void {
       const blob = new Blob([body], { type: "text/javascript" });
       const objectUrl = URL.createObjectURL(blob);
