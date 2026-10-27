@@ -625,5 +625,42 @@ section("Declarative views (P1a-2): providers answer getChildren, unknown views 
   );
 }
 
+// ---------------------------------------------------------------------------
+section("Transport abstraction (P1b step 1): execution lives behind one interface");
+
+{
+  const headlessSource = fs.readFileSync(path.join(root, "src", "plugin", "headless.ts"), "utf8");
+  const transportSource = fs.readFileSync(path.join(root, "src", "plugin", "transport.ts"), "utf8");
+  const withoutComments = (source) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+  check(
+    "headless.ts does not construct a Worker — the transport owns execution",
+    !withoutComments(headlessSource).includes("new Worker("),
+  );
+  check(
+    "the in-process transport is the one that constructs it, and is the default",
+    withoutComments(transportSource).includes("new Worker(") &&
+      /createInProcessTransport/.test(headlessSource),
+  );
+  check(
+    "PluginTransport covers the lifecycle: start, send, onMessage, onError, dispose",
+    ["start(", "send(", "onMessage(", "onError(", "dispose("].every((needle) =>
+      transportSource.includes(needle),
+    ),
+  );
+  check(
+    "the message contract lives in transport.ts and is not re-declared in headless",
+    /WorkerInbound/.test(transportSource) &&
+      /WorkerOutbound/.test(transportSource) &&
+      !/type WorkerMessage =\s*\|/.test(headlessSource),
+  );
+  check(
+    "`res` travels both ways, so it is in the contract twice on purpose",
+    (transportSource.match(/WorkerResMessage/g) ?? []).length >= 3,
+    (transportSource.match(/WorkerResMessage/g) ?? []).length,
+  );
+}
+
 console.log(`\n${failures === 0 ? "OK" : "FAILED"}: ${checks - failures}/${checks} checks passed`);
 process.exit(failures === 0 ? 0 : 1);

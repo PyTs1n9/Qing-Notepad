@@ -39,6 +39,11 @@ import {
   type PluginTreeItem,
 } from "./types";
 import { HOST_VERSION, isHostCompatible } from "./version";
+import {
+  createInProcessTransport,
+  type PluginTransport,
+  type WorkerOutbound,
+} from "./transport";
 
 /** One command or one host call may not hang the palette for longer than this. */
 const RPC_TIMEOUT_MS = 5000;
@@ -50,10 +55,15 @@ interface PendingCall {
   timer: number;
 }
 
+/**
+ * A plugin that is running (or starting).
+ *
+ * Where its code physically runs is the transport's business: this struct holds
+ * what the *host* needs — the manifest, the granted permissions, and the calls
+ * that are waiting for an answer.
+ */
 interface Runner {
   plugin: InstalledPlugin;
-  worker: Worker;
-  objectUrl: string;
   permissions: string[];
   pending: Map<number, PendingCall>;
   ready: Promise<void>;
@@ -61,11 +71,8 @@ interface Runner {
   failReady: (error: PluginError) => void;
 }
 
-type WorkerMessage =
-  | { t: "ready" }
-  | { t: "rpc"; rid: number; ns: string; method: string; args: unknown[] }
-  | { t: "res"; rid: number; ok: boolean; value?: unknown; code?: string }
-  | { t: "log"; level: string; args: string[] };
+/** Messages a plugin sends: the same shape in both transports. */
+type WorkerMessage = WorkerOutbound;
 
 export interface CommandResult {
   ok: boolean;
@@ -74,6 +81,30 @@ export interface CommandResult {
 }
 
 const runners = new Map<string, Runner>();
+/**
+ * Runners whose transport has been started but which are not ready yet.
+ *
+ * Kept separate from `runners` so `ensureRunner` keeps its current meaning
+ * ("a runner you may send to"), while messages that arrive during startup still
+ * find their way to the right one.
+ */
+const starting = new Map<string, Runner>();
+
+/**
+ * The execution backend. In-process until P1b's process mode is switched on;
+ * see `transport.ts` for why the two share one message contract.
+ */
+const transport: PluginTransport = createInProcessTransport();
+
+transport.onMessage((pluginId, message) => {
+  const runner = runners.get(pluginId) ?? starting.get(pluginId);
+  if (runner) void handleMessage(runner, message);
+});
+
+transport.onError((pluginId, message) => {
+  const runner = runners.get(pluginId) ?? starting.get(pluginId);
+  if (runner) void recordCrash(runner.plugin, message);
+});
 /** Consecutive crashes per plugin, reset by a successful start. */
 const failureCounts = new Map<string, number>();
 let nextRid = 1;
@@ -128,19 +159,16 @@ async function readMainSource(plugin: InstalledPlugin): Promise<string> {
 }
 
 function teardown(pluginId: string): void {
-  const runner = runners.get(pluginId);
+  const runner = runners.get(pluginId) ?? starting.get(pluginId);
   if (!runner) return;
   runners.delete(pluginId);
+  starting.delete(pluginId);
   for (const call of runner.pending.values()) {
     window.clearTimeout(call.timer);
     call.reject(new PluginError("E_INTERNAL", "the plugin worker stopped"));
   }
   runner.pending.clear();
-  runner.worker.onmessage = null;
-  runner.worker.onerror = null;
-  runner.worker.onmessageerror = null;
-  runner.worker.terminate();
-  URL.revokeObjectURL(runner.objectUrl);
+  transport.dispose(pluginId);
 }
 
 async function recordCrash(plugin: InstalledPlugin, message: string): Promise<void> {
@@ -178,10 +206,10 @@ async function handleMessage(runner: Runner, message: WorkerMessage): Promise<vo
           message.method,
           Array.isArray(message.args) ? message.args : [],
         );
-        runner.worker.postMessage({ t: "res", rid: message.rid, ok: true, value });
+        transport.send(runner.plugin.id, { t: "res", rid: message.rid, ok: true, value });
       } catch (error) {
         const pluginError = toPluginError(error);
-        runner.worker.postMessage({
+        transport.send(runner.plugin.id, {
           t: "res",
           rid: message.rid,
           ok: false,
@@ -218,7 +246,7 @@ function sendCall(runner: Runner, namespace: string, method: string, args: unkno
       reject(new PluginError("E_TIMEOUT", `the plugin did not answer within ${RPC_TIMEOUT_MS} ms`));
     }, RPC_TIMEOUT_MS);
     runner.pending.set(rid, { resolve, reject, timer });
-    runner.worker.postMessage({ t: "call", rid, ns: namespace, method, args });
+    transport.send(runner.plugin.id, { t: "call", rid, ns: namespace, method, args });
   });
 }
 
@@ -243,43 +271,29 @@ async function startRunner(plugin: InstalledPlugin): Promise<Runner> {
   // `qing` before module-level plugin code touches it. Single-file ESM output
   // has no imports to hoist, which is why the wrapper is safe (and required:
   // relative imports cannot resolve from a blob URL anyway).
-  const blob = new Blob(
-    [`${bootSource}\nself.__qing_main = async function () {\n${source}\n};\n`],
-    { type: "text/javascript" },
-  );
-  const objectUrl = URL.createObjectURL(blob);
-
-  let worker: Worker;
-  try {
-    worker = new Worker(objectUrl, { type: "module" });
-  } catch (error) {
-    URL.revokeObjectURL(objectUrl);
-    throw new PluginError("E_INTERNAL", `the plugin worker could not start: ${String(error)}`);
-  }
+  const body = `${bootSource}\nself.__qing_main = async function () {\n${source}\n};\n`;
 
   const ready = deferred<void>();
   const runner: Runner = {
     plugin,
-    worker,
-    objectUrl,
     permissions: [...plugin.grantedPermissions],
     pending: new Map(),
     ready: ready.promise,
     markReady: () => ready.resolve(),
     failReady: (error) => ready.reject(error),
   };
+  // Registered before `start` so a `ready` that arrives in the same tick — or a
+  // failure during startup — still finds its runner.
+  starting.set(plugin.id, runner);
 
-  worker.onmessage = (event: MessageEvent) => {
-    void handleMessage(runner, event.data as WorkerMessage);
-  };
-  worker.onerror = (event: ErrorEvent) => {
-    void recordCrash(plugin, event.message || "the plugin worker crashed");
-  };
-  worker.onmessageerror = () => {
-    void recordCrash(plugin, "the plugin sent a message that could not be deserialised");
-  };
+  try {
+    transport.start(plugin.id, body);
+  } catch (error) {
+    starting.delete(plugin.id);
+    throw new PluginError("E_INTERNAL", String(error));
+  }
 
-  runner.worker.postMessage({
+  transport.send(plugin.id, {
     t: "init",
     id: plugin.id,
     version: plugin.version,
@@ -298,12 +312,14 @@ async function startRunner(plugin: InstalledPlugin): Promise<Runner> {
     await Promise.race([runner.ready, timeout]);
   } catch (error) {
     window.clearTimeout(timer);
-    worker.terminate();
-    URL.revokeObjectURL(objectUrl);
+    // `teardown` reaches into `starting` as well, so this releases the
+    // execution context the failed start may have created.
+    teardown(plugin.id);
     throw toPluginError(error);
   }
   window.clearTimeout(timer);
 
+  starting.delete(plugin.id);
   runners.set(plugin.id, runner);
   failureCounts.delete(plugin.id);
   return runner;
@@ -394,7 +410,7 @@ export function deactivatePlugin(pluginId: string): void {
   const runner = runners.get(pluginId);
   if (runner) {
     try {
-      runner.worker.postMessage({ t: "event", name: "deactivate" });
+      transport.send(pluginId, { t: "event", name: "deactivate" });
     } catch {
       // The worker may already be gone; terminating below is what matters.
     }
