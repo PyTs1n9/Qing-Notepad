@@ -26,7 +26,7 @@ P1b 的价值主张完全依赖"隐藏 webview 真的拿到独立 renderer 进�
 2. **崩溃恢复必须处理 renderer 被 WebView2 自动重启的情况**——实测杀进程后页面仍在，说明 WebView2 会重启 renderer。恢复逻辑**不能假设"进程死了 = 窗口没了"**，要能识别"重启后 worker 状态已丢"并重建 Worker 池。
 3. **进程隔离的真实价值是 OOM 与 renderer 崩溃**：内存炸弹只炸扩展宿主、renderer 崩溃只带走扩展宿主。
 
-> 剩余未验证项只有两条（见 §8），不影响开工：`register_asynchronous_uri_scheme_protocol` 与 blob worker 的 CSP 共存时序、隐藏窗口内存基线（参考 30–60 MB，未测）。
+> **CSP 自定义协议写法已验证**（`d1553a8`，见 §4.3 VERDICT 表）：裸 scheme 被拦，Tauri 重写形态 `http://qing-plugin-rpc.localhost` **`ok-200`**。不需要退化 postMessage。**内存基线也已测**（2026-10-27）：扩展宿主 **+1 进程、+193 MB / 会话**（renderer 基线，不是脚本开销）——默认 in-process 用户一分不付，见 §4.2 成本包络。**剩余未验证项只剩一条**：`register_asynchronous_uri_scheme_protocol` 与 blob worker 的共存时序（连通性已证，残余是时序，第 4 步 Worker 池搬迁时自然验到）。
 
 ---
 
@@ -138,13 +138,23 @@ export interface PluginTransport {
 
 **模式切换**是配置项（设置里一项或启动参数），不是二选一的硬切换。**四条验收全绿前不得改默认值。**
 
-**性能包络（要写进开发者文档）**：protocol 模式下**单次 RPC 5–15 ms**（自定义协议一跳 + JSON 序列化），in-process 约 **0.1 ms**。**批量循环会慢两个数量级**——插件作者若在循环里逐条调 `getText()`/`replace()`，protocol 模式下会明显变慢。缓解是 `getText(range)` 取片段、批量操作走单次调用；这不是 bug，是跨进程的代价。
+**性能与成本包络（两个维度，都要写进开发者文档）**：
+
+| 维度 | protocol 模式 | in-process | 说明 |
+| --- | --- | --- | --- |
+| **单次 RPC 延迟** | **5–15 ms** | ~0.1 ms | 自定义协议一跳 + JSON 序列化；**批量循环会慢两个数量级** |
+| **内存代价** | **约 190 MB / 会话** | 0 | 实测（2026-10-27）：无扩展宿主 12 进程 / 1034 MB → 有扩展宿主 13 进程 / 1227 MB，**+1 进程、+193 MB** |
+
+- **193 MB 不是脚本开销，是 renderer 基线**——一个 Chromium renderer（V8 isolate + 页面）就这个量级（对照便签单 renderer 约 90 MB，这里的 193 MB 含 renderer + 配套 utility）。**"隐藏 webview 很便宜"不成立，它是一次真实的内存换隔离**。
+- **但默认 in-process 时用户一分不付**——这正是「四条验收全绿才切默认」的价值。约 190 MB / 会话是 **protocol 模式的已知代价**，与 5–15 ms 延迟并列为 P1b 的两个成本维度。
+- 延迟的缓解是 `getText(range)` 取片段、批量操作走单次调用；这不是 bug，是跨进程的代价。
 
 ### 4.2 custom protocol `qing-plugin-rpc`
 
 - Rust `register_asynchronous_uri_scheme_protocol("qing-plugin-rpc", ...)`；
 - 请求体 JSON（`{ ns, method, args }`），响应体 JSON（`{ ok, value, code }`）；错误码沿用 `E_*` 体系；
-- 背压：单个插件未完成请求数上限（建议 32，**可调、无实测依据**，见 §10），超限返回 `E_BUSY`，避免插件刷爆 IPC。
+- 背压：单个插件未完成请求数上限（建议 32，**可调、无实测依据**，见 §10），超限返回 `E_BUSY`，避免插件刷爆 IPC；
+- **客户端自配置 base URL**（`ext-host.js:21-84`）：启动时探两种候选形态（`http://qing-plugin-rpc.localhost/host` 优先——Windows 实测可用；`qing-plugin-rpc://host` 次之——POSIX），取第一个通的，各限时 1500 ms。**所以方案里不需要写平台分支**——CSP 两形态并存，客户端自己选。探测**幂等且限时**：Worker 池必须在协议完全不可达时也能启动——死传输在调用点是**可报告**的失败（超时报错），而启动页卡住是**静默**失败。
 
 #### 大文本：**插件 API 形状冻结；"传句柄不传值"只对协议层成立，对 `getText()` 返回值不成立**
 
@@ -177,19 +187,47 @@ qing.editor.setDecorations(key, ranges): Promise<null> // 参数不变
 | 上限 | up 256 KiB / down 16 MiB | 超限 `E_TOO_LARGE` |
 | 权限表 | **不在 Rust** | 仍在 `bridge.ts`（K2 不变） |
 
-**为什么是长轮询而不是 Tauri 事件**：`capabilities: []` 的隐藏 webview **连 `core:event:allow-listen` 都没有**，用不了 Tauri 事件。给它开这一个能力就破了 deny-by-default。长轮询的"等到有货才回"对调用方就是推送，延迟≈0，实现无聊——这是优点。
+**为什么是长轮询而不是 Tauri 事件**：`capabilities: []` 的隐藏 webview **连 `core:event:allow-listen` 都没有**，用不了 Tauri 事件。给它开这一个能力就破了 deny-by-default。长轮询的"等到有货才回"对调用方就是推送，延迟≈0，实现无聊——这是优点。（原文见 `plugin_host.rs` 模块注释，那里的表述比这里更完整：流式响应要平台层在每处构建响应的地方都配合，Tauri 事件要 `core:event:allow-listen` 与"无 capability"矛盾。）
 
 **`init` 被白名单拒绝是故意的（采纳，写进约束）**：`init` 是宿主 → 插件方向的消息。扩展宿主若能发 `init`，就能**冒充宿主启动一个它指定 id 的插件**，而 `bridge.ts` 是按 `pluginId` 查权限的——那是权限混淆。上行只允许 `ready|rpc|res|log`。
 
-**前瞻约束（将来 Track B 必须先做）**：今天只有扩展宿主窗口的 CSP 放行 `connect-src qing-plugin-rpc:`（主窗口、便签、磁贴的 CSP 都不含它），所以 blast radius 正确。**将来若给插件 UI webview（Track B）也放行该协议，必须先加会话令牌**——否则插件 A 的 UI webview 可以在 `/up` 里冒充 `pluginId: B`，白名单挡不住这个。
+**前瞻约束（放行第二个客户端之前必须先加会话令牌）**：CSP 是**全局**的（见 §4.3），所以 `connect-src` 已经对所有 app 窗口生效——今天只有扩展宿主用它，blast radius 仍正确（别的窗口没有理由去 fetch 这个 host）。**但门槛比原来说的更低**：生效的形态是 `http://qing-plugin-rpc.localhost`，**它看起来像个普通 http 主机**，不像"只有自家 scheme 那么显然"——将来若有人给某个 webview 开了外网权限，这个 host 就不再是显然封闭的。所以会话令牌的前置条件是「**放行第二个客户端之前**」（不限于插件 UI webview），不是「放行插件 UI 之前」。否则插件 A 的页面可以在 `/up` 里冒充 `pluginId: B`，白名单挡不住这个。`plugin_host.rs` 模块注释里也钉了这条。
 
 ### 4.3 隐藏 webview 与 capability 划分
 
-- `WebviewWindow` label `extension-host`，`visible: false`；
-- 新增 `src-tauri/capabilities/extension-host.json`，`permissions: []` → **deny-by-default**；
-- CSP：`default-src 'none'; script-src 'self'; worker-src 'self' blob:; connect-src qing-plugin-rpc:`；
+- `WebviewWindow` label **`ext-host`**（`WebviewUrl::App("ext-host.html")`），`visible: false`；
+- **deny-by-default 靠 label 命名实现，不靠空权限文件**：`ext-host` **不匹配任何 capability 文件**（`default.json` 覆盖 `main`/`sticky-*`/`tile-*`/`canvas-tile-*`，`tile.json` 覆盖 `tile-*`）⇒ 零 capability，**不用维护清单**。将来加窗口只要不把 label 写进那两个文件就自动落进沙箱（`plugin_host.rs:245` 有注释钉住这一点）；
 - **不给 `core:*`**：扩展宿主的 webview 里 `__TAURI_INTERNALS__` 存在但 invoke 全被拒（这是与 Worker "对象缺失"的差别，已在 §3.3 记过）；插件代码仍在 **Worker** 里跑，保持"无 `window`/无 `__TAURI_INTERNALS__`"不变。
-- **CSP 里自定义协议写法是否被 WebView2 识别属未验证**（Edg/155，见 §8 风险）——`connect-src qing-plugin-rpc:` 若不被识别，宿主页连不上 RPC。
+
+#### CSP：**Tauri v2 是全局的，没有 per-webview 覆盖**（平台事实，改实现预期）
+
+`WebviewBuilder` **没有 `csp()` 方法**，CSP 只来自 `app.security.csp`（`tauri.conf.json` 一处）。两个后果，方向相反：
+
+| 后果 | 含义 |
+| --- | --- |
+| ✅ 「扩展宿主 CSP 与主窗口同源同严」**自动成立** | 不是需要实现的约束，是**平台保证**——不必写 per-window CSP 代码 |
+| ⚠️ 放行 `qing-plugin-rpc:` 是给**所有** app 窗口放行 | 主窗口、便签、磁贴都会拿到这个 `connect-src`。今天只有扩展宿主用它（blast radius 仍正确），但**将来给插件 UI webview 时必须先加会话令牌**——这条前瞻约束覆盖的正是这个面 |
+
+**VERDICT（WebView2 / Edg/155 真机实测，`d1553a8`，同一次运行测两种形态）**：
+
+| 形态 | 结果 |
+| --- | --- |
+| `qing-plugin-rpc://host/up`（裸 scheme） | **`blocked:TypeError`** |
+| `http://qing-plugin-rpc.localhost/host/up`（Tauri 重写形态） | **`ok-200`**（Rust 收到 `OPTIONS` + `POST`） |
+
+**结论**：自定义 scheme 可达，但**只在 Tauri 的重写形态**（Windows: `http://<scheme>.localhost/<path>`）；裸 scheme 形态不会作为可 fetch 的 URL 出现。所以 `connect-src` **必须写两个形态**：`qing-plugin-rpc:`（POSIX）+ `http://qing-plugin-rpc.localhost`（Windows）。**不需要退化 postMessage 转发**——退路备着，数据说用不上。
+
+#### 永久约束：扩展宿主页的逻辑必须是外链文件，不能内联（已实测踩过）
+
+CSP 是全局的且严格：`script-src 'self' 'wasm-unsafe-eval'`，**没有 `unsafe-inline`**。所以：
+
+- **`ext-host.html` 以及将来任何隐藏 webview 页的脚本必须是 `<script src=...>` 外链**（如 `public/ext-host.js`），**内联 `<script>` 会被静默拦掉**——页面加载正常、脚本零执行、连"报告失败"都不会发生。
+- 这不是风格偏好，是**实测踩出来的**：第一版探针用内联 `<script>`，结果 `[plugin-host] probe: opened` 之后**零条请求日志**——探针自己被 CSP 拦了，而它恰恰是要测 CSP 的那个东西。资产本身可达（`curl /ext-host.html` → 200），死在脚本上。
+
+**探针必须能报告自身的失败**（比"探针要能跑"更进一步）：
+
+- 外链脚本要带 **`onerror` 兜底**，报告 `page-script-blocked`（否则"脚本被拦"与"脚本跑了但没发请求"在日志里长得一样）；
+- 任何诊断通道都要选**不会被被测对象拦住**的那条。第一版探针用 `fetch` 上报，而被测的正是 `connect-src`——后来改成**导航**上报（顶层导航不受 `connect-src` 约束），这样 `fetch` 被拦时结果仍能到 Rust 日志。
 
 ### 4.4 Worker 池与崩溃恢复（含 renderer 自动重启）
 
@@ -245,9 +283,8 @@ CommandPalette
 | --- | --- |
 | `src/plugin/transport.ts` | `Transport` 接口 + `InprocessTransport` + `ProtocolTransport` |
 | `src/plugin/host-boot.js` | 扩展宿主页脚本：监督者、Worker 池、心跳、epoch |
-| `src/plugin/host-entry.html` + `src/plugin/host-entry.ts` | 第二个 Vite 入口（`vite.config.ts` 多页配置） |
-| `src-tauri/src/plugin_rpc.rs` | `qing-plugin-rpc` protocol handler + `plugin_bridge_call` 转发 |
-| `src-tauri/capabilities/extension-host.json` | 空 permissions |
+| `src/plugin/host-entry.html` + `src/plugin/host-entry.ts`（`ext-host.html`） | 第二个 Vite 入口（`vite.config.ts` 多页配置） |
+| `src-tauri/src/plugin_host.rs` | `qing-plugin-rpc` protocol handler + 隐藏 webview 创建 + `plugin_bridge_call` 转发 |
 | `scripts/verify-plugin-runtime/` 新增 4 条断言 | 见 §7 |
 
 **修改**
@@ -271,7 +308,7 @@ CommandPalette
 | # | 步骤 | 产出 | 验收 |
 | --- | --- | --- | --- |
 | 1 | `Transport` 抽象（只抽接口，`inprocess` 填实现） | `transport.ts`；`headless.ts` 改用 Transport | `verify:plugin-runtime` 全绿，**6 个示例无回归**，行为与现状零差异 |
-| 2 | 隐藏 webview + CSP + 空 capability | `host-entry.*`、`extension-host.json` | 任务管理器多 1 个 renderer；隐藏窗口里 `__TAURI_INTERNALS__` 存在但 invoke 全拒 |
+| 2 | 隐藏 webview（label `ext-host`，靠 label 命名落进沙箱）| `ext-host.html`、`plugin_host.rs` 建窗 | 任务管理器多 1 个 renderer；隐藏窗口里 `__TAURI_INTERNALS__` 存在但 invoke 全拒 |
 | 3 | `qing-plugin-rpc` protocol + `plugin_bridge_call` | `plugin_rpc.rs` | **第一件事先验 CSP 自定义协议写法是否被识别**（§8 风险 1）：`fetch('qing-plugin-rpc://ping')` 走通；再验往返与错误码透传 |
 | 4 | `ProtocolTransport` + Worker 池搬迁 | `host-boot.js`、`transport.ts` | 插件命令在扩展宿主里执行，`bridge.ts` 权限检查仍生效；**6 个示例行为一致（API 形状不变）** |
 | 5 | 崩溃恢复（心跳/epoch/重启识别）**不需要 watchdog**（卡死已有 5 s 超时覆盖） | `host-boot.js`、`headless.ts` | 杀 renderer 后自动重建，返回 `E_HOST_RESTARTED`；**3 次重启退回 in-process + 提示**（不是全局停用） |
@@ -304,14 +341,14 @@ CommandPalette
 
 | 风险 | 缓解 |
 | --- | --- |
-| **CSP 里自定义协议写法在 WebView2 上是否被识别**（Edg/155，未验证）——`connect-src qing-plugin-rpc:` 若不生效，宿主页连不上 RPC，**这是最容易在最后一步才爆的雷** | 步骤 3 第一件事就验这个：宿主页 `fetch('qing-plugin-rpc://ping')` 能否走通。不生效则改用 `postMessage` 经隐藏窗口转发（多一跳，不改语义） |
-| `qing-plugin-rpc` 与 blob worker 的 CSP 共存时序未验 | 步骤 3 单独验；失败则退化为经隐藏窗口 `postMessage` 转发 |
+| ~~CSP 里自定义协议写法在 WebView2 上是否被识别~~ **已验（2026-10-27，Edg/155，`d1553a8`）**：① 裸 scheme 形态**不可 fetch**（`blocked:TypeError`），**Windows 必须用 `.localhost` 重写形态**；`connect-src` 两形态并存是跨平台的正解（`qing-plugin-rpc:` 管 POSIX，`http://qing-plugin-rpc.localhost` 管 Windows）。② **客户端自配置 base URL**（启动时探两种形态、用能通的那个，见 §4.2）——方案里不需要写平台分支。③ 排障过程排掉一个更早的静默失败：**内联 `<script>` 被 `script-src 'self'` 拦掉**（§4.3 永久约束）——比 CSP 那个雷更隐蔽：页面加载成功、零报错、脚本就是不执行。**不需要退化 postMessage** | 结论见 §4.3 VERDICT 表。**一般原则**（本轮最值钱的产出，将来做任何探针都用得到）：**诊断通道必须选不会被被测对象拦住的那条**——第一版探针用 `fetch` 上报结果，而被测的正是 `connect-src`；改成导航上报后才拿到真值。见 §4.3 探针段 |
+| `qing-plugin-rpc` 与 blob worker 的共存时序（**残余项**：连通性已证，此处只验时序） | 步骤 3 顺手验；失败则退化为经隐藏窗口 `postMessage` 转发 |
 | renderer 自动重启导致 Worker 状态丢失 | §4.4 的 epoch/心跳；验收 #2 必须包含"杀 renderer 后重建"分支 |
 | **共享宿主的崩溃归属**：A 崩连累 B/C，且状态已丢无法归因 | **不全局停用**（§4.4）：3 次重启后退回 in-process + 提示，保住"能用"底线 |
 | 大文本句柄泄漏 | 句柄与文档会话绑定，文档切换 / `dispose` / 宿主重启时统一失效 |
-| 隐藏窗口内存基线未测（参考 30–60 MB） | 步骤 2 顺手测，写进文档；若显著超标，考虑按需创建窗口 |
+| ~~隐藏窗口内存基线未测~~ **已测（2026-10-27）**：三态对比（同一构建、同一数据目录）——无扩展宿主 12 进程 / 1034 MB → 有扩展宿主 13 进程 / 1227 MB，**+1 进程、+193 MB** | 结论进 §4.2 成本包络：**193 MB 是 renderer 基线不是脚本开销**，"隐藏 webview 很便宜"不成立——它是真实的内存换隔离。**默认 in-process 用户一分不付**，这正是"四条验收全绿才切默认"的价值。约 190 MB / 会话与 5–15 ms 延迟并列为 protocol 模式的两个已知代价 |
 
-**剩余未验证项只有三条**：① CSP 里自定义协议写法是否被 WebView2 识别；② `register_asynchronous_uri_scheme_protocol` 与 blob worker 的共存时序；③ 隐藏窗口内存基线。其余前提已由第 −1 步实测覆盖。
+**剩余未验证项只剩一条**：`register_asynchronous_uri_scheme_protocol` 与 blob worker 的共存时序（连通性已证，残余是时序，第 4 步 Worker 池搬迁时自然验到）。CSP 自定义协议写法**已验**（`d1553a8`）；隐藏窗口内存基线**已测**（+193 MB / 会话，见 §4.2 成本包络）。其余前提已由第 −1 步实测覆盖。
 
 ---
 

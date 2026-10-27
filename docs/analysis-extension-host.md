@@ -284,9 +284,10 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 **默认保持 in-process，直到四条验收全绿**（已定）：P1b 落地时**不切默认**，`in-process` 仍是默认 Transport。当前四条验收里只有「示例不回归」在现状下已知成立，其余三条（真独立进程 / 崩了不死主窗口 / 回退真能用）都是设计预期。**四条全绿后由 team-lead 拍切换默认**——不要在实现时顺手把默认改成 `protocol`，那等于让所有用户先当小白鼠。
 
-**剩余未验证项**（只有两条，不影响开工）：
-- `register_asynchronous_uri_scheme_protocol` 与 blob worker 的 CSP 共存时序（失败则退化为经隐藏窗口 `postMessage` 转发，不改语义）；
-- 隐藏窗口内存基线（参考 30–60 MB，未测）。
+**剩余未验证项**（只剩一条，不影响开工）：
+- `register_asynchronous_uri_scheme_protocol` 与 blob worker 的 CSP 共存时序（连通性已证，残余是时序；第 4 步 Worker 池搬迁时自然验到。失败则退化为经隐藏窗口 `postMessage` 转发，不改语义）。
+
+**内存基线已测**（2026-10-27）：扩展宿主 **+1 进程、+193 MB / 会话**（renderer 基线，不是脚本开销；对照便签单 renderer 约 90 MB）。**"隐藏 webview 很便宜"不成立，是真实的内存换隔离**——但默认 in-process 用户一分不付，这正是"四条验收全绿才切默认"的价值。与 5–15 ms 单次 RPC 并列为 protocol 模式的两个已知代价（详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络）。
 
 ### P2｜可选 Node 后端（10–15 人日，体积 ±0）
 
@@ -422,7 +423,11 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 
 - NSIS LZMA 对 `node.exe` 的实际压缩比（§2.1 的 +25–30 MiB 是估算）；
 - `deno_core` / `rquickjs` / `boa` 嵌入后的真实二进制增量；
-- ~~隐藏 WebView2 是否分进程~~ **已实测通过**（2026-10-27，方向甲）：单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 19 个，renderer 每 webview 独立；杀 renderer 主窗口存活；`while(true)` 25 秒不牵连。三条实测见 `plan-plugin-p1b-extension-host.md` §0。剩余未验证的只有 CSP 共存时序与隐藏窗口内存基线（见 §4 P1b）。
+- ~~隐藏 WebView2 是否分进程~~ **已实测通过**（2026-10-27，方向甲）：单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 19 个，renderer 每 webview 独立；杀 renderer 主窗口存活；`while(true)` 25 秒不牵连。三条实测见 `plan-plugin-p1b-extension-host.md` §0。
+- ~~CSP 里自定义协议写法~~ **已验证**（`d1553a8`）：裸 `qing-plugin-rpc://` 被拦，Tauri 重写形态 `http://qing-plugin-rpc.localhost` **`ok-200`**；`connect-src` 必须写两个形态。结论见 `plan-plugin-p1b-extension-host.md` §4.3。
 - **云笔记**（`Workspace/CloudNoteEditor.tsx`，CM6 + `yCollab` + Hocuspocus）在协同在场时，插件驱动的写回是否与远程事务正确合并——**这项尚未验证，且当前不触碰**：P1a-1 已定不覆盖云笔记，`CloudNoteEditor` 不发布为活动编辑器，`qing.editor.*` 直接返回 `E_NO_EDITOR`。只有将来明确决定接云笔记时，这条才变成排期前提；到那时仍不能当已验证来估。
-- `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序；
+- ~~隐藏窗口内存基线~~ **已测**（2026-10-27）：扩展宿主 **+1 进程、+193 MB / 会话**（renderer 基线，不是脚本开销）。默认 in-process 用户一分不付；详见 `plan-plugin-p1b-extension-host.md` §4.2 成本包络。
+- `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序（连通性已证，残余是时序，**唯一剩余未验证项**）；
 - **市场一键安装**（从索引列表点装，非本地文件/文件夹）**未验证**：CDN 上的 `index.json` 仍发旧 `download` 地址，`download` 字段正在改钉 SHA。P1a 端到端只覆盖了「文件夹安装」路径；一键安装要等索引侧收口后补验。
+
+**排障备注（扩展宿主）**：`eprintln!` **从 GUI 子系统的分离启动二进制里看不见**——调试扩展宿主不能靠 stderr，只能靠**文件**或**页面级可见通道**（导航上报、`on_page_load` 日志）。`plugin_ext_host_open` 已带 `on_page_load` 回调，它区分「页面没加载」与「脚本没跑」——第一版探针就是靠它定位到内联脚本被 CSP 拦的。
