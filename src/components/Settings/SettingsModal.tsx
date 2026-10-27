@@ -78,6 +78,12 @@ interface SettingsModalProps {
   onOpenAuth: () => void;
   /** Section to land on when the modal opens; defaults to the first one. */
   initialSection?: SettingsSection;
+  /**
+   * Whether the shell is currently rendering a wallpaper. Owned by App.tsx
+   * because that is where the asset URL is resolved - see the comment at the
+   * `hasWallpaper` alias below.
+   */
+  hasWallpaper?: boolean;
 }
 
 export type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal" | "storage";
@@ -98,15 +104,17 @@ interface GlassSliderProps {
   max: number;
   unit: "px" | "%";
   disabled: boolean;
+  /** Shown under the row when the knob cannot do anything yet. */
+  hint?: string;
   onChange: (value: number) => void;
 }
 
 /** Labelled range row for the frosted-glass tuning knobs. */
-const GlassSlider: React.FC<GlassSliderProps> = ({ label, value, min, max, unit, disabled, onChange }) => (
+const GlassSlider: React.FC<GlassSliderProps> = ({ label, value, min, max, unit, disabled, hint, onChange }) => (
   <label className={`block min-w-0 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
     <span className="mb-1 flex items-center justify-between gap-2">
       <span className="truncate text-xs text-text-secondary">{label}</span>
-      <span className="flex-shrink-0 text-xs font-medium tabular-nums text-accent">
+      <span className={`flex-shrink-0 text-xs font-medium tabular-nums ${disabled ? "text-text-muted" : "text-accent-text"}`}>
         {value}{unit}
       </span>
     </span>
@@ -121,6 +129,7 @@ const GlassSlider: React.FC<GlassSliderProps> = ({ label, value, min, max, unit,
       aria-label={label}
       className="block h-2 w-full cursor-pointer accent-accent disabled:cursor-not-allowed"
     />
+    {hint ? <span className="mt-1 block text-[11px] leading-tight text-text-muted">{hint}</span> : null}
   </label>
 );
 
@@ -129,6 +138,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onOpenAuth,
   initialSection,
+  hasWallpaper: hasWallpaperProp = false,
 }) => {
   const {
     theme,
@@ -172,6 +182,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     : null;
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
+  // The two profiles are chosen by whichever one App.tsx can actually apply, so
+  // this is passed in rather than re-derived from the stored filename: the
+  // settings file can name a background whose asset URL failed to resolve, and
+  // reading the filename here made the panel enable the wallpaper group while
+  // the shell was still writing the base profile. Both sliders then moved
+  // nothing, which is indistinguishable from a broken control.
+  const hasWallpaper = hasWallpaperProp;
+  // `@media (prefers-reduced-transparency: reduce)` in index.css drops every
+  // backdrop-filter, which is how Windows reports "transparency effects: off".
+  // Without this note the whole glass section looks broken for no visible reason.
+  // The six sliders are disabled on the same signal: leaving them live would
+  // offer controls that provably cannot change a pixel.
+  const [reducedTransparency, setReducedTransparency] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-transparency: reduce)");
+    const sync = () => setReducedTransparency(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
   // A caller can request a section (the model picker's「添加模型」jumps to AI
   // settings). Re-applied on every open so it wins over last time's manual pick.
   useEffect(() => {
@@ -652,7 +682,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         className="isolate surface-glass surface-glass--dialog relative flex h-[min(680px,calc(100vh-32px))] w-[min(900px,calc(100vw-32px))] min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
       >
         <header className="flex flex-shrink-0 items-center gap-2.5 border-b border-border px-4 py-3">
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
             <Settings size={16} />
           </span>
           <h1 id="settings-title" className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
@@ -693,7 +723,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     <Icon
                       size={14}
-                      className={`flex-shrink-0 transition-colors ${selected ? "text-accent" : "text-text-muted group-hover:text-accent"}`}
+                      className={`flex-shrink-0 transition-colors ${selected ? "text-accent-text" : "text-text-muted group-hover:text-accent-text"}`}
                     />
                     <span className="truncate">{label}</span>
                   </button>
@@ -716,7 +746,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/40">
                   <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <Clock size={16} />
                       </div>
                       <span className="truncate text-sm font-medium text-text-primary">
@@ -749,7 +779,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               }}
                               className={`w-full px-2.5 py-1.5 text-left text-[13px] transition-colors
                                 ${autoSaveInterval === option.value
-                                  ? "bg-accent-light text-accent"
+                                  ? "bg-accent-light text-accent-text"
                                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
                             >
                               {t(lang, option.labelKey)}
@@ -762,7 +792,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <Trash2 size={16} />
                       </div>
                       <div className="min-w-0">
@@ -800,7 +830,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               }}
                               className={`w-full px-2.5 py-1.5 text-left text-[13px] transition-colors
                                 ${trashRetentionDays === option.value
-                                  ? "bg-accent-light text-accent"
+                                  ? "bg-accent-light text-accent-text"
                                   : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
                             >
                               {t(lang, option.labelKey)}
@@ -813,7 +843,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <Keyboard size={16} />
                       </div>
                       <div className="min-w-0">
@@ -836,7 +866,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         onKeyDown={(event) => handleShortcutKeyDown(event, "toggleWindow")}
                         className={`min-w-0 flex-1 rounded-lg border bg-bg-primary px-3 py-2 text-center font-mono text-xs outline-none transition-colors cursor-pointer
                           ${recordingField === "toggleWindow"
-                            ? "border-accent bg-accent-light text-accent"
+                            ? "border-accent bg-accent-light text-accent-text"
                             : "border-border text-text-primary hover:border-text-muted"}`}
                       />
                       <button
@@ -853,7 +883,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <Eye size={16} />
                       </div>
                       <span className="truncate text-sm font-medium text-text-primary">
@@ -862,7 +892,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div className="min-w-0">
-                      <div className="mb-1 flex justify-end text-xs font-medium tabular-nums text-accent">
+                      <div className="mb-1 flex justify-end text-xs font-medium tabular-nums text-accent-text">
                         {stickyOpacity}%
                       </div>
                       <input
@@ -880,7 +910,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <FolderOpen size={16} />
                       </div>
                       <span className="truncate text-sm font-medium text-text-primary">
@@ -895,13 +925,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="flex w-full items-center justify-center gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       <span className="truncate">{t(lang, "openDataFolder")}</span>
-                      <FolderOpen size={14} className="flex-shrink-0 text-accent" />
+                      <FolderOpen size={14} className="flex-shrink-0 text-accent-text" />
                     </button>
                   </div>
 
                   <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                         <Trash2 size={16} />
                       </div>
                       <span className="truncate text-sm font-medium text-text-primary">
@@ -916,7 +946,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="flex w-full items-center justify-center gap-2 h-8 rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover"
                     >
                       <span className="truncate">{t(lang, "openImageCache")}</span>
-                      <FolderOpen size={14} className="flex-shrink-0 text-accent" />
+                      <FolderOpen size={14} className="flex-shrink-0 text-accent-text" />
                     </button>
                   </div>
                 </div>
@@ -926,7 +956,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="space-y-5">
                   <section>
                     <div className="mb-3 flex items-center gap-2">
-                      <Palette size={16} className="text-accent" />
+                      <Palette size={16} className="text-accent-text" />
                       <h3 className="text-sm font-medium text-text-primary">{t(lang, "themeColor")}</h3>
                     </div>
                     <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -954,7 +984,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-center gap-2">
-                      <Droplets size={16} className="text-accent" />
+                      <Droplets size={16} className="text-accent-text" />
                       <h3 className="text-sm font-medium text-text-primary">{t(lang, "customPalette")}</h3>
                       {theme === "custom" && (
                         <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-[11px] font-medium text-on-accent">
@@ -1011,7 +1041,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         >
                           <span className="truncate">{t(lang, "selectPreset")}</span>
                           {savedPresets.length > 0 && (
-                            <span className="rounded-full bg-accent-light px-1.5 py-0.5 text-[11px] font-semibold text-accent">
+                            <span className="rounded-full bg-accent-light px-1.5 py-0.5 text-[11px] font-semibold text-accent-text">
                               {savedPresets.length}
                             </span>
                           )}
@@ -1045,7 +1075,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleLoadPreset(index)}
-                                    className="min-w-0 flex-1 truncate text-left text-xs text-text-primary transition-colors hover:text-accent cursor-pointer"
+                                    className="min-w-0 flex-1 truncate text-left text-xs text-text-primary transition-colors hover:text-accent-text cursor-pointer"
                                   >
                                     {preset.name}
                                   </button>
@@ -1068,7 +1098,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-start gap-2">
-                      <ImagePlus size={16} className="mt-0.5 flex-shrink-0 text-accent" />
+                      <ImagePlus size={16} className="mt-0.5 flex-shrink-0 text-accent-text" />
                       <div className="min-w-0">
                         <h3 className="text-sm font-medium text-text-primary">{t(lang, "customBackground")}</h3>
                         <p className="mt-1 text-xs leading-relaxed text-text-muted">{t(lang, "customBackgroundHint")}</p>
@@ -1151,7 +1181,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
                     <div className="mb-4 flex items-start gap-2">
-                      <SlidersHorizontal size={16} className="mt-0.5 flex-shrink-0 text-accent" />
+                      <SlidersHorizontal size={16} className="mt-0.5 flex-shrink-0 text-accent-text" />
                       <div className="min-w-0">
                         <h3 className="text-sm font-medium text-text-primary">{t(lang, "glassGroup")}</h3>
                         <p className="mt-1 text-xs leading-relaxed text-text-muted">{t(lang, "glassGroupHint")}</p>
@@ -1181,6 +1211,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       </button>
                     </div>
 
+                    {reducedTransparency ? (
+                      <p className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] leading-relaxed text-text-primary">
+                        {t(lang, "glassReducedTransparency")}
+                      </p>
+                    ) : null}
+
                     <div className={`mt-4 space-y-3 transition-opacity ${glassEnabled ? "" : "opacity-50"}`}>
                       <p className="text-xs font-semibold text-text-secondary">{t(lang, "glassBaseGroup")}</p>
                       <div className="grid gap-4 sm:grid-cols-3">
@@ -1190,7 +1226,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_BLUR}
                           max={MAX_GLASS_BLUR}
                           unit="px"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || hasWallpaper}
+                          hint={
+                            hasWallpaper
+                              ? t(lang, "glassBaseOverridden")
+                              : glassTint > 60
+                                ? t(lang, "glassBlurNeedsLowerTint")
+                                : undefined
+                          }
                           onChange={setGlassBlur}
                         />
                         <GlassSlider
@@ -1199,7 +1242,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_TINT}
                           max={MAX_GLASS_TINT}
                           unit="%"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || hasWallpaper}
+                          hint={hasWallpaper ? t(lang, "glassBaseOverridden") : undefined}
                           onChange={setGlassTint}
                         />
                         <GlassSlider
@@ -1208,7 +1252,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_SATURATE}
                           max={MAX_GLASS_SATURATE}
                           unit="%"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || hasWallpaper}
+                          hint={hasWallpaper ? t(lang, "glassBaseOverridden") : undefined}
                           onChange={setGlassSaturate}
                         />
                       </div>
@@ -1223,7 +1268,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_BLUR}
                           max={MAX_GLASS_BLUR}
                           unit="px"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || !hasWallpaper}
+                          hint={
+                            !hasWallpaper
+                              ? t(lang, "glassNeedsBackground")
+                              : glassTintBg > 60
+                                ? t(lang, "glassBlurNeedsLowerTint")
+                                : undefined
+                          }
                           onChange={setGlassBlurBg}
                         />
                         <GlassSlider
@@ -1232,7 +1284,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_TINT}
                           max={MAX_GLASS_TINT}
                           unit="%"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || !hasWallpaper}
+                          hint={!hasWallpaper ? t(lang, "glassNeedsBackground") : undefined}
                           onChange={setGlassTintBg}
                         />
                         <GlassSlider
@@ -1241,7 +1294,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           min={MIN_GLASS_SATURATE}
                           max={MAX_GLASS_SATURATE}
                           unit="%"
-                          disabled={!glassEnabled}
+                          disabled={!glassEnabled || reducedTransparency || !hasWallpaper}
+                          hint={!hasWallpaper ? t(lang, "glassNeedsBackground") : undefined}
                           onChange={setGlassSaturateBg}
                         />
                       </div>
@@ -1259,7 +1313,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() => setLang(item.value)}
                       className={`flex items-center gap-3 rounded-xl border-2 px-4 py-3 text-left transition-all cursor-pointer
                         ${lang === item.value
-                          ? "border-accent bg-accent-light text-accent"
+                          ? "border-accent bg-accent-light text-accent-text"
                           : "border-border bg-bg-secondary/40 text-text-secondary hover:border-text-muted hover:bg-bg-hover"}`}
                     >
                       <Globe size={17} className="flex-shrink-0" />
@@ -1282,7 +1336,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       <section className="rounded-xl border border-border bg-bg-secondary/40 p-5">
                         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex min-w-0 items-start gap-3">
-                            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent">
+                            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-text">
                               <UserRound size={21} />
                             </div>
                             <div className="min-w-0">
@@ -1312,7 +1366,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <section className="rounded-xl border border-border bg-bg-secondary/20 p-4">
                         <div className="flex items-start gap-3">
-                          <ShieldCheck size={17} className="mt-0.5 flex-shrink-0 text-accent" />
+                          <ShieldCheck size={17} className="mt-0.5 flex-shrink-0 text-accent-text" />
                           <div>
                             <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalSecurity")}</h3>
                             <p className="mt-1 text-xs leading-relaxed text-text-muted">
@@ -1326,7 +1380,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <>
                       <section className="rounded-xl border border-border bg-bg-secondary/40 p-5">
                         <div className="flex items-center gap-4">
-                          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-full bg-accent-light text-accent">
+                          <div className="h-16 w-16 flex-shrink-0 overflow-hidden rounded-full bg-accent-light text-accent-text">
                             {avatarUrl ? (
                               <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                             ) : (
@@ -1338,7 +1392,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="truncate text-base font-semibold text-text-primary">{displayName}</h3>
-                              <span className="rounded-full bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent">
+                              <span className="rounded-full bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent-text">
                                 {t(lang, "personalSignedIn")}
                               </span>
                             </div>
@@ -1352,7 +1406,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
                       <section className="overflow-hidden rounded-xl border border-border bg-bg-secondary/40">
                         <div className="flex items-center gap-2 p-4">
-                          <UserRound size={16} className="text-accent" />
+                          <UserRound size={16} className="text-accent-text" />
                           <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalProfile")}</h3>
                         </div>
 
@@ -1397,7 +1451,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                               className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-left text-sm text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
                             >
                               <span className="truncate">{displayName}</span>
-                              <Pencil size={14} className="flex-shrink-0 text-accent" />
+                              <Pencil size={14} className="flex-shrink-0 text-accent-text" />
                             </button>
                           )}
                         </div>
@@ -1408,7 +1462,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <p className="mt-1 text-xs text-text-muted">{t(lang, "personalAvatarHint")}</p>
                           </div>
                           <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover">
-                            <Camera size={14} className="text-accent" />
+                            <Camera size={14} className="text-accent-text" />
                             {avatarBusy
                               ? <LoadingText label={t(lang, "personalSaving")} variant="bounce" />
                               : <span>{t(lang, "personalChooseImage")}</span>}
@@ -1470,15 +1524,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover cursor-pointer"
                           >
                             <span className="flex items-center gap-2">
-                              <KeyRound size={16} className="text-accent" />
+                              <KeyRound size={16} className="text-accent-text" />
                               <span>{t(lang, "personalChangePassword")}</span>
                             </span>
-                            <Pencil size={14} className="text-accent" />
+                            <Pencil size={14} className="text-accent-text" />
                           </button>
                         ) : (
                           <div className="p-4">
                             <div className="mb-3 flex items-center gap-2">
-                              <KeyRound size={16} className="text-accent" />
+                              <KeyRound size={16} className="text-accent-text" />
                               <h3 className="text-sm font-medium text-text-primary">{t(lang, "personalSecurity")}</h3>
                             </div>
                             <form className="space-y-3" onSubmit={handleUpdatePassword}>
@@ -1537,7 +1591,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       </section>
 
                       {(personalNotice || personalValidation || authError) && (
-                        <p className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${personalValidation || authError ? "bg-danger/10 text-danger" : "bg-accent-light text-accent"}`}>
+                        <p className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${personalValidation || authError ? "bg-danger/10 text-danger" : "bg-accent-light text-accent-text"}`}>
                           {personalValidation || authError || personalNotice}
                         </p>
                       )}

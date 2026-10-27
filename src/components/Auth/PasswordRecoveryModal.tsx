@@ -131,7 +131,7 @@ export default function PasswordRecoveryModal() {
       >
         <header className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
               {isRequestStage || isEmailSentStage ? <KeyRound size={16} /> : <ShieldCheck size={16} />}
             </div>
             <div className="min-w-0">
@@ -161,7 +161,7 @@ export default function PasswordRecoveryModal() {
         <div className="p-5">
           {isSuccessStage ? (
             <div className="space-y-4 text-center">
-              <CircleCheckBig size={34} className="mx-auto text-accent" />
+              <CircleCheckBig size={34} className="mx-auto text-accent-text" />
               <p className="text-sm font-medium text-text-primary">
                 {t(lang, "authPasswordResetSuccess")}
               </p>
@@ -175,7 +175,7 @@ export default function PasswordRecoveryModal() {
             </div>
           ) : isEmailSentStage ? (
             <div className="space-y-4 text-center">
-              <MailCheck size={34} className="mx-auto text-accent" />
+              <MailCheck size={34} className="mx-auto text-accent-text" />
               <div>
                 <p className="text-sm font-medium text-text-primary">{t(lang, "authResetEmailSent")}</p>
                 <p className="mt-1 truncate text-xs text-text-muted">{passwordRecoveryEmail}</p>
@@ -303,7 +303,7 @@ export default function PasswordRecoveryModal() {
                     aria-label={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
                     aria-pressed={showPassword}
                     title={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
-                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent-text opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -331,7 +331,7 @@ export default function PasswordRecoveryModal() {
                     aria-label={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
                     aria-pressed={showConfirmPassword}
                     title={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
-                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                    className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent-text opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                   >
                     {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>

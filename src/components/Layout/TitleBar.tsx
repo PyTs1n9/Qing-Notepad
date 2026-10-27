@@ -162,7 +162,7 @@ export default function TitleBar({
           >
             {authUser ? (
               <>
-                <span className="relative flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-accent/20 bg-accent-light text-[11px] font-semibold uppercase text-accent ring-1 ring-bg-secondary">
+                <span className="relative flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-accent/20 bg-accent-light text-[11px] font-semibold uppercase text-accent-text ring-1 ring-bg-secondary">
                   {authAvatarUrl ? (
                     <img
                       src={authAvatarUrl}
@@ -179,7 +179,7 @@ export default function TitleBar({
               </>
             ) : (
               <>
-                <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-accent-light text-accent">
+                <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-accent-light text-accent-text">
                   <LogIn size={12} strokeWidth={2.2} />
                 </span>
                 <span className="whitespace-nowrap text-xs font-medium text-text-secondary transition-colors group-hover:text-text-primary">
@@ -244,7 +244,7 @@ export default function TitleBar({
                 <UserAvatar
                   name={authDisplayName}
                   avatarUrl={authAvatarUrl}
-                  className="h-36 w-36 border-4 border-accent/20 bg-accent-light text-4xl font-semibold text-accent shadow-lg ring-8 ring-accent-light/50 transition-all duration-300 ease-out hover:scale-[1.03] hover:ring-accent/35 hover:shadow-[0_0_36px] hover:shadow-accent/60"
+                  className="h-36 w-36 border-4 border-accent/20 bg-accent-light text-4xl font-semibold text-accent-text shadow-lg ring-8 ring-accent-light/50 transition-all duration-300 ease-out hover:scale-[1.03] hover:ring-accent/35 hover:shadow-[0_0_36px] hover:shadow-accent/60"
                 />
                 <p className="mt-5 max-w-full truncate text-base font-semibold text-text-primary">
                   {authDisplayName}
@@ -264,7 +264,7 @@ export default function TitleBar({
               {authUser ? (
                 <>
                   <div className="flex items-center gap-3 rounded-xl border border-border bg-bg-secondary/45 px-3 py-2.5 text-left">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
                       <Mail size={15} />
                     </div>
                     <div className="min-w-0">
@@ -274,7 +274,7 @@ export default function TitleBar({
                   </div>
                   <div className="flex items-center justify-between gap-3 rounded-xl bg-accent-light/45 px-3 py-2.5 text-left">
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-accent">{t(lang, "authSignedIn")}</p>
+                      <p className="text-xs font-medium text-accent-text">{t(lang, "authSignedIn")}</p>
                     </div>
                     <button
                       type="button"
@@ -293,7 +293,7 @@ export default function TitleBar({
                 <button
                   type="button"
                   onClick={handleSignInFromProfile}
-                  className="flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent-light/45 text-xs font-medium text-accent transition-colors hover:bg-accent hover:text-on-accent"
+                  className="flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-accent/40 bg-accent-light/45 text-xs font-medium text-accent-text transition-colors hover:bg-accent hover:text-on-accent"
                 >
                   <LogIn size={13} />
                   {t(lang, "authSignIn")}

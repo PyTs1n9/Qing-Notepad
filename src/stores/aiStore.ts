@@ -11,6 +11,7 @@ import {
   deleteAiConversation,
   saveAiConversation,
   type StoredAiChatMessage,
+  type StoredAiConversation,
   type StoredAiPreferences,
 } from "@/utils/storage";
 import {
@@ -26,6 +27,7 @@ import { getChatProvider, syncChatProviders } from "@/utils/ai/chat";
 import {
   guessSupportsThinking,
   LOCAL_SELECTION,
+  channelOf,
   makeSelection,
   normalizeBaseUrl,
   parseSelection,
@@ -35,6 +37,7 @@ import {
 import { fetchRemoteModels } from "@/utils/ai/chat/modelsApi";
 import { resolveModelBrand } from "@/utils/ai/modelBrand";
 import { searchKnowledge, type ManualHit } from "@/utils/ai/knowledgeRetrieval";
+import { latestSessionIn, adoptChannel } from "@/utils/ai/conversationScope";
 import { composeLocalAnswerFromHit } from "@/utils/ai/answerComposer";
 import { detectSmallTalk } from "@/utils/ai/smallTalk";
 import { t } from "@/utils/i18n";
@@ -106,6 +109,12 @@ export type NoteWriteMode = "readonly" | "full";
 export interface AiConversation {
   id: string;
   title: string;
+  /**
+   * Channel that owns this session: the endpoint id, or `null` for 小青.
+   * Sessions are scoped to a channel, selections are not — switching models
+   * inside one endpoint keeps the session, switching endpoints leaves it.
+   */
+  endpointId: string | null;
   createdAt: number;
   updatedAt: number;
   messages: StoredAiChatMessage[];
@@ -487,6 +496,9 @@ function syncConversations(set: StoreSet, get: StoreGet): void {
     : {
         id: activeConversationId,
         title: "",
+        // A session is born in the channel that is answering: that id is what
+        // decides who may see it later.
+        endpointId: channelOf(get().chatModel),
         createdAt: now,
         updatedAt: now,
         messages: snapshot,
@@ -510,6 +522,82 @@ function stashActiveConversation(set: StoreSet, get: StoreGet): void {
   const next = get().conversations.filter((c) => c.id !== activeConversationId);
   set({ conversations: next });
   void deleteAiConversation(activeConversationId);
+}
+
+/** Most recently updated session of one channel (null = 小青). */
+function latestConversationIn(
+  conversations: AiConversation[],
+  channel: string | null,
+): AiConversation | null {
+  return latestSessionIn(conversations, channel);
+}
+
+/** Stored messages → live messages; a restored session never renders streaming. */
+function restoreMessages(conversation: AiConversation): AiChatMessage[] {
+  return conversation.messages.map((m) => ({ ...m, streaming: false }) as AiChatMessage);
+}
+
+/**
+ * Selection that can answer in `channel`, reusing the current model when it
+ * already belongs to that endpoint. Used when a session dictates the channel
+ * (opening a 小青 session from an endpoint channel must switch back to 小青).
+ */
+function modelForChannel(
+  state: Pick<AiState, "chatModel" | "endpoints">,
+  channel: string | null,
+): string {
+  if (channel === null) return LOCAL_MODEL_ID;
+  if (channelOf(state.chatModel) === channel) return state.chatModel;
+  const endpoint = state.endpoints.find((item) => item.id === channel);
+  const model = endpoint?.models.find((item) => item.enabled);
+  return model ? makeSelection(channel, model.id) : LOCAL_MODEL_ID;
+}
+
+/**
+ * Move to another channel: persist-or-drop the session being left, then land in
+ * the target channel's most recent session (blank when it has none). Models move
+ * inside a channel without touching the session, which is why only a channel
+ * change routes through here.
+ */
+function enterChannel(set: StoreSet, get: StoreGet, chatModel: string): void {
+  if (get().sending) get().stopGenerating();
+  stashActiveConversation(set, get);
+  const target = latestConversationIn(get().conversations, channelOf(chatModel));
+  set({
+    chatModel,
+    activeConversationId: target?.id ?? null,
+    messages: target ? restoreMessages(target) : [],
+  });
+  void persistPreferences(get());
+}
+
+/**
+ * Fold the pre-channel files into the current model.
+ *
+ * A file without `endpointId` predates channels and is *not* a 小青 session
+ * (`null` is): it belonged to whatever channel the user was on, and assigning it
+ * to 小青 would make an API user's whole history disappear from their channel.
+ * Only the missing field is written, so the rewrite happens exactly once.
+ */
+async function adoptStoredConversations(
+  stored: StoredAiConversation[],
+  channel: string | null,
+): Promise<AiConversation[]> {
+  const adopted: AiConversation[] = [];
+  for (const raw of stored) {
+    const { endpointId, needsWrite } = adoptChannel(raw, channel);
+    const conversation: AiConversation = {
+      id: raw.id,
+      title: raw.title ?? "",
+      endpointId,
+      createdAt: raw.createdAt,
+      updatedAt: raw.updatedAt,
+      messages: raw.messages,
+    };
+    if (needsWrite) void saveAiConversation(conversation);
+    adopted.push(conversation);
+  }
+  return adopted;
 }
 
 type StoreSet = (
@@ -792,7 +880,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     let endpoints: AiEndpoint[] = [];
     let keyCiphers: Record<string, string> = {};
     let prefs: StoredAiPreferences = {};
-    let savedConversations: AiConversation[] = [];
+    let savedConversations: StoredAiConversation[] = [];
     try {
       [endpoints, keyCiphers, prefs, savedConversations] = await Promise.all([
         loadAiEndpoints(),
@@ -846,30 +934,29 @@ export const useAiStore = create<AiState>((set, get) => ({
 
     syncChatProviders(endpoints);
 
-    // Re-open the most recently active conversation so a relaunch continues
-    // where the user left off.
-    const last = savedConversations.reduce<AiConversation | null>(
-      (acc, c) => (!acc || c.updatedAt > acc.updatedAt ? c : acc),
-      null,
+    const chatModel = normalizeChatModel(prefs.chatModel, endpoints);
+    const conversations = await adoptStoredConversations(
+      savedConversations,
+      channelOf(chatModel),
     );
+
+    // Re-open the most recently active session *of this channel* so a relaunch
+    // continues where the user left off. Another channel's session must never be
+    // restored: it would keep answering with the wrong service.
+    const last = latestConversationIn(conversations, channelOf(chatModel));
     const restoredConv = last
-      ? {
-          activeConversationId: last.id,
-          messages: last.messages.map(
-            (m) => ({ ...m, streaming: false }) as AiChatMessage,
-          ),
-        }
+      ? { activeConversationId: last.id, messages: restoreMessages(last) }
       : { activeConversationId: null, messages: [] as AiChatMessage[] };
 
     set({
       endpoints,
       endpointKeys: keys,
       loaded: true,
-      chatModel: normalizeChatModel(prefs.chatModel, endpoints),
+      chatModel,
       polishModel: normalizePolishModel(prefs.polishModel, endpoints),
       noteWriteMode: normalizeNoteWriteMode(prefs.noteWriteMode),
       thinkingLevel: normalizeThinkingLevel(prefs.thinkingLevel),
-      conversations: savedConversations,
+      conversations,
       ...restoredConv,
     });
   },
@@ -913,13 +1000,33 @@ export const useAiStore = create<AiState>((set, get) => ({
         ),
       ),
     );
+    // Sessions belong to their channel: removing the channel removes them, and
+    // the confirmation in 设置 spells the cost out before this runs. Read after
+    // the await above so a session started meanwhile is included.
+    const doomed = get().conversations.filter((c) => c.endpointId === id);
+    const remaining = get().conversations.filter((c) => c.endpointId !== id);
+    const chatModel = normalizeChatModel(get().chatModel, endpoints);
+    const activeDoomed = doomed.some((c) => c.id === get().activeConversationId);
+    // Losing the channel the user was reading means landing somewhere valid: the
+    // target channel's latest session, the same place a manual switch goes.
+    let session: Partial<AiState> = {};
+    if (activeDoomed || channelOf(chatModel) !== channelOf(get().chatModel)) {
+      const target = latestConversationIn(remaining, channelOf(chatModel));
+      session = {
+        activeConversationId: target?.id ?? null,
+        messages: target ? restoreMessages(target) : [],
+      };
+    }
     commitEndpoints(set, endpoints, {
       endpointKeys: keys,
       // A selection pointing at the deleted endpoint must not survive: it would
       // render a chip for a model that can never answer.
-      chatModel: normalizeChatModel(get().chatModel, endpoints),
+      chatModel,
       polishModel: normalizePolishModel(get().polishModel, endpoints),
+      conversations: remaining,
+      ...session,
     });
+    for (const conversation of doomed) void deleteAiConversation(conversation.id);
     void persistPreferences(get());
   },
 
@@ -1066,6 +1173,12 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   setChatModel: (modelId) => {
     const chatModel = normalizeChatModel(modelId, get().endpoints);
+    // Another model of the same endpoint keeps the session; another endpoint is
+    // another channel and therefore another transcript.
+    if (channelOf(chatModel) !== channelOf(get().chatModel)) {
+      enterChannel(set, get, chatModel);
+      return;
+    }
     set({ chatModel });
     void persistPreferences(get());
   },
@@ -1122,7 +1235,16 @@ export const useAiStore = create<AiState>((set, get) => ({
     const assistantId = newId();
     const now = Date.now();
     const activeId = get().activeConversationId;
-    const conversationId = activeId ?? newId();
+    // A transcript may only be continued by the channel that owns it. A stale
+    // active id (channel swapped without going through `enterChannel`) starts a
+    // new session rather than appending to someone else's context.
+    const channel = channelOf(get().chatModel);
+    const continueId = activeId
+      ? get().conversations.find(
+          (c) => c.id === activeId && c.endpointId === channel,
+        )?.id ?? null
+      : null;
+    const conversationId = continueId ?? newId();
     const questionIndex = get().messages.length;
     const controller = new AbortController();
     abortController = controller;
@@ -1144,13 +1266,14 @@ export const useAiStore = create<AiState>((set, get) => ({
       sending: true,
       activeConversationId: conversationId,
       // First message of a fresh chat names the conversation.
-      conversations: activeId
+      conversations: continueId
         ? state.conversations
         : [
             ...state.conversations,
             {
               id: conversationId,
               title: conversationTitleFrom(trimmed),
+              endpointId: channel,
               createdAt: now,
               updatedAt: now,
               messages: [],
@@ -1315,12 +1438,17 @@ export const useAiStore = create<AiState>((set, get) => ({
     stashActiveConversation(set, get);
     const target = get().conversations.find((c) => c.id === id);
     if (!target) return;
+    // The session dictates the channel: 小青 sessions are listed inside endpoint
+    // channels, and the next question must not go to that endpoint carrying 小青's
+    // context (the mirror image of the bug this change fixes).
+    const chatModel = modelForChannel(get(), target.endpointId);
+    const modelChanged = chatModel !== get().chatModel;
     set({
+      chatModel,
       activeConversationId: id,
-      messages: target.messages.map(
-        (m) => ({ ...m, streaming: false }) as AiChatMessage,
-      ),
+      messages: restoreMessages(target),
     });
+    if (modelChanged) void persistPreferences(get());
   },
 
   renameConversation: (id, title) => {

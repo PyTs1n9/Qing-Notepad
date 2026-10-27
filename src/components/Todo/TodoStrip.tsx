@@ -118,7 +118,7 @@ const TodoStrip: React.FC = () => {
     <ShellStrip
       leading={
         <>
-          <ListChecks size={14} className="flex-shrink-0 text-accent" />
+          <ListChecks size={14} className="flex-shrink-0 text-accent-text" />
           <span className="min-w-0 max-w-[150px] truncate text-[13px] font-semibold text-text-primary">
             {activeList?.name ?? t(lang, "todoTitle")}
           </span>
@@ -155,7 +155,7 @@ const TodoStrip: React.FC = () => {
                 hover:bg-bg-hover ${
                   priorityFilter === "all"
                     ? "border-border text-text-secondary hover:text-text-primary"
-                    : "border-accent/30 bg-accent-light/60 text-accent"
+                    : "border-accent/30 bg-accent-light/60 text-accent-text"
                 }`}
             >
               <Flag
@@ -183,7 +183,7 @@ const TodoStrip: React.FC = () => {
                     }}
                     className={`w-full whitespace-nowrap px-2.5 py-1.5 text-left text-[11px] transition-colors cursor-pointer ${
                       priorityFilter === option.value
-                        ? "bg-accent-light text-accent"
+                        ? "bg-accent-light text-accent-text"
                         : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                     }`}
                   >
@@ -204,7 +204,7 @@ const TodoStrip: React.FC = () => {
             style={{ width: `${completionRate}%` }}
           />
         </span>
-        <span className="tabular-nums text-accent">{completionRate}%</span>
+        <span className="tabular-nums text-accent-text">{completionRate}%</span>
       </div>
 
       {/* Adding a task lives here now: the strip is the only always-visible row,
@@ -213,7 +213,7 @@ const TodoStrip: React.FC = () => {
         className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border border-border/70
           bg-bg-primary/50 pl-1.5 pr-1 transition-colors focus-within:border-accent/45"
       >
-        <Plus size={12} className="flex-shrink-0 text-accent" />
+        <Plus size={12} className="flex-shrink-0 text-accent-text" />
         <input
           ref={inputRef}
           type="text"
@@ -257,7 +257,7 @@ const TodoStrip: React.FC = () => {
                   }}
                   className={`flex w-full items-center gap-1.5 whitespace-nowrap px-2.5 py-1.5 text-left text-[11px] transition-colors cursor-pointer ${
                     priority === option.value
-                      ? "bg-accent-light text-accent"
+                      ? "bg-accent-light text-accent-text"
                       : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                   }`}
                 >

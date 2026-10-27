@@ -110,7 +110,7 @@ export default function CategoryResizeHandle({
         size={12}
         aria-hidden="true"
         className={`flex-shrink-0 transition-opacity ${
-          dragging ? "text-accent opacity-100" : "text-text-muted opacity-0 group-hover:opacity-70"
+          dragging ? "text-accent-text opacity-100" : "text-text-muted opacity-0 group-hover:opacity-70"
         }`}
       />
     </div>

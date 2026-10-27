@@ -26,10 +26,12 @@ import {
   type AiTurnPhase,
   type NoteWriteMode,
 } from "@/stores/aiStore";
+import { sessionsForChannel } from "@/utils/ai/conversationScope";
 import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
-import { parseSelection } from "@/utils/ai/chat/endpoints";
+import { parseSelection, channelOf } from "@/utils/ai/chat/endpoints";
 import { aiErrorText } from "@/utils/ai/errorText";
+import { aiEmptyGreeting } from "@/utils/ai/emptyState";
 import { computeLineDiff, type DiffLine } from "@/utils/ai/diff";
 import type { AiNoteEdit } from "@/utils/ai/noteWrite";
 import { loadNoteContent, loadNoteSnapshot } from "@/utils/storage";
@@ -110,7 +112,7 @@ const AssistantBubbleImpl: React.FC<{ content: string; streaming?: boolean }> = 
   return (
     <div
       className="ai-bubble rounded-2xl rounded-tl-md border border-border/60 bg-bg-secondary/50 text-text-primary shadow-sm
-        [&_a]:text-accent [&_a]:underline [&_code]:rounded [&_code]:bg-bg-primary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs
+        [&_a]:text-accent-text [&_a]:underline [&_code]:rounded [&_code]:bg-bg-primary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs
         [&_h1]:mb-1.5 [&_h1]:mt-1 [&_h1]:text-base [&_h1]:font-semibold
         [&_h2]:mb-1.5 [&_h2]:mt-1 [&_h2]:text-sm [&_h2]:font-semibold
         [&_h3]:mb-1 [&_h3]:mt-1 [&_h3]:text-sm [&_h3]:font-medium
@@ -198,7 +200,7 @@ const AssistantAvatar: React.FC<{ size?: number; brand?: ModelBrand | null }> = 
     className={`ai-avatar flex flex-shrink-0 items-center justify-center rounded-full ${
       brand
         ? "ai-avatar--brand text-text-primary"
-        : "bg-accent-light text-accent ring-1 ring-accent/20"
+        : "bg-accent-light text-accent-text ring-1 ring-accent/20"
     }`}
     // One variable drives both the tile and the glyph it holds, so an inline
     // size override (header 28, empty state 44) scales both together.
@@ -361,7 +363,7 @@ const MessageActions: React.FC<{ message: AiChatMessage }> = ({ message }) => {
           aria-label={t(lang, "aiCopy")}
           className={actionButtonClass}
         >
-          {copied ? <Check size={12} className="text-accent" /> : <Copy size={12} />}
+          {copied ? <Check size={12} className="text-accent-text" /> : <Copy size={12} />}
         </button>
       )}
       <button
@@ -440,7 +442,7 @@ const MessageRowImpl: React.FC<{
         <UserAvatar
           name={userDisplayName}
           avatarUrl={userAvatarUrl}
-          className="ai-avatar bg-accent-light font-semibold text-accent ring-1 ring-accent/20"
+          className="ai-avatar bg-accent-light font-semibold text-accent-text ring-1 ring-accent/20"
         />
       </motion.div>
     );
@@ -843,6 +845,16 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
   const missingKeyForSelection = Boolean(
     selectedModel && !endpointKeys[selectedModel.endpointId],
   );
+  // Empty-transcript copy follows the selected channel: 小青 keeps its own line,
+  // an endpoint model names the service that will answer (and says when its key
+  // is missing) instead of greeting every channel as 小青.
+  const emptyGreeting = aiEmptyGreeting({
+    lang,
+    chatModel,
+    endpointName: selectedEndpoint?.name,
+    brandLabel: headerBrand?.label,
+    hasKey: !missingKeyForSelection,
+  });
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
@@ -871,7 +883,10 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
 
   const examples = exampleIndices.map((index) => t(lang, EXAMPLE_KEYS[index]));
 
-  const sortedConversations = [...conversations].sort(
+  // Sessions are scoped to a channel: the list shows the current endpoint's own
+  // history plus 小青's (the app's built-in assistant), never another endpoint's.
+  const currentChannel = channelOf(chatModel);
+  const sortedConversations = sessionsForChannel(conversations, currentChannel).sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
 
@@ -1072,6 +1087,14 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                             >
                               {conversation.title || t(lang, "aiUntitled")}
                             </button>
+                            {/* 小青's sessions are listed inside endpoint channels;
+                                the tag says who owns them, because opening one
+                                switches the model back to 小青. */}
+                            {currentChannel !== null && conversation.endpointId === null && (
+                              <span className="flex-shrink-0 rounded bg-bg-hover px-1 text-[10px] leading-4 text-text-muted">
+                                {t(lang, "aiModelLocal")}
+                              </span>
+                            )}
                             <span className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/item:opacity-100">
                               <button
                                 type="button"
@@ -1123,7 +1146,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
               >
                 <AssistantAvatar size={44} brand={headerBrand} />
                 <p className="max-w-[240px] text-xs leading-relaxed text-text-muted">
-                  {t(lang, "aiGreeting")}
+                  {emptyGreeting}
                 </p>
                 <div className="flex w-full flex-col gap-1.5">
                   {examples.map((question, i) => (
@@ -1178,7 +1201,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                 <button
                   type="button"
                   onClick={onOpenSettings}
-                  className="flex-shrink-0 cursor-pointer text-accent underline underline-offset-2"
+                  className="flex-shrink-0 cursor-pointer text-accent-text underline underline-offset-2"
                 >
                   {t(lang, "aiSettings")}
                 </button>
@@ -1221,7 +1244,7 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
                     disabled={!draft.trim()}
                     title={t(lang, "aiSend")}
                     aria-label={t(lang, "aiSend")}
-                    className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-bg-primary shadow-sm transition-all hover:brightness-110 active:scale-90 disabled:cursor-not-allowed disabled:bg-accent-light disabled:text-accent disabled:opacity-60"
+                    className="flex h-8 w-8 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-bg-primary shadow-sm transition-all hover:brightness-110 active:scale-90 disabled:cursor-not-allowed disabled:bg-accent-light disabled:text-accent-text disabled:opacity-60"
                   >
                     <Send size={13} />
                   </button>

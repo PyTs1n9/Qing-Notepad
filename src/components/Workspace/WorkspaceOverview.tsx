@@ -126,7 +126,7 @@ export default function WorkspaceOverview({
                 {workspace?.name ?? t(lang, "workspaceTitle")}
               </h1>
               {role && (
-                <span className="flex-shrink-0 rounded-full border border-accent/15 bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent">
+                <span className="flex-shrink-0 rounded-full border border-accent/15 bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent-text">
                   {roleLabel(lang, role)}
                 </span>
               )}
@@ -143,7 +143,7 @@ export default function WorkspaceOverview({
               onClick={() => onOpenManage("permissions")}
               className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:bg-bg-hover/60 hover:text-text-primary"
             >
-              <ShieldCheck size={13} className="text-accent" />
+              <ShieldCheck size={13} className="text-accent-text" />
               {t(lang, "manageWorkspace")}
             </button>
           )}
@@ -163,7 +163,7 @@ export default function WorkspaceOverview({
                   onClick={onCreateWorkspace}
                   className="flat-create-trigger group flex min-h-12 items-center gap-2.5 rounded-xl border border-border px-2.5 text-left text-sm font-medium text-text-primary hover:border-accent/40 hover:bg-bg-hover/45"
                 >
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent transition-transform duration-200 group-hover:rotate-90">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text transition-transform duration-200 group-hover:rotate-90">
                     <FilePlus2 size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -178,7 +178,7 @@ export default function WorkspaceOverview({
                   onClick={onJoinWorkspace}
                   className="flat-create-trigger group flex min-h-12 items-center gap-2.5 rounded-xl border border-border px-2.5 text-left text-sm font-medium text-text-primary hover:border-accent/40 hover:bg-bg-hover/45"
                 >
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent transition-transform duration-200 group-hover:scale-105">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text transition-transform duration-200 group-hover:scale-105">
                     <UserPlus size={15} />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -229,7 +229,7 @@ export default function WorkspaceOverview({
                     <button
                       type="button"
                       onClick={onCreateDocument}
-                      className="flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
+                      className="flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-accent-text transition-colors hover:bg-accent/10"
                     >
                       <FilePlus2 size={12} />
                       {t(lang, "newCloudDocument")}
@@ -294,7 +294,7 @@ export default function WorkspaceOverview({
                         key={member.userId}
                         name={member.displayName}
                         avatarUrl={member.avatarUrl}
-                        className="h-7 w-7 border-2 border-bg-secondary bg-accent-light text-[11px] font-semibold text-accent"
+                        className="h-7 w-7 border-2 border-bg-secondary bg-accent-light text-[11px] font-semibold text-accent-text"
                       />
                     ))}
                     {members.length > visibleMembers.length && (

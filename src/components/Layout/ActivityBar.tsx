@@ -91,7 +91,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           aria-label={t(lang, "aiAssistant")}
           aria-pressed={aiSidebarOpen}
           className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
-            aiSidebarOpen ? "text-accent" : "text-text-muted"
+            aiSidebarOpen ? "text-accent-text" : "text-text-muted"
           }`}
         >
           {/* A toggle is not a page: it gets the same capsule but never joins the
@@ -124,7 +124,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           aria-label={t(lang, alwaysOnTop ? "disableAlwaysOnTop" : "enableAlwaysOnTop")}
           aria-pressed={alwaysOnTop}
           className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
-            alwaysOnTop ? "text-accent" : "text-text-muted"
+            alwaysOnTop ? "text-accent-text" : "text-text-muted"
           }`}
         >
           {alwaysOnTop && <span className="activity-capsule absolute inset-0 rounded-lg" />}

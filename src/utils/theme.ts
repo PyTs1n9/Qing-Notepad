@@ -16,6 +16,7 @@ const CUSTOM_PROPS = [
   "--color-bg-active",
   "--color-accent-light",
   "--color-accent-hover",
+  "--color-accent-text",
   "--color-danger",
   // Written inline for the custom theme only (the four presets declare theirs
   // in `index.css`), so they have to be cleared on the way back to a preset.
@@ -81,6 +82,51 @@ function onColorFor(background: string): string {
 }
 
 /**
+ * The surfaces user text actually sits on. The secondary and sidebar colours are
+ * included alongside the primary: they are the darker pair in every preset, so
+ * anything that clears them clears the main card too. Skipping them is what let
+ * the sidebar keep unreadable secondary text while the audit looked green.
+ */
+function textGrounds(bgPrimary: string, bgSecondary: string, bgSidebar: string): [string, string, string] {
+  return [bgPrimary, bgSecondary, bgSidebar];
+}
+
+/**
+ * Walks `mixHex(textPrimary, bgPrimary, weight)` from the ground end towards the
+ * body colour and returns the first value that clears `target` on every ground.
+ * Starting at the ground end rather than at 1 is what keeps the tier *weak*: the
+ * result is the lightest (dark themes: darkest) value that still passes, instead
+ * of a second body colour.
+ */
+function tierFor(
+  textPrimary: string,
+  bgPrimary: string,
+  grounds: readonly string[],
+  target: number,
+): string {
+  for (let weight = 0.3; weight <= 0.98; weight += 0.01) {
+    const candidate = mixHex(textPrimary, bgPrimary, weight);
+    if (grounds.every((ground) => contrastRatio(candidate, ground) >= target)) return candidate;
+  }
+  return textPrimary;
+}
+
+/**
+ * `--color-accent` is a fill; glyphs need their own value. Yellow's #c4a24a is a
+ * fine block (6.44 against its foreground) and unreadable text (2.26 on paper),
+ * so one token cannot serve both. Walk the fill towards the body colour until it
+ * clears 4.5 - the four presets are solved the same way and pinned as literals
+ * in `index.css`.
+ */
+function accentTextFor(accent: string, textPrimary: string, grounds: readonly string[]): string {
+  for (let weight = 1; weight >= 0.15; weight -= 0.02) {
+    const candidate = weight === 1 ? accent : mixHex(accent, textPrimary, weight);
+    if (grounds.every((ground) => contrastRatio(candidate, ground) >= 4.5)) return candidate;
+  }
+  return mixHex(accent, textPrimary, 0.15);
+}
+
+/**
  * The value of `--color-bg-primary` as `#rrggbb`, for the native window surface.
  *
  * Custom properties are not resolved by the cascade, so the declared token comes
@@ -126,10 +172,30 @@ export function applyTheme(theme: ThemeType, customColors: CustomColors | null):
     root.style.setProperty("--color-bg-secondary", customColors.bgSecondary);
     root.style.setProperty("--color-bg-sidebar", customColors.bgSidebar);
     root.style.setProperty("--color-text-primary", customColors.textPrimary);
-    root.style.setProperty("--color-text-secondary", `color-mix(in srgb, ${customColors.textPrimary} 76%, ${customColors.bgPrimary})`);
-    root.style.setProperty("--color-text-muted", `color-mix(in srgb, ${customColors.textPrimary} 56%, ${customColors.bgPrimary})`);
+    // Derived from the body colour *and measured* rather than mixed by a fixed
+    // percentage: the old 76%/56% literals put the muted tier at 3.5:1 for a
+    // mid-grey body, which is under the floor no matter what the user picked.
+    const grounds = textGrounds(
+      customColors.bgPrimary,
+      customColors.bgSecondary,
+      customColors.bgSidebar,
+    );
+    root.style.setProperty(
+      "--color-text-secondary",
+      tierFor(customColors.textPrimary, customColors.bgPrimary, grounds, 5.5),
+    );
+    root.style.setProperty(
+      "--color-text-muted",
+      tierFor(customColors.textPrimary, customColors.bgPrimary, grounds, 4.6),
+    );
     root.style.setProperty("--color-border", `color-mix(in srgb, ${customColors.textPrimary} 18%, ${customColors.bgSecondary})`);
     root.style.setProperty("--color-accent", customColors.accent);
+    // The user's own fill is unconstrained, so the text derivation is measured
+    // here instead of inheriting the preset's literal.
+    root.style.setProperty(
+      "--color-accent-text",
+      accentTextFor(customColors.accent, customColors.textPrimary, grounds),
+    );
     root.style.setProperty("--color-bg-hover", customColors.bgSecondary);
     root.style.setProperty("--color-bg-active", customColors.bgSecondary);
     root.style.setProperty("--color-accent-light", customColors.bgSecondary);

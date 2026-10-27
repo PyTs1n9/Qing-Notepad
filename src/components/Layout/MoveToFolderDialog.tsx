@@ -60,7 +60,7 @@ const MoveToFolderDialog: React.FC<MoveToFolderDialogProps> = ({
             onClick={() => onSelect(target.id)}
             className={`flex h-8 w-full items-center gap-1.5 pr-4 text-left text-[13px] transition-colors ${
               isCurrent
-                ? "cursor-default bg-bg-secondary/50 font-medium text-accent"
+                ? "cursor-default bg-bg-secondary/50 font-medium text-accent-text"
                 : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
             }`}
             style={{ paddingLeft: getTreeIndent(target.depth) + 16 }}

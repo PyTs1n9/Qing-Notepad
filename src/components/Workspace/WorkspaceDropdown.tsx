@@ -133,14 +133,14 @@ export default function WorkspaceDropdown({
         className={`flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-2.5 text-left
           outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent
           ${tone === "accent"
-            ? "border-accent/25 bg-accent-light text-accent hover:border-accent/45 hover:bg-accent/15"
+            ? "border-accent/25 bg-accent-light text-accent-text hover:border-accent/45 hover:bg-accent/15"
             : tone === "plain"
               ? "border-transparent bg-transparent text-text-primary hover:bg-bg-hover"
               : "border-border bg-bg-secondary text-text-primary hover:bg-bg-hover"}
           disabled:cursor-not-allowed disabled:opacity-60 ${triggerClassName}`}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          {Icon && <Icon size={13} className="flex-shrink-0 text-accent" />}
+          {Icon && <Icon size={13} className="flex-shrink-0 text-accent-text" />}
           <span className="min-w-0 truncate text-inherit">{selectedLabel}</span>
         </span>
         <ChevronDown
@@ -178,7 +178,7 @@ export default function WorkspaceDropdown({
                 }}
                 className={`w-full cursor-pointer rounded-md px-2.5 py-1.5 text-left text-xs transition-colors
                   ${selected
-                    ? "bg-accent-light text-accent"
+                    ? "bg-accent-light text-accent-text"
                     : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
               >
                 {option.label}

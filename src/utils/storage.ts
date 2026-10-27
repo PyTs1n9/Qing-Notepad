@@ -458,6 +458,13 @@ export interface StoredAiChatMessage {
 export interface StoredAiConversation {
   id: string;
   title: string;
+  /**
+   * Channel that owns this conversation: the endpoint id, or `null` for 小青.
+   * Optional because files written before channels existed have no such field;
+   * a missing field is *not* the same as `null` — the loader backfills it with
+   * the channel the user is on, while `null` is a settled 小青 conversation.
+   */
+  endpointId?: string | null;
   createdAt: number;
   updatedAt: number;
   messages: StoredAiChatMessage[];

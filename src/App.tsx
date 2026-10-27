@@ -35,7 +35,7 @@ import { useTodoStore } from "@/stores/todoStore";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useFontStore } from "@/stores/fontStore";
-import { useSettingsStore, deriveGlassEditorTint, GLASS_RAIL_DARKEN } from "@/stores/settingsStore";
+import { useSettingsStore, deriveGlassEditorTint, GLASS_RAIL_DARKEN, GLASS_READABILITY_FLOOR } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { CustomColors, AppShortcuts, AutoSaveInterval } from "@/stores/settingsStore";
 import {
@@ -1111,13 +1111,27 @@ export default function App() {
   // to branch on "is there a wallpaper?" — that keeps every glass rule at one
   // specificity level.
   const hasBackground = Boolean(customBackgroundUrl);
-  // Wallpaper mode splits the shell into two depths: the rails go a notch more
-  // solid and a notch darker, the main card one step lighter so the wallpaper
+  // The shell is two depths everywhere, not just behind a wallpaper: the rails
+  // are the solid notch, the main card sits one step lighter so the backdrop
   // reads through the middle. Everything is derived from the rail tint, so the
   // split survives a slider drag instead of living in two separate settings.
+  //
+  // The editor used to be pinned at >= 92 without a wallpaper ("nothing to see
+  // through"), and that is exactly what made the blur and saturation sliders
+  // look broken: a backdrop-filter only shows as much of the blurred backdrop as
+  // (1 - tint) allows, so at 92 the effect was 8% of a nearly flat wash -
+  // measured indistinguishable from blur 0. Deriving it here instead puts the
+  // big card at 60 by default, which is where the two sliders become visible.
   const sideTint = hasBackground ? glassTintBg : glassTint;
-  const editorTint = hasBackground ? deriveGlassEditorTint(sideTint) : Math.max(glassTint, 92);
+  const editorTint = deriveGlassEditorTint(sideTint);
   const dialogTint = Math.max(hasBackground ? glassTintBg : glassTint, 88);
+  // Below the floor the composited panel is too transparent for the muted tier
+  // to clear 4.5:1. Promote the tier rather than clamping the slider: the user
+  // keeps the full range, and only the weakest text level collapses into
+  // secondary. Keyed on the *most transparent* surface in play - behind a
+  // wallpaper the main card sits ~20 points under the rails, and that card is
+  // where the body text lives. See `.app-root[data-contrast="boost"]`.
+  const contrastBoost = Math.min(sideTint, editorTint) < GLASS_READABILITY_FLOOR;
   const appStyle = {
     "--left-sidebar-width": `${sidebarWidth}px`,
     "--ai-sidebar-width": `${aiSidebarWidth}px`,
@@ -1150,6 +1164,7 @@ export default function App() {
       className={`app-root flex flex-col h-screen w-screen overflow-hidden ${customBackgroundUrl ? "app-has-custom-background" : ""}`}
       style={appStyle}
       data-glass={glassEnabled ? "on" : "off"}
+      data-contrast={contrastBoost ? "boost" : undefined}
     >
       {/* Custom Title Bar — one help menu only; views live in the activity bar. */}
       <TitleBar
@@ -1281,6 +1296,7 @@ export default function App() {
         onClose={() => setSettingsOpen(false)}
         onOpenAuth={() => setAuthOpen(true)}
         initialSection={settingsSection}
+        hasWallpaper={hasBackground}
       />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
       {availableUpdate && (

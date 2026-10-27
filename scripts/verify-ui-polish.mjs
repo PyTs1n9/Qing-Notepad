@@ -57,7 +57,11 @@ const all = sources();
 
 // ---------------------------------------------------------------- P0-1
 check("P0-1a", "@theme 定义四个 on-* 前景色", () => {
-  const theme = css.slice(css.indexOf("@theme {"), css.indexOf("@theme {") + 2000);
+  // Sliced to the closing brace rather than a fixed 2000-character window: the
+  // block grew past that after the accent-text comment was added, which pushed
+  // the last declaration out of range and failed a sheet that was correct.
+  const start = css.indexOf("@theme {");
+  const theme = css.slice(start, css.indexOf("}", start));
   for (const kind of ["accent", "success", "danger", "warning"]) {
     if (!new RegExp(`--color-on-${kind}:\\s*#[0-9a-f]{6}`, "i").test(theme)) {
       throw new Error(`@theme 缺少 --color-on-${kind}`);

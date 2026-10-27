@@ -59,6 +59,13 @@ export const DEFAULT_GLASS_SATURATE_BG = 140;
  * the wallpaper has to read through the middle of the window. It is derived
  * from the rail tint instead of being its own slider, so dragging the rail
  * keeps the "rails deep, middle light" relationship intact.
+ *
+ * The bounds were raised to [72,94] on 2026-10-27 to protect body text, then put
+ * back the same day: at 72 only 28% of the wallpaper shows through, and the
+ * blur slider stops producing a visible change - the frost is diluted to the
+ * point of looking broken. Legibility is now handled by
+ * `GLASS_READABILITY_FLOOR` + `data-contrast="boost"`, which lets the card go
+ * transparent again without putting unreadable text on a photo.
  */
 export const GLASS_EDITOR_TINT_DROP = 20;
 export const MIN_GLASS_EDITOR_TINT = 40;
@@ -69,7 +76,22 @@ export const GLASS_RAIL_DARKEN = 15;
 
 export const MIN_GLASS_BLUR = 0;
 export const MAX_GLASS_BLUR = 40;
+/**
+ * Rail tint floor. The slider runs the full range - clamping it to a "safe"
+ * minimum (an earlier fix pinned it at 75) left only a quarter of the track
+ * usable and made the control feel broken. Readability is handled downstream
+ * instead: below `GLASS_READABILITY_FLOOR` the app promotes `text-muted` to
+ * `text-secondary` (`.app-root[data-contrast="boost"]`), so a transparent panel
+ * loses a tier of hierarchy rather than becoming unreadable.
+ */
 export const MIN_GLASS_TINT = 0;
+
+/**
+ * The tint at which `text-muted` stops clearing 4.5:1 against the composited
+ * panel. Below it the muted tier is promoted. Measured: the binding case is
+ * blue, where 74 is the last compliant value.
+ */
+export const GLASS_READABILITY_FLOOR = 75;
 export const MAX_GLASS_TINT = 100;
 export const MIN_GLASS_SATURATE = 0;
 export const MAX_GLASS_SATURATE = 200;
@@ -83,11 +105,13 @@ function normalizeGlassNumber(value: unknown, min: number, max: number, fallback
  * Wallpaper-mode tint for the editor / main card, derived from the rail tint.
  *
  * Two clamps, both load-bearing:
- * - the hard bounds keep long-form text legible (40) and keep the card from
- *   going opaque (76);
- * - the `side - 6` cap guarantees the relationship never inverts when the rail
- *   slider is dragged far down, which would otherwise make the middle card the
- *   deepest surface in the shell.
+ * - the hard bounds keep the card from going opaque (76) or so transparent that
+ *   the wallpaper swallows the text (40);
+ * - the `side - 6` cap stops the middle card from reading more solid than the
+ *   rails, which would invert the shell's depth.
+ *
+ * Readability below 40 is not this function's job: it is `GLASS_READABILITY_FLOOR`
+ * that promotes the text tiers on a transparent panel.
  */
 export function deriveGlassEditorTint(sideTint: number): number {
   const derived = Math.min(

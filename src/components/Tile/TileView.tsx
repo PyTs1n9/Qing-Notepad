@@ -151,7 +151,7 @@ const TileView: React.FC = () => {
           <div
             className="tile-content text-sm text-text-primary leading-relaxed
               [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
-              [&_a]:text-accent [&_a]:underline"
+              [&_a]:text-accent-text [&_a]:underline"
             onClick={handleExternalLinkClick}
             dangerouslySetInnerHTML={{ __html: htmlContent }}
           />

@@ -730,7 +730,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
             scrollSyncEnabled
-              ? "border-accent/30 bg-accent/10 text-accent hover:bg-accent/15"
+              ? "border-accent/30 bg-accent/10 text-accent-text hover:bg-accent/15"
               : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
@@ -851,7 +851,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
                     [&_hr]:border-border [&_hr]:my-4
                     [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
                     [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
-                    [&_a]:text-accent [&_a]:underline
+                    [&_a]:text-accent-text [&_a]:underline
                     [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs"
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
@@ -878,7 +878,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
             {activeNote.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent"
+                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent-text"
               >
                 #{tag}
               </span>

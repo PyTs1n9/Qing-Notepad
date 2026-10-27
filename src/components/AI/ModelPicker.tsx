@@ -261,7 +261,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
           {chipBrand ? (
             <ModelBrandIcon brand={chipBrand} className="text-text-primary" />
           ) : (
-            <Sparkles size={11} className="flex-shrink-0 text-accent" />
+            <Sparkles size={11} className="flex-shrink-0 text-accent-text" />
           )}
           <span className="ai-model-chip__label truncate">{chipLabel}</span>
           {!localSelected && activeRow?.supportsThinking && (
@@ -313,10 +313,10 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
                   onFocus={clearFlyout}
                   onClick={pickLocal}
                   className={`flex w-full cursor-pointer items-start gap-2 px-3 py-1.5 text-left transition-colors hover:bg-bg-hover ${
-                    localSelected ? "text-accent" : "text-text-secondary"
+                    localSelected ? "text-accent-text" : "text-text-secondary"
                   }`}
                 >
-                  <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-accent" />
+                  <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-accent-text" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs">{t(lang, "aiModelLocal")}</span>
                     <span className="block truncate text-[10px] text-text-muted">
@@ -351,7 +351,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
                         pickRow(row, event.currentTarget.getBoundingClientRect().top)
                       }
                       className={`flex w-full cursor-pointer items-start gap-2 px-3 py-1.5 text-left transition-colors hover:bg-bg-hover ${
-                        isSelected ? "text-accent" : "text-text-secondary"
+                        isSelected ? "text-accent-text" : "text-text-secondary"
                       }`}
                     >
                       {rowBrand ? (
@@ -426,7 +426,7 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
                         aria-selected={levelSelected}
                         onClick={() => pickLevel(flyout.row, level)}
                         className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-bg-hover ${
-                          levelSelected ? "text-accent" : "text-text-secondary"
+                          levelSelected ? "text-accent-text" : "text-text-secondary"
                         }`}
                       >
                         <span className="min-w-0 flex-1">

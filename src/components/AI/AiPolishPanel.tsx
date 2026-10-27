@@ -257,7 +257,7 @@ const AiPolishPanel: React.FC<AiPolishPanelProps> = ({ onBack, onOpenSettings })
           <ArrowLeft size={15} />
         </button>
         <div className="flex items-center gap-1.5 text-sm font-medium text-text-primary">
-          <Wand2 size={15} className="text-accent" />
+          <Wand2 size={15} className="text-accent-text" />
           {t(lang, "aiPolishTitle")}
         </div>
         <div className="relative ml-auto">
@@ -333,7 +333,7 @@ const AiPolishPanel: React.FC<AiPolishPanelProps> = ({ onBack, onOpenSettings })
                   onClick={() => selectAction(item.id)}
                   className={`cursor-pointer rounded-full border px-2.5 py-1 text-[11px] transition-all active:scale-95 ${
                     item.id === action
-                      ? "border-accent bg-accent-light font-medium text-accent"
+                      ? "border-accent bg-accent-light font-medium text-accent-text"
                       : "border-border bg-bg-secondary/30 text-text-muted hover:bg-bg-hover hover:text-text-primary"
                   }`}
                 >
@@ -362,7 +362,7 @@ const AiPolishPanel: React.FC<AiPolishPanelProps> = ({ onBack, onOpenSettings })
                     onClick={() => setInstruction(style.value)}
                     className={`cursor-pointer rounded-full border px-2.5 py-1 text-[11px] transition-all active:scale-95 ${
                       instruction === style.value
-                        ? "border-accent bg-accent-light text-accent"
+                        ? "border-accent bg-accent-light text-accent-text"
                         : "border-border bg-bg-secondary/30 text-text-muted hover:bg-bg-hover hover:text-text-primary"
                     }`}
                   >
@@ -529,7 +529,7 @@ const AiPolishPanel: React.FC<AiPolishPanelProps> = ({ onBack, onOpenSettings })
                   </button>
                 ) : (
                   <>
-                    <span className="inline-flex items-center gap-1 text-xs text-accent">
+                    <span className="inline-flex items-center gap-1 text-xs text-accent-text">
                       <Check size={12} />
                       {t(lang, "aiPolishApplied")}
                     </span>

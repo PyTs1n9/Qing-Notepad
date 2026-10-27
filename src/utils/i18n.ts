@@ -421,6 +421,10 @@ export type TranslationKeys = {
   glassBlur: string;
   glassTint: string;
   glassSaturate: string;
+  glassNeedsBackground: string;
+  glassBlurNeedsLowerTint: string;
+  glassBaseOverridden: string;
+  glassReducedTransparency: string;
   savePreset: string;
   selectPreset: string;
   noPresets: string;
@@ -646,6 +650,8 @@ export type TranslationKeys = {
   aiEndpointModelsHint: string;
   aiEndpointDelete: string;
   aiEndpointDeleteConfirm: string;
+  /** Warns how many chat sessions go with the endpoint being deleted. */
+  aiEndpointDeleteSessions: string;
   aiEndpointCancel: string;
   aiEndpointAdd: string;
   aiEndpointCustom: string;
@@ -697,6 +703,10 @@ export type TranslationKeys = {
   aiClearConfirmOk: string;
   aiCancel: string;
   aiGreeting: string;
+  aiEmptyGreetingApi: string;
+  /** Degenerate case: the channel works out to the same name as the model. */
+  aiEmptyGreetingModel: string;
+  aiEmptyGreetingNoKey: string;
   aiStatusReady: string;
   aiStatusNoKey: string;
   aiNewChat: string;
@@ -1178,6 +1188,11 @@ const zh: TranslationKeys = {
   glassBlur: "模糊强度",
   glassTint: "侧栏底色不透明度",
   glassSaturate: "饱和度",
+  glassNeedsBackground: "需先设置背景图",
+  glassBlurNeedsLowerTint: "底色不透明度低于 60% 时模糊才明显",
+  glassBaseOverridden: "已设置背景图，实际生效的是下方一组",
+  glassReducedTransparency:
+    "系统已关闭「透明效果」，毛玻璃不会生效。请在「Windows 设置 → 个性化 → 颜色」中开启透明效果。",
   savePreset: "保存预设",
   selectPreset: "选择预设",
   noPresets: "暂无保存的预设",
@@ -1405,6 +1420,7 @@ const zh: TranslationKeys = {
   aiEndpointModelsHint: "勾选的模型才会出现在聊天栏的模型列表里。",
   aiEndpointDelete: "删除接口",
   aiEndpointDeleteConfirm: "确认删除",
+  aiEndpointDeleteSessions: "{count} 段会话将一并删除，不可恢复。",
   aiEndpointCancel: "取消",
   aiEndpointAdd: "添加接口",
   aiEndpointCustom: "自定义",
@@ -1458,6 +1474,11 @@ const zh: TranslationKeys = {
   aiClearConfirmOk: "清空",
   aiCancel: "取消",
   aiGreeting: "你好，我是小青。有什么关于青记的问题，直接问我就好。",
+  aiEmptyGreetingApi:
+    "当前由 {channel} 的 {model} 作答。可以问青记的用法，也可以让我读你的笔记。",
+  aiEmptyGreetingModel:
+    "当前由 {model} 作答。可以问青记的用法，也可以让我读你的笔记。",
+  aiEmptyGreetingNoKey: "「{channel}」还没有配置 API Key。到「设置 → AI 设置」填好后就能对话。",
   aiStatusReady: "已连接",
   aiStatusNoKey: "未配置 Key",
   aiNewChat: "新建会话",
@@ -1938,6 +1959,11 @@ const en: TranslationKeys = {
   glassBlur: "Blur",
   glassTint: "Side panel tint opacity",
   glassSaturate: "Saturation",
+  glassNeedsBackground: "Set a background image first",
+  glassBlurNeedsLowerTint: "Blur only shows below 60% tint",
+  glassBaseOverridden: "Overridden by the wallpaper group below",
+  glassReducedTransparency:
+    "Transparency effects are off in Windows, so frosted glass is disabled. Turn them on in Settings → Personalisation → Colours.",
   savePreset: "Save Preset",
   selectPreset: "Select Preset",
   noPresets: "No saved presets",
@@ -2167,6 +2193,7 @@ const en: TranslationKeys = {
   aiEndpointModelsHint: "Only ticked models appear in the chat bar's model list.",
   aiEndpointDelete: "Delete endpoint",
   aiEndpointDeleteConfirm: "Confirm delete",
+  aiEndpointDeleteSessions: "{count} chat(s) will be deleted with it. This cannot be undone.",
   aiEndpointCancel: "Cancel",
   aiEndpointAdd: "Add endpoint",
   aiEndpointCustom: "Custom",
@@ -2221,6 +2248,11 @@ const en: TranslationKeys = {
   aiClearConfirmOk: "Clear",
   aiCancel: "Cancel",
   aiGreeting: "Hi, I'm XiaoQing. Ask me anything about using Qing Notepad.",
+  aiEmptyGreetingApi:
+    "Answering with {model} on {channel}. Ask about using Qing Notepad, or have me read your notes.",
+  aiEmptyGreetingModel:
+    "Answering with {model}. Ask about using Qing Notepad, or have me read your notes.",
+  aiEmptyGreetingNoKey: "{channel} has no API key yet. Add one in Settings → AI to start chatting.",
   aiStatusReady: "Connected",
   aiStatusNoKey: "No key",
   aiNewChat: "New chat",

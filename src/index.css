@@ -191,11 +191,18 @@
   --color-bg-active: #b0c4de;
   --color-text-primary: #1e293b;
   --color-text-secondary: #475569;
-  --color-text-muted: #64748b;
+  --color-text-muted: #596270;
   --color-border: #cbd5e1;
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-light: #dbeafe;
+  /* `--color-accent` is a *fill*: it only ever has to clear 4.5 against
+     `--color-on-accent`. The same value used as a text colour is a different
+     problem - yellow's #c4a24a is a fine block (6.44) but reads at 2.26 as
+     glyphs on paper. One token cannot satisfy both, so `text-accent-*` maps to
+     this darker derivation while `bg-accent*` keeps the original. Solved
+     backwards from 4.5 against bg-secondary. */
+  --color-accent-text: #245acf;
   /* Deeper than the usual #ef4444: white on the lighter red measures 3.76,
      and the 12 `hover:bg-danger/90` sites composite to an even lighter block.
      #d42424 keeps the solid block at 5.15 and its /90 hover at 4.63. */
@@ -225,17 +232,20 @@
   --color-bg-active: #373a40;
   --color-text-primary: #e9ecef;
   --color-text-secondary: #adb5bd;
-  --color-text-muted: #6c757d;
+  --color-text-muted: #8c8e91;
   --color-border: #373a40;
   --color-accent: #5c7cfa;
   --color-accent-hover: #4c6ef5;
   --color-accent-light: #1b2559;
+  /* Lifted, not darkened: on a night ground the derivation from the fill goes
+     the other way. #5c7cfa measured 4.11 against bg-secondary as glyphs. */
+  --color-accent-text: #738df9;
   --color-danger: #ff6b6b;
   --color-success: #51cf66;
   --color-warning: #fcc419;
   /* The accent is too bright for white (3.68), so the fore colour goes to the
      other end of the scale instead of dragging the ring darker - a darker
-     accent would drop `text-accent` on the night ground to 3.06. */
+     accent would drop the accent text on the night ground below 4.5. */
   --color-on-accent: #08090f;
   --color-on-success: #052e16;
   --color-on-danger: #2a0a0a;
@@ -256,11 +266,12 @@
   --color-bg-active: #b0c4de;
   --color-text-primary: #1e293b;
   --color-text-secondary: #475569;
-  --color-text-muted: #64748b;
+  --color-text-muted: #596270;
   --color-border: #cbd5e1;
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
   --color-accent-light: #dbeafe;
+  --color-accent-text: #245acf;
   --color-danger: #d42424;
   --color-success: #22c55e;
   --color-warning: #eab308;
@@ -279,12 +290,15 @@
   --color-bg-hover: #e3dcc8;
   --color-bg-active: #dbd4bc;
   --color-text-primary: #4a4030;
-  --color-text-secondary: #7a6e55;
-  --color-text-muted: #a09478;
+  --color-text-secondary: #605747;
+  --color-text-muted: #6b6253;
   --color-border: #ddd5c0;
   --color-accent: #c4a24a;
   --color-accent-hover: #b08e38;
   --color-accent-light: #f5edda;
+  /* The pastel fills are the reason this token exists: #c4a24a is a good block
+     and an unreadable glyph colour. Derived down to 4.5 on bg-secondary. */
+  --color-accent-text: #736139;
   --color-danger: #d98a7a;
   --color-success: #8ab88a;
   --color-warning: #d4b86a;
@@ -305,12 +319,13 @@
   --color-bg-hover: #d2e2d4;
   --color-bg-active: #c6dac8;
   --color-text-primary: #2a4a38;
-  --color-text-secondary: #5a7a66;
-  --color-text-muted: #88a694;
+  --color-text-secondary: #425f4f;
+  --color-text-muted: #506b5c;
   --color-border: #d0e2d2;
   --color-accent: #4aaa6a;
   --color-accent-hover: #3a9a5a;
   --color-accent-light: #e4f4e8;
+  --color-accent-text: #37704c;
   --color-danger: #d88a8a;
   --color-success: #6aba6a;
   --color-warning: #caba6a;
@@ -341,9 +356,11 @@
   --glass-blur: 12;
   --glass-saturate: 120;
   --glass-tint-side: 80;
-  /* Derived from --glass-tint-side in App.tsx; this is only the no-JS fallback
-     for the base profile (no wallpaper). */
-  --glass-tint-editor: 92;
+  /* Derived from --glass-tint-side in App.tsx (side - 20, clamped 40..76) and
+     also written inline; this is only the no-JS fallback for the base profile.
+     It cannot sit at 92 any more: at that opacity the backdrop contributes 8%,
+     which made the blur and saturation sliders indistinguishable from dead. */
+  --glass-tint-editor: 60;
   /* Dialogs are transient surfaces, not part of the depth ladder, so they keep
      their own near-opaque floor. */
   --glass-tint-dialog: 92;
@@ -386,6 +403,42 @@
    ordinary positioned elements. */
 .app-root {
   isolation: isolate;
+  /* Frosted glass needs something behind it to blur. With no wallpaper the cards
+     sit on one flat colour, so `blur` and `saturate` had nothing to act on and
+     read as two broken controls. This underlay gives them a real source: a
+     two-stop brand wash (low frequency - reacts to blur, and strongly to
+     saturation) plus the paper grain (high frequency - blur dissolves it into
+     flat haze, which is the visible change the slider promises).
+     App.tsx writes `backgroundImage` inline on this same element when a
+     wallpaper is set, which replaces all three layers. */
+  background-image:
+    radial-gradient(
+      72% 58% at 16% 10%,
+      color-mix(in srgb, var(--color-accent) 26%, transparent),
+      transparent 68%
+    ),
+    radial-gradient(
+      64% 52% at 84% 90%,
+      color-mix(in srgb, var(--color-accent) 18%, transparent),
+      transparent 70%
+    ),
+    var(--paper-grain);
+}
+
+/*
+ * Readability guard for a very transparent panel. `text-muted` stops clearing
+ * 4.5:1 once the rail tint drops under 75, and the old fix was to clamp the
+ * slider - which left a quarter of the track usable and made the control feel
+ * broken. Promoting the tier keeps the full range and costs one level of
+ * hierarchy instead of the paragraph's legibility.
+ */
+.app-root[data-contrast="boost"] {
+  --color-text-muted: var(--color-text-secondary);
+  /* The accent tier needs the same treatment: at tint 0 the card is the shell
+     colour, where the normal accent-text lands at 3.86-4.10. 25% of the fill
+     mixed into the body colour clears 4.5 in all four themes (4.53 worst case,
+     yellow) while still reading as the brand hue rather than plain text. */
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 25%, var(--color-text-primary));
 }
 
 /*
@@ -527,7 +580,7 @@
 
 .title-brand-letter:hover {
   transform: translateY(-1px) scale(1.1);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1730,7 +1783,7 @@ body.sticky-body {
 .hljs-literal,
 .hljs-section,
 .hljs-link {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
@@ -1881,7 +1934,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-size: 13px;
   line-height: 1.5;
   cursor: text;
-  caret-color: var(--color-accent);
+  caret-color: var(--color-accent-text);
   word-break: break-word;
 }
 

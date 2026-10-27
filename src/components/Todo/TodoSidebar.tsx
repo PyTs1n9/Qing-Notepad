@@ -354,7 +354,7 @@ const TodoSidebar: React.FC = () => {
             className="flex items-center gap-1 text-[11px] font-semibold leading-none tabular-nums"
             title={`${t(lang, "filterActive")} ${pendingCount} · ${t(lang, "filterCompleted")} ${completedCount}`}
           >
-            <span className="text-accent">{pendingCount}</span>
+            <span className="text-accent-text">{pendingCount}</span>
             <span className="text-text-muted/40">/</span>
             <span className="text-text-muted">{completedCount}</span>
           </span>
@@ -373,7 +373,7 @@ const TodoSidebar: React.FC = () => {
             aria-label={t(lang, "newTodoList")}
             title={t(lang, "newTodoList")}
             className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted
-              transition-colors hover:bg-bg-hover hover:text-accent"
+              transition-colors hover:bg-bg-hover hover:text-accent-text"
           >
             <Plus size={14} />
           </button>
@@ -461,7 +461,7 @@ const TodoSidebar: React.FC = () => {
               {isEditing ? (
                 <div className="todo-create-panel flex h-8 items-center gap-1.5 rounded-lg border border-accent/40 bg-bg-primary px-2 ring-2 ring-accent/15">
                   {list.pinned
-                    ? <Pin size={13} className="flex-shrink-0 text-accent" />
+                    ? <Pin size={13} className="flex-shrink-0 text-accent-text" />
                     : <GripVertical size={13} className="flex-shrink-0 text-text-muted" />}
                   <input
                     ref={editInputRef}
@@ -532,8 +532,8 @@ const TodoSidebar: React.FC = () => {
                       </span>
                     )}
                     {list.pinned
-                      ? <Pin size={13} className="flex-shrink-0 text-accent" />
-                      : <ListChecks size={13} className={`flex-shrink-0 ${isActive ? "text-accent" : "text-text-muted"}`} />}
+                      ? <Pin size={13} className="flex-shrink-0 text-accent-text" />
+                      : <ListChecks size={13} className={`flex-shrink-0 ${isActive ? "text-accent-text" : "text-text-muted"}`} />}
                     <span className="min-w-0 flex-1 truncate">{list.name}</span>
                     <span
                       className={`absolute right-2 inline-flex h-[17px] min-w-[34px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums tracking-tight ${
@@ -572,7 +572,7 @@ const TodoSidebar: React.FC = () => {
                                   {todo.completed ? (
                                     <CheckCircle2 size={13} className="text-success" />
                                   ) : (
-                                    <Circle size={13} className="text-text-muted hover:text-accent" />
+                                    <Circle size={13} className="text-text-muted hover:text-accent-text" />
                                   )}
                                 </button>
                                 <button

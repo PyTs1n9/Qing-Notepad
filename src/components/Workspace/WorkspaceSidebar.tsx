@@ -370,7 +370,7 @@ const WorkspaceSidebar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openDialog("newDocument")}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-text"
                 title={t(lang, "newCloudDocument")}
                 aria-label={t(lang, "newCloudDocument")}
               >
@@ -381,7 +381,7 @@ const WorkspaceSidebar: React.FC = () => {
               <button
                 type="button"
                 onClick={() => openManage("permissions")}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-text"
                 title={t(lang, "permissionManagement")}
                 aria-label={t(lang, "permissionManagement")}
               >
@@ -460,7 +460,7 @@ const WorkspaceSidebar: React.FC = () => {
                 }`}
               >
                 {!activeDocumentId && <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r-full bg-accent" />}
-                <span className={`flex flex-shrink-0 items-center justify-center ${activeDocumentId ? "text-text-muted" : "text-accent"}`}>
+                <span className={`flex flex-shrink-0 items-center justify-center ${activeDocumentId ? "text-text-muted" : "text-accent-text"}`}>
                   <LayoutDashboard size={13} strokeWidth={1.8} />
                 </span>
                 <span className="min-w-0 flex-1 truncate">{t(lang, "workspaceOverview")}</span>
@@ -478,7 +478,7 @@ const WorkspaceSidebar: React.FC = () => {
             // The status lives in the icon colour rather than in a second line
             // of badges: this row is 32px tall, exactly like a note or a list.
             const statusTone = isActive
-              ? "text-accent"
+              ? "text-accent-text"
               : document.publicationStatus === "scheduled"
                 ? "text-warning"
                 : document.publicationStatus === "published"
@@ -629,7 +629,7 @@ const WorkspaceSidebar: React.FC = () => {
               setDocumentActionMenu(null);
               openRenameDialog({ id: actionDocument.id, title: actionDocument.title });
             }}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent-text"
           >
             <Pencil size={13} />
             {t(lang, "renameCloudDocument")}
@@ -638,7 +638,7 @@ const WorkspaceSidebar: React.FC = () => {
             type="button"
             role="menuitem"
             onClick={() => openDocumentPublication(actionDocument.id)}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent-text"
           >
             <CalendarClock size={13} />
             {t(lang, "scheduleCloudDocument")}
@@ -647,7 +647,7 @@ const WorkspaceSidebar: React.FC = () => {
             type="button"
             role="menuitem"
             onClick={() => openDocumentDetails(actionDocument.id)}
-            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent"
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent-text"
           >
             <Info size={13} />
             {t(lang, "documentDetails")}
@@ -683,7 +683,7 @@ const WorkspaceSidebar: React.FC = () => {
           }}
         >
           <div className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
-            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+            <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
               <Info size={15} />
             </span>
             <div className="min-w-0 flex-1">

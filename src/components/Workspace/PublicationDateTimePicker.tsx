@@ -224,7 +224,7 @@ export default function PublicationDateTimePicker({
           <ChevronLeft size={16} />
         </button>
         <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
-          <CalendarDays size={14} className="text-accent" />
+          <CalendarDays size={14} className="text-accent-text" />
           {new Intl.DateTimeFormat(locale, { year: "numeric", month: "long" }).format(displayMonth)}
         </div>
         <button
@@ -271,7 +271,7 @@ export default function PublicationDateTimePicker({
                   ${isSelected
                     ? "bg-accent font-semibold text-on-accent shadow-sm shadow-accent/20"
                     : isToday
-                      ? "bg-accent-light font-semibold text-accent"
+                      ? "bg-accent-light font-semibold text-accent-text"
                       : day.isCurrentMonth
                         ? "text-text-primary hover:bg-bg-hover"
                         : "text-text-muted/45 hover:bg-bg-hover"
@@ -289,7 +289,7 @@ export default function PublicationDateTimePicker({
       </div>
 
       <div className="border-t border-border bg-bg-sidebar/25 p-3">
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-accent/15 bg-accent-light px-3 py-2 text-xs text-accent">
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-accent/15 bg-accent-light px-3 py-2 text-xs text-accent-text">
           <span className="flex min-w-0 items-center gap-2 font-medium">
             <Clock3 size={13} className="flex-shrink-0" />
             <span className="truncate">

@@ -100,7 +100,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
           <button
             type="button"
             onClick={openGitHubPage}
-            className="text-lg font-semibold text-accent hover:underline inline-flex items-center gap-1.5"
+            className="text-lg font-semibold text-accent-text hover:underline inline-flex items-center gap-1.5"
           >
             Qing Notepad
             <ExternalLink size={15} />
@@ -125,7 +125,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
           >
             <span className="text-text-muted">{t(lang, "sourceCode")}</span>
-            <span className="text-accent text-xs flex items-center gap-1">
+            <span className="text-accent-text text-xs flex items-center gap-1">
               GitHub
               <ExternalLink size={12} />
             </span>
@@ -137,7 +137,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
           >
             <span className="text-text-muted">{t(lang, "personalBlog")}</span>
-            <span className="text-accent text-xs flex items-center gap-1">
+            <span className="text-accent-text text-xs flex items-center gap-1">
               {BLOG_LABEL}
               <ExternalLink size={12} />
             </span>
@@ -150,7 +150,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
           >
             <span className="text-text-muted">{t(lang, "qqDiscussionGroup")}</span>
-            <span className="text-accent text-xs flex items-center gap-1">
+            <span className="text-accent-text text-xs flex items-center gap-1">
               {QQ_GROUP_NUMBER}
               {qqCopied ? <Check size={12} /> : <Copy size={12} />}
             </span>
@@ -162,7 +162,7 @@ export default function AboutModal({ open, onClose }: AboutModalProps) {
             className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-bg-primary hover:bg-bg-hover transition-colors cursor-pointer"
           >
             <span className="text-text-muted">{t(lang, "friendSponsor")}</span>
-            <QrCode size={16} className="text-accent" />
+            <QrCode size={16} className="text-accent-text" />
           </button>
         </div>
       </div>

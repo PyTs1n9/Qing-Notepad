@@ -691,7 +691,7 @@ const NoteTabBar = ({ onExportNote }: NoteTabBarProps) => {
               )}
               <span
                 className={`flex-shrink-0 transition-opacity duration-150 ${
-                  active ? "text-accent opacity-100" : "opacity-60 group-hover:opacity-100"
+                  active ? "text-accent-text opacity-100" : "opacity-60 group-hover:opacity-100"
                 }`}
               >
                 {tab.preview ? <FileText size={13} strokeWidth={1.8} /> : <Pin size={12} strokeWidth={1.8} />}

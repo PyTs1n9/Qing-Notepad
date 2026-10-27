@@ -214,7 +214,7 @@ export default function StorageSection({ lang }: { lang: LangType }) {
     <div className="space-y-4">
       <section className="rounded-xl border border-border bg-bg-secondary/35 p-5">
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-text">
             <HardDrive size={21} />
           </div>
           <div className="min-w-0 flex-1">

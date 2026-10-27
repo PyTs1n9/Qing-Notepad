@@ -276,7 +276,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           className="sticky-header flex items-center gap-2 select-none"
         >
           <span className="flex-shrink-0 cursor-move" data-tauri-drag-region>
-            <Pin size={12} className="text-accent" />
+            <Pin size={12} className="text-accent-text" />
           </span>
           <span
             className="sticky-title max-w-[55%] truncate text-text-primary text-xs font-semibold cursor-pointer"
@@ -292,7 +292,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           <div className="flex items-center gap-0.5">
             <button
               onClick={handleTogglePin}
-              className={`p-1 rounded hover:bg-bg-hover transition-colors cursor-pointer ${isAlwaysOnTop ? "text-accent" : "text-text-muted hover:text-text-primary"}`}
+              className={`p-1 rounded hover:bg-bg-hover transition-colors cursor-pointer ${isAlwaysOnTop ? "text-accent-text" : "text-text-muted hover:text-text-primary"}`}
               title={isAlwaysOnTop ? "Unpin" : "Pin"}
             >
               {isAlwaysOnTop ? <PinOff size={11} /> : <Pin size={11} />}

@@ -1364,7 +1364,7 @@ export default function CloudNoteEditor({
           onClick={() => setShowHighlights(!showHighlights)}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
             showHighlights
-              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              ? "bg-accent/10 text-accent-text hover:bg-accent/15"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
@@ -1378,7 +1378,7 @@ export default function CloudNoteEditor({
           aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
             scrollSyncEnabled
-              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              ? "bg-accent/10 text-accent-text hover:bg-accent/15"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
@@ -1414,7 +1414,7 @@ export default function CloudNoteEditor({
               />
             ) : (
               <span
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent-light px-2 text-xs font-semibold text-accent"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-accent/25 bg-accent-light px-2 text-xs font-semibold text-accent-text"
                 title={t(lang, "documentAccessLevel")}
               >
                 <ShieldCheck size={13} />
@@ -1624,7 +1624,7 @@ export default function CloudNoteEditor({
           className={`${viewMode === "source" ? "hidden" : "block"} ${viewMode === "split" ? "min-w-0 flex-1" : "w-full"} overflow-y-auto px-5 py-4`}
         >
           <div
-            className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-bg-secondary [&_code]:px-1 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:leading-[1.7] [&_ul]:list-disc"
+            className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary [&_a]:text-accent-text [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-bg-secondary [&_code]:px-1 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:leading-[1.7] [&_ul]:list-disc"
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
         </div>
@@ -1731,7 +1731,7 @@ export default function CloudNoteEditor({
                     onClick={() => { void savePublication("publish_now"); }}
                     disabled={publicationSaving}
                     aria-busy={publicationSavingAction === "publish_now"}
-                    className="flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent-light px-3 py-3 text-left text-sm font-medium text-accent transition-colors hover:border-accent/40 disabled:cursor-not-allowed"
+                    className="flex w-full items-center gap-3 rounded-xl border border-accent/20 bg-accent-light px-3 py-3 text-left text-sm font-medium text-accent-text transition-colors hover:border-accent/40 disabled:cursor-not-allowed"
                   >
                     <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent text-on-accent">
                       <Send size={14} />

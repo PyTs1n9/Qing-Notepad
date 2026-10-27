@@ -121,7 +121,7 @@ const TodoDescriptionCard: React.FC<TodoDescriptionCardProps> = ({
               event.preventDefault();
               commit();
             }}
-            className="flex h-6 items-center rounded-md px-2 text-[11px] text-accent
+            className="flex h-6 items-center rounded-md px-2 text-[11px] text-accent-text
               transition-colors hover:bg-accent-light"
           >
             {t(lang, "save")}

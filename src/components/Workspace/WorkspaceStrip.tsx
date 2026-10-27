@@ -180,7 +180,7 @@ const WorkspaceStrip: React.FC = () => {
               onClick={() => selectDocument(null)}
               title={t(lang, "overviewBackToOverview")}
               aria-label={t(lang, "overviewBackToOverview")}
-              className="-ml-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent"
+              className="-ml-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-accent-text"
             >
               <ChevronLeft size={15} />
             </button>
@@ -191,12 +191,12 @@ const WorkspaceStrip: React.FC = () => {
                   ? "text-success"
                   : activeDocument.publicationStatus === "scheduled"
                     ? "text-warning"
-                    : "text-accent"
+                    : "text-accent-text"
               }`}
             />
           </>
         ) : (
-          <Users size={14} className="flex-shrink-0 text-accent" />
+          <Users size={14} className="flex-shrink-0 text-accent-text" />
         )
       }
       trailing={
@@ -297,7 +297,7 @@ const WorkspaceStrip: React.FC = () => {
               onClick={() => selectDocument(null)}
               title={t(lang, "overviewBackToOverview")}
               aria-label={t(lang, "overviewBackToOverview")}
-              className="min-w-0 max-w-[220px] truncate rounded text-left text-[13px] font-semibold text-text-primary transition-colors hover:text-accent"
+              className="min-w-0 max-w-[220px] truncate rounded text-left text-[13px] font-semibold text-text-primary transition-colors hover:text-accent-text"
             >
               {activeWorkspace.name}
             </button>

@@ -1758,7 +1758,7 @@ export default function CanvasView() {
     <section className="canvas-surface flex min-h-0 flex-1 flex-col bg-bg-primary">
       <div className="flex h-11 flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-bg-secondary px-3">
         <div className="mr-2 flex items-center gap-2 text-sm font-semibold text-text-primary">
-          <ImagePlus size={16} className="text-accent" />
+          <ImagePlus size={16} className="text-accent-text" />
           <span>{activeCanvas?.name || t(lang, "canvas")}</span>
         </div>
         <div className="h-5 w-px bg-border" />
@@ -2085,7 +2085,7 @@ export default function CanvasView() {
           />
         )}
         {!loaded && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg-primary/80 text-sm text-text-muted">{t(lang, "canvasLoading")}</div>}
-        {loaded && board.items.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="rounded-xl border border-border bg-bg-secondary/90 px-5 py-4 text-center shadow-sm"><ImagePlus size={24} className="mx-auto mb-2 text-accent" /><p className="text-sm font-medium text-text-primary">{t(lang, "canvasEmpty")}</p><p className="mt-1 text-xs text-text-muted">{t(lang, "canvasPasteHint")}</p></div></div>}
+        {loaded && board.items.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="rounded-xl border border-border bg-bg-secondary/90 px-5 py-4 text-center shadow-sm"><ImagePlus size={24} className="mx-auto mb-2 text-accent-text" /><p className="text-sm font-medium text-text-primary">{t(lang, "canvasEmpty")}</p><p className="mt-1 text-xs text-text-muted">{t(lang, "canvasPasteHint")}</p></div></div>}
         <div className="pointer-events-auto absolute bottom-4 right-4 z-20 w-[220px] overflow-hidden rounded-xl border border-border bg-bg-secondary/90 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
           <div className="flex h-8 items-center justify-between border-b border-border px-3 text-[11px] font-semibold text-text-secondary">
             <span>{t(lang, "canvasOverview")}</span>
@@ -2193,7 +2193,7 @@ export default function CanvasView() {
                   void createCanvas();
                 }}
               >
-                <Plus size={16} className="flex-shrink-0 text-accent" />
+                <Plus size={16} className="flex-shrink-0 text-accent-text" />
                 <input
                   ref={newCanvasInputRef}
                   value={newCanvasName}
@@ -2213,7 +2213,7 @@ export default function CanvasView() {
                 />
                 <button
                   type="submit"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent-text transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={switchingCanvas || !canvasListLoaded || !loaded || !newCanvasName.trim()}
                   title={t(lang, "add")}
                   aria-label={t(lang, "add")}
@@ -2257,7 +2257,7 @@ export default function CanvasView() {
               {canvases.map((canvas, index) => (
                 <div
                   key={canvas.id}
-                  className={`canvas-switcher-row mx-1 flex items-center rounded-md ${canvas.id === activeCanvasId ? "canvas-switcher-row--active bg-accent/15 text-accent" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
+                  className={`canvas-switcher-row mx-1 flex items-center rounded-md ${canvas.id === activeCanvasId ? "canvas-switcher-row--active bg-accent/15 text-accent-text" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
                   style={{ animationDelay: `${Math.min(index * 35, 210)}ms` }}
                 >
                   <button
@@ -2319,7 +2319,7 @@ export default function CanvasView() {
                       />
                       <button
                         type="submit"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent-text transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={switchingCanvas || !canvasListLoaded || !loaded || !renamingCanvasName.trim()}
                         title={t(lang, "confirmYes")}
                         aria-label={t(lang, "confirmYes")}
@@ -2364,13 +2364,13 @@ export default function CanvasView() {
             </div>
             <button
               type="button"
-              className="canvas-switcher-footer flex h-8 w-full flex-shrink-0 cursor-pointer items-center justify-center border-t border-border transition-colors hover:bg-bg-hover hover:text-accent"
+              className="canvas-switcher-footer flex h-8 w-full flex-shrink-0 cursor-pointer items-center justify-center border-t border-border transition-colors hover:bg-bg-hover hover:text-accent-text"
               onClick={toggleCanvasMenu}
               title={t(lang, canvasMenuOpen ? "canvasCloseList" : "canvasOpenList")}
               aria-label={t(lang, canvasMenuOpen ? "canvasCloseList" : "canvasOpenList")}
               aria-expanded={canvasMenuOpen}
             >
-              <PanelRight size={14} className={`transition-transform duration-300 ${canvasMenuOpen ? "rotate-180 text-accent" : ""}`} />
+              <PanelRight size={14} className={`transition-transform duration-300 ${canvasMenuOpen ? "rotate-180 text-accent-text" : ""}`} />
             </button>
           </div>
         </div>

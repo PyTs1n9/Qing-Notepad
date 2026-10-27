@@ -167,7 +167,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
       >
         <header className="flex items-center gap-2.5 border-b border-border bg-bg-sidebar/45 px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
               {user ? <ShieldCheck size={16} /> : <LogIn size={16} />}
             </div>
             <div className="min-w-0">
@@ -201,7 +201,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
           ) : user ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 rounded-lg border border-border bg-bg-secondary/45 p-3">
-                <Mail size={16} className="flex-shrink-0 text-accent" />
+                <Mail size={16} className="flex-shrink-0 text-accent-text" />
                 <div className="min-w-0">
                   <p className="text-xs text-text-muted">{t(lang, "authEmail")}</p>
                   <p className="truncate text-sm text-text-primary">{user.email}</p>
@@ -228,7 +228,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                     onClick={() => changeMode(item)}
                     className={`h-8 rounded-md text-xs font-medium transition-colors ${
                       mode === item
-                        ? "bg-bg-primary text-accent shadow-sm"
+                        ? "bg-bg-primary text-accent-text shadow-sm"
                         : "text-text-muted hover:text-text-primary"
                     }`}
                   >
@@ -274,7 +274,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                       aria-label={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
                       aria-pressed={showPassword}
                       title={t(lang, showPassword ? "authHidePassword" : "authShowPassword")}
-                      className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                      className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent-text opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -302,7 +302,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                         aria-label={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
                         aria-pressed={showConfirmPassword}
                         title={t(lang, showConfirmPassword ? "authHidePassword" : "authShowPassword")}
-                        className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                        className="absolute inset-y-0 right-0 flex w-9 cursor-pointer items-center justify-center text-accent-text opacity-100 transition-colors hover:text-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                       >
                         {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
@@ -338,7 +338,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                       type="button"
                       onClick={handleForgotPassword}
                       disabled={loading}
-                      className="flex-shrink-0 text-accent transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      className="flex-shrink-0 text-accent-text transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {t(lang, "authForgotPassword")}
                     </button>
@@ -349,7 +349,7 @@ export default function AuthModal({ open, onClose }: AuthModalProps) {
                   <p className="text-xs leading-relaxed text-danger">{validationError || error}</p>
                 )}
                 {notice && (
-                  <p className="rounded-lg bg-accent-light px-3 py-2 text-xs leading-relaxed text-accent">
+                  <p className="rounded-lg bg-accent-light px-3 py-2 text-xs leading-relaxed text-accent-text">
                     {notice}
                   </p>
                 )}

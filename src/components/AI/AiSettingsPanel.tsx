@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore, type AiEndpointError } from "@/stores/aiStore";
-import { t } from "@/utils/i18n";
+import { t, tWithParams } from "@/utils/i18n";
 import type { AiErrorCode } from "@/utils/ai/provider";
 import { ENDPOINT_PRESETS } from "@/utils/ai/chat/endpoints";
 
@@ -61,6 +61,7 @@ const AiSettingsPanel: React.FC = () => {
     endpointKeys,
     endpointStatus,
     endpointError,
+    conversations,
     loaded,
     hydrate,
     addEndpoint,
@@ -137,7 +138,7 @@ const AiSettingsPanel: React.FC = () => {
     <div className="space-y-4">
       <section className="rounded-2xl border border-border/60 bg-bg-secondary/35 p-5 shadow-sm">
         <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent ring-1 ring-accent/20">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-text ring-1 ring-accent/20">
             <Server size={16} />
           </div>
           <div className="min-w-0">
@@ -357,7 +358,7 @@ const AiSettingsPanel: React.FC = () => {
                                 title={t(lang, "aiEndpointThinkingHint")}
                                 className={`inline-flex flex-shrink-0 cursor-pointer items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] transition-colors ${
                                   model.supportsThinking
-                                    ? "border-accent/40 bg-accent-light text-accent"
+                                    ? "border-accent/40 bg-accent-light text-accent-text"
                                     : "border-border text-text-muted hover:text-text-primary"
                                 }`}
                               >
@@ -371,9 +372,22 @@ const AiSettingsPanel: React.FC = () => {
                     </div>
 
                     <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2">
-                      <span className="text-[10px] leading-relaxed text-text-muted">
-                        {t(lang, "aiEndpointModelsHint")}
-                      </span>
+                      {confirmDelete === endpoint.id &&
+                      conversations.some((c) => c.endpointId === endpoint.id) ? (
+                        // Deleting a channel deletes the sessions it owns; say so
+                        // before the click, not after.
+                        <span className="text-[10px] leading-relaxed text-danger">
+                          {tWithParams(lang, "aiEndpointDeleteSessions", {
+                            count: conversations.filter(
+                              (c) => c.endpointId === endpoint.id,
+                            ).length,
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] leading-relaxed text-text-muted">
+                          {t(lang, "aiEndpointModelsHint")}
+                        </span>
+                      )}
                       {confirmDelete === endpoint.id ? (
                         <span className="flex flex-shrink-0 items-center gap-1.5">
                           <button

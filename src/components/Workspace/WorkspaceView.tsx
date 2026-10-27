@@ -479,7 +479,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
     return (
       <div className="flex h-full w-full flex-1 items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-border bg-bg-secondary/40 p-7 text-center shadow-sm">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-accent-light text-accent">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-accent-light text-accent-text">
             <Users size={23} />
           </div>
           <h1 className="mt-4 text-lg font-semibold text-text-primary">{t(lang, "workspaceLoginRequired")}</h1>
@@ -595,7 +595,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
             className="mt-2 h-8 w-full rounded-lg border border-border bg-bg-secondary px-3 text-sm text-text-primary outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent disabled:opacity-60"
             placeholder={dialogPlaceholder}
           />
-          {dialogNotice && <p className="mt-2 text-xs text-accent">{dialogNotice}</p>}
+          {dialogNotice && <p className="mt-2 text-xs text-accent-text">{dialogNotice}</p>}
           {error && <p className="mt-2 text-xs text-danger">{schemaError ? t(lang, "workspaceBackendNotReady") : error}</p>}
         </ModalShell>
       )}
@@ -606,7 +606,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
           title={(
             <span className="flex min-w-0 items-center gap-2">
               <span className="min-w-0 truncate">{activeWorkspace.name}</span>
-              <span className="flex-shrink-0 rounded-full bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent">
+              <span className="flex-shrink-0 rounded-full bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent-text">
                 {roleLabel(lang, activeWorkspace.role)}
               </span>
             </span>
@@ -626,7 +626,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                     type="button"
                     onClick={() => setManageSection(section)}
                     className={`relative flex h-11 items-center justify-center gap-2 text-xs font-semibold transition-colors ${
-                      selected ? "text-accent" : "text-text-muted hover:text-text-primary"
+                      selected ? "text-accent-text" : "text-text-muted hover:text-text-primary"
                     }`}
                   >
                     {section === "permissions" ? <ShieldCheck size={14} /> : <Settings2 size={14} />}
@@ -800,7 +800,7 @@ export default function WorkspaceView({ onOpenAuth }: WorkspaceViewProps) {
                           <UserAvatar
                             name={member.displayName}
                             avatarUrl={member.avatarUrl}
-                            className="h-7 w-7 bg-accent-light text-[11px] font-semibold text-accent"
+                            className="h-7 w-7 bg-accent-light text-[11px] font-semibold text-accent-text"
                           />
                           <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">
                             {member.displayName}

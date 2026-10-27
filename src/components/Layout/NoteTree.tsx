@@ -790,7 +790,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
               {folder.name || t(lang, "unnamedFolder")}
             </span>
           )}
-          {folder.pinned && <Pin size={10} className="flex-shrink-0 text-accent" />}
+          {folder.pinned && <Pin size={10} className="flex-shrink-0 text-accent-text" />}
           <span
             className={`inline-flex h-[17px] min-w-[17px] flex-shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold leading-none tabular-nums
               ${isActive
@@ -845,7 +845,7 @@ const NoteTree: React.FC<NoteTreeProps> = ({
           <span aria-hidden="true" className="h-4 w-4 flex-shrink-0" />
           <span
             className={`flex flex-shrink-0 items-center justify-center
-              ${isActive ? "text-accent" : "text-text-muted"}`}
+              ${isActive ? "text-accent-text" : "text-text-muted"}`}
           >
             {note.pinned
               ? <Pin size={13} strokeWidth={1.8} />

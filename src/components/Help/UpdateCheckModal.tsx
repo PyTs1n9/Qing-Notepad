@@ -64,7 +64,7 @@ export default function UpdateCheckModal({ open, onClose }: UpdateCheckModalProp
         {state === "checking" && (
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>{t(lang, "checkingUpdate")}</span>
-            <Loader2 size={14} className="animate-spin text-accent" />
+            <Loader2 size={14} className="animate-spin text-accent-text" />
           </div>
         )}
 
@@ -77,7 +77,7 @@ export default function UpdateCheckModal({ open, onClose }: UpdateCheckModalProp
 
         {state === "newVersion" && (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs text-accent">
+            <div className="flex items-center gap-2 text-xs text-accent-text">
               <Download size={14} />
               <span>{tWithParams(lang, "newVersion", { version: latestVersion })}</span>
             </div>

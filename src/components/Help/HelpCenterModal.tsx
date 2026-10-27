@@ -185,7 +185,7 @@ export default function HelpCenterModal({ tab, onTabChange, onClose }: HelpCente
                 [&_blockquote]:border-l-2 [&_blockquote]:border-accent [&_blockquote]:pl-3 [&_blockquote]:text-text-secondary
                 [&_code]:rounded [&_code]:bg-bg-primary [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-xs
                 [&_hr]:my-4 [&_hr]:border-border
-                [&_a]:text-accent [&_a]:underline
+                [&_a]:text-accent-text [&_a]:underline
                 [&_strong]:font-semibold"
               dangerouslySetInnerHTML={{ __html: html }}
             />

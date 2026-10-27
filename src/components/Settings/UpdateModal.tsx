@@ -63,7 +63,7 @@ export default function UpdateModal({
         </div>
         <div>
           <div className="text-text-muted">{t(lang, "latestVersion")}</div>
-          <div className="mt-0.5 font-medium tabular-nums text-accent">v{latestVersion}</div>
+          <div className="mt-0.5 font-medium tabular-nums text-accent-text">v{latestVersion}</div>
         </div>
       </div>
     </ModalShell>

@@ -499,7 +499,7 @@ const TodoView: React.FC = () => {
                     onMouseDown={(e) => handleDragStart(e, index)}
                   />
                 )}
-                {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent" />}
+                {todo.pinned && <Pin size={14} className="flex-shrink-0 text-accent-text" />}
                 {/* 固定宽度的展开位，保证有无子待办时勾选框都对齐 */}
                 <div className="flex w-4 flex-shrink-0 items-center justify-center">
                   {hasSubtasks && (
@@ -527,7 +527,7 @@ const TodoView: React.FC = () => {
                 {todo.completed ? (
                   <CheckCircle2 size={19} className="text-success" />
                 ) : (
-                  <Circle size={19} className="text-text-muted hover:text-accent transition-colors" />
+                  <Circle size={19} className="text-text-muted hover:text-accent-text transition-colors" />
                 )}
               </button>
 
@@ -605,7 +605,7 @@ const TodoView: React.FC = () => {
                     type="button"
                     onClick={(e) => toggleCalendar(todo.id, todo.dueDate, e.currentTarget)}
                     className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-text-muted
-                      transition-all hover:bg-bg-hover hover:text-accent"
+                      transition-all hover:bg-bg-hover hover:text-accent-text"
                     title={t(lang, "noDueDate")}
                     aria-expanded={openCalendarTodoId === todo.id}
                     aria-label={t(lang, "dueDate")}
@@ -685,7 +685,7 @@ const TodoView: React.FC = () => {
                                   ${isSelected
                                     ? "bg-accent text-on-accent"
                                     : isToday
-                                      ? "bg-accent-light text-accent"
+                                      ? "bg-accent-light text-accent-text"
                                       : day.isCurrentMonth
                                         ? "text-text-primary hover:bg-bg-hover"
                                         : "text-text-muted/45 hover:bg-bg-hover"}`}
@@ -717,7 +717,7 @@ const TodoView: React.FC = () => {
                                 ${isSelectedMonth
                                   ? "bg-accent text-on-accent"
                                   : isCurrentMonth
-                                    ? "bg-accent-light text-accent"
+                                    ? "bg-accent-light text-accent-text"
                                     : "text-text-primary hover:bg-bg-hover"}`}
                             >
                               {new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", { month: "short" }).format(new Date(calendarMonth.getFullYear(), monthIndex, 1))}
@@ -744,7 +744,7 @@ const TodoView: React.FC = () => {
                                 ${isSelectedYear
                                   ? "bg-accent text-on-accent"
                                   : isCurrentYear
-                                    ? "bg-accent-light text-accent"
+                                    ? "bg-accent-light text-accent-text"
                                     : "text-text-primary hover:bg-bg-hover"}`}
                             >
                               {year}
@@ -784,8 +784,8 @@ const TodoView: React.FC = () => {
                   onClick={() => setDescriptionEditorId(todo.id)}
                   className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition-all
                     ${Boolean(todo.description?.trim())
-                      ? "text-accent hover:bg-accent-light"
-                      : "text-text-muted hover:bg-bg-hover hover:text-accent"}`}
+                      ? "text-accent-text hover:bg-accent-light"
+                      : "text-text-muted hover:bg-bg-hover hover:text-accent-text"}`}
                   title={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
                   aria-label={Boolean(todo.description?.trim()) ? t(lang, "editTodoDescription") : t(lang, "addTodoDescription")}
                 >
@@ -796,7 +796,7 @@ const TodoView: React.FC = () => {
                   type="button"
                   onClick={() => handleAddSubtask(todo.id)}
                   className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-text-muted
-                    transition-all hover:bg-bg-hover hover:text-accent"
+                    transition-all hover:bg-bg-hover hover:text-accent-text"
                   title={t(lang, "addSubtask")}
                   aria-label={t(lang, "addSubtask")}
                 >
@@ -808,8 +808,8 @@ const TodoView: React.FC = () => {
                   onClick={() => togglePinned(todo.id)}
                   className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition-all
                     ${todo.pinned
-                      ? "text-accent bg-accent-light"
-                      : "text-text-muted hover:bg-bg-hover hover:text-accent"}`}
+                      ? "text-accent-text bg-accent-light"
+                      : "text-text-muted hover:bg-bg-hover hover:text-accent-text"}`}
                   title={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
                   aria-label={todo.pinned ? t(lang, "unpinTodo") : t(lang, "pinTodo")}
                 >

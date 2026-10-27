@@ -234,7 +234,7 @@ const TrashModal: React.FC<TrashModalProps> = ({
                       ? "border-danger/30 bg-danger/10 text-danger"
                       : notice.tone === "warning"
                         ? "border-border bg-bg-secondary text-text-secondary"
-                        : "border-accent/25 bg-accent-light text-accent"}`}
+                        : "border-accent/25 bg-accent-light text-accent-text"}`}
                 >
                   {notice.text}
                 </div>

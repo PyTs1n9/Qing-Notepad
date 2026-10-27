@@ -8,7 +8,7 @@ export type ModalTone = "accent" | "warning" | "danger" | "success";
 export type ModalSize = "sm" | "md" | "lg" | "xl";
 
 const TONE_TILE: Record<ModalTone, string> = {
-  accent: "bg-accent-light text-accent",
+  accent: "bg-accent-light text-accent-text",
   warning: "bg-warning/12 text-warning",
   danger: "bg-danger/10 text-danger",
   success: "bg-success/10 text-success",

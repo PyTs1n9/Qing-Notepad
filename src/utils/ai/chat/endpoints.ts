@@ -36,8 +36,17 @@ export interface AiEndpoint {
   createdAt: number;
 }
 
-/** 小青: local retrieval, no endpoint, always selectable. */
+/** `小青`: local retrieval, no endpoint, always selectable. */
 export const LOCAL_SELECTION = "local";
+
+/**
+ * Channel that owns a conversation for a given selection: the endpoint id, or
+ * `null` for 小青. Conversations are scoped to a channel, models are not —
+ * switching models inside one endpoint must not start a new session.
+ */
+export function channelOf(selection: string): string | null {
+  return parseSelection(selection)?.endpointId ?? null;
+}
 
 /** Separator for the persisted `endpointId::modelId` selection string. */
 const SELECTION_SEP = "::";
