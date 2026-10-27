@@ -17,11 +17,7 @@ import {
   isUpdateAvailable,
   usePluginStore,
 } from "@/plugin/store";
-import {
-  beginInstallFromIndex,
-  cancelPendingInstall,
-  confirmPendingInstall,
-} from "@/plugin/install";
+import { beginInstallFromIndex } from "@/plugin/install";
 import {
   authorName,
   hasPermission,
@@ -36,7 +32,6 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import PermissionList from "./PermissionList";
-import PermissionPrompt from "./PermissionPrompt";
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <section className="mt-5">
@@ -453,22 +448,10 @@ const PluginDetailBody: React.FC = () => {
  * to appear no matter what the detail pane is showing.
  */
 const PluginDetail: React.FC = () => {
-  const lang = useSettingsStore((state) => state.lang);
-  const installPrompt = usePluginStore((state) => state.installPrompt);
-  const busy = usePluginStore((state) => state.installBusy);
-
-  return (
-    <>
-      <PluginDetailBody />
-      <PermissionPrompt
-        state={installPrompt}
-        lang={lang}
-        busy={busy}
-        onCancel={() => void cancelPendingInstall()}
-        onConfirm={() => void confirmPendingInstall()}
-      />
-    </>
-  );
+  // The install prompt is *not* mounted here: it belongs to the app, not to
+  // this view. `InstallPermissionPrompt` (mounted next to `ToastHost`) is its
+  // only mount point, so "install from folder" works from every view.
+  return <PluginDetailBody />;
 };
 
 export default PluginDetail;

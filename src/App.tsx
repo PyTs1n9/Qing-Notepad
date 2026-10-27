@@ -24,6 +24,7 @@ import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
 import AiSidebar from "@/components/AI/AiSidebar";
 import PluginSidebar from "@/components/Plugin/PluginSidebar";
+import InstallPermissionPrompt from "@/components/Plugin/InstallPermissionPrompt";
 import PluginDetail from "@/components/Plugin/PluginDetail";
 import CommandPalette from "@/components/Layout/CommandPalette";
 import ToastHost from "@/components/ToastHost";
@@ -1369,6 +1370,11 @@ export default function App() {
       <PasswordRecoveryModal />
       <AppDialog />
       <ToastHost />
+      {/* Install-time permission prompt. Mounted here, not in the plugins view:
+          "install from folder" is reachable from every view, and a prompt that
+          only exists while the plugins page is open reads as "the button is
+          broken". */}
+      <InstallPermissionPrompt />
       <WorkspaceRemovalNotifier />
       {autoLoginLoading && (
         <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">
