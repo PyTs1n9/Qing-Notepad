@@ -16,14 +16,21 @@
  *   worker lives in a separate hidden webview and the messages travel over the
  *   `qing-plugin-rpc` custom protocol.
  *
- * **What that second one buys is a question, not an answer.** Whether a hidden
- *   WebView2 really is an independent renderer — and therefore whether a plugin
- *   that eats memory or crashes takes *only that* process down — is exactly
- *   what P1b's process-model probe measures before anything is claimed of it.
- *   Do not write "isolated process" into a comment or a commit message as
- *   though it were established; until the numbers are in, it is a design
- *   expectation. What *is* established either way: the message contract is
- *   identical, so a plugin cannot tell the difference.
+ * **What the second one buys is measured, not assumed.** Team-lead's
+ *   process-model probe (P1b step −1) counted the `msedgewebview2` processes:
+ *   one window = 12, a second webview = 19 (+7), split 3 browser / 5 renderer /
+ *   6 utility / 3 gpu — so **each webview gets its own renderer**. Killing the
+ *   second webview's renderer (90 MB) left the main window alive, and a
+ *   `while(true){}` in that webview's *page* left the main window responsive.
+ *   Note what that last line is evidence for: it is the page's main thread, not
+ *   a plugin Worker. A hung Worker blocks its own thread in *either* mode and
+ *   kills nothing — the 5 s RPC timeout is what notices, and it is shared.
+ *
+ * Performance envelope (the known cost of the second mode): one RPC is
+ *   ~5–15 ms across the protocol versus ~0.1 ms in-process. Interactive use
+ *   cannot tell — a command, an expanded tree row. A plugin that loops a
+ *   thousand calls can, and is two orders of magnitude slower. That is the
+ *   cost of the isolation, not a defect in it.
  *
  * The split exists so the second one is a *deployment* change, not a redesign:
  * the permission table (`bridge.ts`), the message shapes and the worker prelude

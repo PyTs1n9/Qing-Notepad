@@ -157,6 +157,7 @@ pub fn run() {
             plugin::plugin_read_log,
             plugin::plugin_append_log,
             plugin_host::plugin_ext_host_send,
+            plugin_host::plugin_ext_host_open,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -172,6 +173,17 @@ pub fn run() {
             // A crash during an install must not leave a staging tree behind;
             // it is scratch space, so clearing it unconditionally is safe.
             plugin::clean_staging_on_startup(app.handle());
+
+            // CSP probe: open the hidden extension host so its page can answer
+            // whether `connect-src` reaches a custom scheme on this WebView2.
+            // Dev-only by env var; the mode switch (P1b step 7) decides when it
+            // opens for real.
+            if std::env::var("QING_EXT_HOST_PROBE").is_ok() {
+                match plugin_host::plugin_ext_host_open(app.handle().clone()) {
+                    Ok(outcome) => eprintln!("[plugin-host] probe: {outcome}"),
+                    Err(error) => eprintln!("[plugin-host] probe failed: {error}"),
+                }
+            }
 
             // Create tray menu in the fallback language; the frontend replaces
             // it as soon as it knows the persisted `lang`.

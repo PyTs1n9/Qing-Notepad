@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Qing Extension Host</title>
+  </head>
+  <body>
+    <script>
+      /*
+       * Extension host: a hidden webview whose only door is the
+       * `qing-plugin-rpc` custom scheme. It has no capabilities at all — no
+       * `invoke`, no `listen` — so this page is deliberately almost empty.
+       *
+       * Right now it does one thing: answer the question P1b cannot proceed
+       * without, which is whether `connect-src` in the app CSP actually reaches
+       * a custom scheme on WebView2 (Edg/155). If it does not, the transport
+       * falls back to `postMessage` forwarding and nothing else changes.
+       *
+       * The verdict is reported by *navigating* to the scheme rather than by
+       * fetching it: a top-level navigation is not subject to `connect-src`, so
+       * the result reaches the Rust log even when `fetch` is blocked and this
+       * page has no other channel out. That is what makes the probe able to
+       * report a failure of itself.
+       */
+      (async function probe() {
+        let verdict = "not-attempted";
+        try {
+          const response = await fetch("qing-plugin-rpc://host/up", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              pluginId: "probe",
+              message: { t: "log", level: "info", args: ["csp-probe ping"] },
+            }),
+          });
+          verdict = "fetch-ok-" + response.status;
+        } catch (error) {
+          verdict = "fetch-blocked";
+        }
+        try {
+          location.href =
+            "qing-plugin-rpc://host/probe-result?verdict=" + encodeURIComponent(verdict);
+        } catch (error) {
+          // Nothing else to try: a page with no capabilities has no other way
+          // to say anything, which is the whole point of the sandbox.
+        }
+      })();
+    </script>
+  </body>
+</html>

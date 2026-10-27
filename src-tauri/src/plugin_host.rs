@@ -29,6 +29,20 @@
 //! text), so the down direction has a ceiling sized for a note rather than for
 //! a file; everything else is a reference (`{noteId, from, to}`) resolved on the
 //! main window, where the data already is.
+//!
+//! Two limits worth keeping in view:
+//!
+//! - **CORS here is not a boundary.** The custom scheme is only resolvable
+//!   inside app-owned webviews (Tauri registers it), so `Access-Control-Allow-
+//!   Origin: *` costs nothing; everything that matters is re-checked in
+//!   `bridge.ts`.
+//! - **Who may call `/up` is a *list* question, not a token question — today.**
+//!   Only the extension-host webview is meant to reach this scheme. If a second
+//!   webview is ever given access (a plugin UI, say), `pluginId` becomes
+//!   spoofable: one plugin's page could post `up` messages as another, and the
+//!   `ready|rpc|res|log` whitelist would not stop it. At that point `/up` needs
+//!   a per-session token bound to the webview that started the session. Do not
+//!   add a second client without adding the token first.
 
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex, MutexGuard};
@@ -226,6 +240,33 @@ pub fn plugin_ext_host_send(
     })
 }
 
+/// Open the hidden extension-host webview. Idempotent: one per app session.
+///
+/// The label `ext-host` deliberately matches **no capability file** —
+/// `default.json` covers `main`/`sticky-*`/`tile-*`/`canvas-tile-*` and
+/// `tile.json` covers `tile-*` — so the webview comes up with zero capabilities
+/// without a permission list to maintain. Deny-by-default falls out of the
+/// naming.
+///
+/// It is not opened yet as part of the plugin system: this is the probe
+/// (`QING_EXT_HOST_PROBE=1`) that answers the CSP question before step 3 builds
+/// on top of it. The mode switch (step 7) decides when it opens for real.
+#[tauri::command]
+pub fn plugin_ext_host_open(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::{Manager, WebviewUrl};
+
+    if app.get_webview_window("ext-host").is_some() {
+        return Ok("already-open".into());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "ext-host", WebviewUrl::App("ext-host.html".into()))
+        .title("Qing Extension Host")
+        .visible(false)
+        .skip_taskbar(true)
+        .build()
+        .map_err(|error| format!("E_INTERNAL: {error}"))?;
+    Ok("opened".into())
+}
+
 /// JSON response with the CORS headers the ext-host page needs.
 ///
 /// The hidden webview's origin comes out as `http://qing-plugin-rpc.localhost/`
@@ -261,6 +302,10 @@ pub fn handle_request(
     body: &[u8],
 ) -> tauri::http::Response<Vec<u8>> {
     use tauri::Emitter;
+
+    // One line per request. Cheap, and it is the only place the CSP probe can
+    // report from — a page with no capabilities has no other channel out.
+    eprintln!("[plugin-host] {method} {path}");
 
     match route(method, path, body) {
         Ok(Route::Preflight) => respond(204, Vec::new()),
