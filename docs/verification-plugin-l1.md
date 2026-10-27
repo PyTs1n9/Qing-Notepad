@@ -1,5 +1,12 @@
 # L1 插件机制：实现与验收记录
 
+> **TL;DR**（`apiVersion: 1`，目标宿主 0.7.3；只记「做了什么 / 验到哪 / 还差什么」）
+> - 隔离实测（release 包）：Worker 里 `window` / `document` / `__TAURI_INTERNALS__` 全 `undefined`，`fetch=blocked`。
+> - **CSP 只在正式包生效**：`tauri dev` 下 `fetch=ALLOWED`，第 4 项验收必须用 release 包。
+> - 安装两阶段（`dryRun`）：Rust 解压校验清单 → 前端判 `engines.host` / 命令冲突 / 授权 → 原子 rename。
+> - 权限撤销必须 `setRunnerPermissions()`；更新或回滚后要 `deactivatePlugin`，否则 Worker 跑旧 `main.js`。
+> - 14 项验收中 #11 断网、#12 权限扩容未实测；`tsc` / `build` / 单元测试全绿。
+
 > 目标宿主 `0.7.3`，`apiVersion: 1`。决策见 `docs/decisions-plugin-system.md`，
 > 本文件只记录**这次实际做了什么、验证到了哪一步、还差什么**。
 >
