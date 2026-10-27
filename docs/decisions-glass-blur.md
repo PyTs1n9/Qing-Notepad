@@ -2,6 +2,35 @@
 
 日期：2026-10-27（v0.7.2）
 
+## 二次定位（v0.7.3）：主因是构建期把 `backdrop-filter` 折叠成只有 `-webkit-`
+
+v0.7.2 发布后用户复测「滑块能拖、不透明度有效、模糊与饱和度完全无反应」。这组现象把范围锁死：
+不透明度是 `background-color`（生效），模糊/饱和度是 `backdrop-filter`（不生效）。
+
+查生产产物：
+
+```css
+/* dist/assets/index-*.css（v0.7.2） */
+.surface-glass:before{background-image:var(--paper-grain);
+  -webkit-backdrop-filter:blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%))}
+```
+
+源 CSS 里同时写了标准属性与该前缀属性，minifier 判定为同值重复，**删掉了标准属性**。
+Chromium 于是计算 `backdrop-filter: none`（用 `getComputedStyle` 实测确认），磨砂在**所有生产构建**里
+完全不生效。`npm run dev` 走的是未压缩源 CSS（两条都在），所以本地始终正常——这正是「本地正常、
+装上就失效」的全部原因，v0.7.1 同因。
+
+修法：源 CSS 只保留无前缀的 `backdrop-filter`（WebView2 自 Chromium 76 起支持），让 minifier 自己
+补前缀。修后产物两行都在，`getComputedStyle` 得到 `blur(40px) saturate(1.2)`，同底纹对照截图下
+blur 40 与 blur 0 差异明显。
+
+### 教训
+
+- **不要把「本地 dev 正常」当作验证结论**：CSS 压缩会改变语义，凡涉及 `filter` / `backdrop-filter`
+  这类与前缀成对出现的属性，必须用 `dist/` 产物复测一次（引 `dist/assets/index-*.css` 开一个
+  对照页，读 `getComputedStyle` 即可，几秒钟）。
+- 前缀对里被折叠掉的是**标准属性**这一点反直觉：看起来"更安全"的写法反而让功能整体消失。
+
 ## 结论
 
 1. **主卡不透明度不再固定 92%**：无背景图时也按 `deriveGlassEditorTint(sideTint)`

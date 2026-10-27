@@ -479,8 +479,14 @@
      card itself would make it a containing block for the fixed overlays that
      render inside it. */
   background-image: var(--paper-grain);
+  /* Unprefixed ONLY. Adding the WebKit prefix next to it with the same value
+     makes the CSS minifier collapse the pair and keep just the prefixed one,
+     and Chromium then computes `backdrop-filter: none` - the frost is dead in
+     every production build while `npm run dev` (unminified) looks fine. That is
+     exactly how the blur and saturation sliders came to look broken in
+     v0.7.1/v0.7.2. WebView2 has supported the unprefixed property since
+     Chromium 76, so the prefix buys nothing and costs the whole effect. */
   backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1px)) saturate(calc(var(--glass-saturate) * 1%));
 }
 
 /* A wallpaper carries its own texture; a second one on top reads as dirt. Only
@@ -516,21 +522,18 @@
 
 .surface-glass--light::before {
   backdrop-filter: blur(calc(var(--glass-blur) * 0.6px)) saturate(calc(var(--glass-saturate) * 1%));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6px)) saturate(calc(var(--glass-saturate) * 1%));
 }
 
 /* Glass switched off: the cards stay, only the translucency goes. */
 .app-root[data-glass="off"] .surface-glass::before {
   background-color: var(--glass-panel);
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 /* Dragging a sash rebuilds the blur layer on every frame; degrade it instead.
    The `sidebar-resizing` class already exists in App.tsx. */
 .app-root[data-glass="on"].sidebar-resizing .surface-glass::before {
-  backdrop-filter: blur(4px) saturate(100%);
-  -webkit-backdrop-filter: blur(4px) saturate(100%);
+  backdrop-filter: blur(4px) saturate(1);
 }
 
 .app-root.sidebar-resizing .shell-box {
@@ -765,13 +768,11 @@
   .surface-glass::before {
     background-color: var(--glass-panel);
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   .app-modal-backdrop,
   .todo-modal-backdrop {
     backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 }
 
@@ -1448,7 +1449,6 @@ body.sticky-body {
      the backdrop sits on the same palette instead of a flat `bg-black/50`. */
   background-color: color-mix(in srgb, var(--color-bg-primary) 12%, rgb(0 0 0 / 46%));
   backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
   animation: todo-fade-in var(--dur-fast) var(--ease-out) both;
 }
 
