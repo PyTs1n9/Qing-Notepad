@@ -154,6 +154,8 @@ export type PluginErrorCode =
   | "E_NO_EDITOR"
   /** P1a: a document range that is not inside the current text. */
   | "E_RANGE_INVALID"
+  /** P1a-1.5: the index advertises a different permission set than the package. */
+  | "E_INDEX_PERMISSION_MISMATCH"
   | string;
 
 export class PluginError extends Error {

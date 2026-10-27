@@ -1,6 +1,6 @@
 # 示例插件
 
-四个用来验收 L1 插件机制的最小插件。**都不入索引**，只能「从文件安装」或「从文件夹安装」。
+五个用来验收 L1 插件机制的最小插件。**都不入索引**，只能「从文件安装」或「从文件夹安装」。
 
 | 目录 | 插件 id | 清单格式 | 用到的权限 |
 | --- | --- | --- | --- |
@@ -8,10 +8,14 @@
 | `qing-note-wordcount/` | `qing.note-wordcount` | `plugin.json` | `notes:read`、`notify` |
 | `qing-isolation-probe/` | `qing.isolation-probe` | `plugin.json` | `notify` |
 | `qing-wordcount-ts/` | `qing.wordcount-ts` | `package.json` | `notes:read`、`notify` |
+| `qing-editor-demo/` | `qing.editor-demo` | `package.json` | `editor:read`、`notify` |
 
 `qing-wordcount-ts` 与 `qing-note-wordcount` 功能完全相同，区别只在清单格式和源语言：
 前者是「`package.json` + TypeScript」，后者是「`plugin.json` + JavaScript」。
 这一对就是格式迁移的回归样本——同一个插件，两种写法，装完表现必须一致。
+
+`qing-editor-demo` 是 `qing.editor` 的最小可跑样例（选区/整篇统计 + 词频 Top 5），
+它的 `README.md` 里写了位置语义（CodeMirror 文档偏移）与文本语义（Markdown 源，不要传 HTML）。
 
 已经构建并打包好，可以直接在「扩展」页 → 「从文件安装」里选：
 
@@ -20,6 +24,7 @@ examples/qing.hello-headless-1.0.0.qnp
 examples/qing.note-wordcount-1.0.0.qnp
 examples/qing.isolation-probe-1.0.0.qnp
 examples/qing.wordcount-ts-1.0.0.qnp
+examples/qing.editor-demo-1.0.0.qnp
 ```
 
 「从文件夹安装」直接选上表的目录即可（`qing-note-wordcount/` 里同时有 `package.json`

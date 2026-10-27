@@ -201,8 +201,13 @@
      * is on the todo page, or looking at a cloud note, for example).
      */
     editor: {
-      getText: function () {
-        return rpc("editor", "getText", []);
+      /**
+       * The document as Markdown source, or just the `[from, to)` slice when a
+       * range is given (so a plugin can count the selection without pulling the
+       * whole note into the worker). An empty range returns `""`.
+       */
+      getText: function (range) {
+        return rpc("editor", "getText", range === undefined || range === null ? [] : [range]);
       },
       /** `{ from, to, anchor, head, text }`; `from <= to` is guaranteed. */
       getSelection: function () {

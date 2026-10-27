@@ -854,6 +854,7 @@ export type TranslationKeys = {
   pluginTooManyFiles: string;
   pluginPermissionUnknown: string;
   pluginEntryNameInvalid: string;
+  pluginIndexPermissionMismatch: string;
   commandPaletteTitle: string;
   commandPalettePlaceholder: string;
   commandPaletteEmpty: string;
@@ -1728,6 +1729,7 @@ const zh: TranslationKeys = {
   pluginTooManyFiles: "包内文件数超过 2000 个上限",
   pluginPermissionUnknown: "清单声明了未知权限：{detail}",
   pluginEntryNameInvalid: "包内有非法的文件名，可能是伪装过的压缩包",
+  pluginIndexPermissionMismatch: "索引里写的权限与安装包不一致，已拒绝安装：{detail}",
   commandPaletteTitle: "命令面板",
   commandPalettePlaceholder: "输入命令名称…",
   commandPaletteEmpty: "没有匹配的命令",
@@ -2605,6 +2607,7 @@ const en: TranslationKeys = {
   pluginTooManyFiles: "The package has more than 2000 files",
   pluginPermissionUnknown: "The manifest declares a permission this app does not know: {detail}",
   pluginEntryNameInvalid: "The package contains an invalid file name; it may be a disguised archive",
+  pluginIndexPermissionMismatch: "The permissions listed in the index do not match the package; the install was refused: {detail}",
   commandPaletteTitle: "Command palette",
   commandPalettePlaceholder: "Type a command…",
   commandPaletteEmpty: "No matching commands",

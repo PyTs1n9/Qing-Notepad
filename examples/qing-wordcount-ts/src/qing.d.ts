@@ -57,8 +57,12 @@ interface QingApi {
    * stale by the time it is used.
    */
   editor: {
-    /** Needs `editor:read`. Rejects with `E_NO_EDITOR` when no note is open. */
-    getText(): Promise<string>;
+    /**
+     * Needs `editor:read`. The whole document as Markdown source, or just
+     * `[from, to)` when a range is given. An empty range returns `""`.
+     * Rejects with `E_NO_EDITOR` when no note is open.
+     */
+    getText(range?: { from: number; to: number }): Promise<string>;
     /** Needs `editor:read`. `from <= to` is guaranteed. */
     getSelection(): Promise<QingSelection>;
     /**

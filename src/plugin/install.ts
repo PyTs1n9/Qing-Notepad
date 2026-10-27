@@ -152,6 +152,42 @@ export async function prepareInstallFromFile(path: string): Promise<PreparedInst
 }
 
 /**
+ * The index lists permissions too, and that is what the market shows before
+ * anyone clicks "install" — the grant prompt, meanwhile, shows the package's own
+ * manifest. When the two disagree one of them is lying to the user, and the one
+ * they read while browsing is the index. So an install that would land a
+ * different grant than the one advertised is refused, before the prompt opens.
+ *
+ * Both sides go through `expandPermissions` first: `notes:write` implies
+ * `notes:read` (same for todo), so a package declaring `["notes:write"]` is not
+ * a mismatch against an index listing `["notes:write"]` just because the
+ * expanded grant also contains the read code.
+ *
+ * An empty list means "the index says nothing about permissions" and skips the
+ * check — entries written before the field existed must keep installing.
+ */
+function assertIndexPermissionsAgree(
+  entry: PluginIndexEntry,
+  manifest: PluginManifest,
+): void {
+  const advertised = entry.permissions ?? [];
+  if (advertised.length === 0) return;
+  const declared = expandPermissions(manifest.permissions ?? []);
+  const shown = expandPermissions(advertised);
+  const declaredSet = new Set(declared);
+  const shownSet = new Set(shown);
+  const unlisted = declared.filter((permission) => !shownSet.has(permission));
+  const undeclared = shown.filter((permission) => !declaredSet.has(permission));
+  if (unlisted.length === 0 && undeclared.length === 0) return;
+  throw new PluginError(
+    "E_INDEX_PERMISSION_MISMATCH",
+    `the index lists [${shown.sort().join(", ")}] but the package declares [${declared
+      .sort()
+      .join(", ")}]`,
+  );
+}
+
+/**
  * Install from an index entry. `sha256` is mandatory here — it is the only
  * integrity signal between "the index says X" and "the bytes are X".
  */
@@ -168,13 +204,20 @@ export async function prepareInstallFromIndex(entry: PluginIndexEntry): Promise<
     },
   });
   const prepared = await finalize(result, "index", entry);
-  if (prepared.manifest.id !== entry.id) {
+  try {
+    if (prepared.manifest.id !== entry.id) {
+      throw new PluginError("E_MANIFEST_MISMATCH", "the package id does not match the index");
+    }
+    if (prepared.manifest.version !== entry.version) {
+      throw new PluginError(
+        "E_MANIFEST_MISMATCH",
+        "the package version does not match the index",
+      );
+    }
+    assertIndexPermissionsAgree(entry, prepared.manifest);
+  } catch (error) {
     await discardStaging(prepared.stagingId);
-    throw new PluginError("E_MANIFEST_MISMATCH", "the package id does not match the index");
-  }
-  if (prepared.manifest.version !== entry.version) {
-    await discardStaging(prepared.stagingId);
-    throw new PluginError("E_MANIFEST_MISMATCH", "the package version does not match the index");
+    throw toPluginError(error);
   }
   return prepared;
 }
@@ -273,6 +316,8 @@ export function describeInstallError(error: unknown): string {
       return tWithParams(current, "pluginMissingMain", { detail });
     case "E_PERMISSION_UNKNOWN":
       return tWithParams(current, "pluginPermissionUnknown", { detail });
+    case "E_INDEX_PERMISSION_MISMATCH":
+      return tWithParams(current, "pluginIndexPermissionMismatch", { detail });
     case "E_ZIP_SLIP":
       return t(current, "pluginEntryNameInvalid");
     default:

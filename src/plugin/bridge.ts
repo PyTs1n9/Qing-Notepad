@@ -293,7 +293,16 @@ export async function dispatchPluginCall(
 
       case "editor.getText": {
         const view = requireEditor();
-        return view.state.doc.toString();
+        const doc = view.state.doc;
+        // No argument: the whole document. With a range: the same slice a
+        // `replace` would touch, so a plugin can count the selection or a
+        // heading without copying the whole note into the worker. An empty range
+        // is a valid answer (""), not an error — it is what "nothing is
+        // selected" means.
+        const range = args[0];
+        if (range === undefined || range === null) return doc.toString();
+        const { from, to } = asDocumentRange(range, doc.length);
+        return doc.sliceString(from, to);
       }
 
       case "editor.getSelection": {
