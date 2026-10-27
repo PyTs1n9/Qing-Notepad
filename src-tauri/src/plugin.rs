@@ -45,6 +45,16 @@ const INDEX_URLS: [(&str, &str); 2] = [
     ),
 ];
 const USER_AGENT: &str = "QingNotepad-PluginManager/1";
+/// The newest index `schema` this build understands.
+///
+/// The field has been in the document since the first index and was read by
+/// nobody, which is the same as not having it: the day the index moves to
+/// schema 2 (new required field, different entry shape) every build shipped
+/// before that day would mis-read it silently — `#[serde(default)]` fields would
+/// come through empty and the market would look broken rather than old. A newer
+/// schema is therefore an error, which lands in the existing "degrade to
+/// cached/missing" path and says so in the log.
+const SUPPORTED_INDEX_SCHEMA: u32 = 1;
 const STAGING_DIR: &str = ".staging";
 const INSTALLED_FILE: &str = "installed.json";
 const INDEX_CACHE_FILE: &str = "index-cache.json";
@@ -1340,8 +1350,56 @@ pub struct IndexDocument {
     pub schema: u32,
     #[serde(default)]
     pub updated_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_index_entries")]
     pub plugins: Vec<IndexEntry>,
+}
+
+/// Deserialize `plugins` one entry at a time.
+///
+/// A single malformed entry — `permissions` written as a string, `version` as a
+/// number, an entry with no `id` — used to fail the whole document. Both mirrors
+/// then "failed", the market fell back to "no plugins available", and every
+/// author on the index disappeared because one of them had a typo. A network
+/// failure is allowed to degrade the market; a format error must not take
+/// everyone else down with it, so a bad entry is skipped and logged and the rest
+/// still list.
+fn de_index_entries<'de, D>(deserializer: D) -> Result<Vec<IndexEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Vec::<Value>::deserialize(deserializer)?;
+    let mut entries = Vec::with_capacity(raw.len());
+    for (index, value) in raw.into_iter().enumerate() {
+        // Name the offender by id when it has one, by position otherwise: the
+        // log line is what an author will be pointed at.
+        let label = value
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("#{index}"));
+        match serde_json::from_value::<IndexEntry>(value) {
+            Ok(entry) => entries.push(entry),
+            Err(error) => eprintln!("[plugin-index] skipping entry {label}: {error}"),
+        }
+    }
+    Ok(entries)
+}
+
+/// Reject an index written for a newer client.
+///
+/// Called per source so the next mirror is still tried, and again on the cached
+/// document so a cache written by a newer build is ignored instead of displayed
+/// half-understood.
+fn ensure_supported_index_schema(document: &IndexDocument) -> Result<(), String> {
+    if document.schema > SUPPORTED_INDEX_SCHEMA {
+        let message = format!(
+            "E_INDEX_SCHEMA: index schema {} is newer than the supported {SUPPORTED_INDEX_SCHEMA}",
+            document.schema
+        );
+        eprintln!("[plugin-index] {message}");
+        return Err(message);
+    }
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -1366,7 +1424,14 @@ struct IndexCache {
 
 fn read_index_cache(path: &Path) -> Option<IndexCache> {
     let raw = fs::read_to_string(path).ok()?;
-    serde_json::from_str(&raw).ok()
+    let cache: IndexCache = serde_json::from_str(&raw).ok()?;
+    // A cache written by a newer build is ignored rather than half-understood:
+    // the fetch below will either bring a schema this build can read or fail
+    // into the documented "missing" state.
+    if ensure_supported_index_schema(&cache.document).is_err() {
+        return None;
+    }
+    Some(cache)
 }
 
 async fn fetch_index_document() -> Result<(IndexDocument, String), String> {
@@ -1387,7 +1452,14 @@ async fn fetch_index_document() -> Result<(IndexDocument, String), String> {
                 // tauri-plugin-http re-exports, so parse the body by hand.
                 match response.text().await {
                     Ok(body) => match serde_json::from_str::<IndexDocument>(&body) {
-                        Ok(document) => return Ok((document, source.to_string())),
+                        // Entry-level failures are already skipped and logged by
+                        // `de_index_entries`; what is left is "is this document
+                        // for a build like this one", which is checked per source
+                        // so the next mirror is still tried.
+                        Ok(document) => match ensure_supported_index_schema(&document) {
+                            Ok(()) => return Ok((document, source.to_string())),
+                            Err(error) => last_error = format!("{source}: {error}"),
+                        },
                         Err(error) => last_error = format!("{source}: {error}"),
                     },
                     Err(error) => last_error = format!("{source}: {error}"),
@@ -2290,5 +2362,97 @@ mod tests {
             "the extractor wrote a visible empty file for a rejected entry"
         );
         assert!(!tree_contains(&target, b"ADS-CONTENT"), "the payload landed");
+    }
+
+    // -----------------------------------------------------------------------
+    // QA / P1a-1.5: the index client, which is untrusted input from two mirrors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn one_malformed_index_entry_does_not_take_the_market_down() {
+        // The shape the index repo actually produced: one entry with
+        // `permissions` written as a string. Before this, the whole document
+        // failed to deserialize, both mirrors "failed", and the market showed
+        // "no plugins available" — every author disappeared because of one
+        // typo.
+        let body = r#"{
+          "schema": 1,
+          "updatedAt": "2026-10-27",
+          "plugins": [
+            { "id": "qing.a", "name": "A", "version": "1.0.0",
+              "download": "https://example.invalid/a.qnp", "permissions": ["notify"] },
+            { "id": "qing.broken", "name": "Broken", "version": "1.0.0",
+              "download": "https://example.invalid/b.qnp", "permissions": "notify" },
+            { "id": "qing.c", "name": "C", "version": "2.0.0",
+              "download": "https://example.invalid/c.qnp", "permissions": [] }
+          ]
+        }"#;
+        let document: IndexDocument =
+            serde_json::from_str(body).expect("a bad entry must not fail the document");
+        let ids: Vec<&str> = document.plugins.iter().map(|entry| entry.id.as_str()).collect();
+        assert_eq!(ids, vec!["qing.a", "qing.c"], "the bad entry is skipped, the rest stay");
+        assert_eq!(document.plugins[1].version, "2.0.0");
+        assert_eq!(document.plugins[0].permissions, vec!["notify"]);
+
+        // An entry with no id is skipped under a positional name, which is what
+        // the log line shows.
+        let body = r#"{
+          "schema": 1,
+          "plugins": [
+            { "name": "No Id", "version": "1.0.0" },
+            { "id": "qing.ok", "name": "Ok", "version": "1.0.0" }
+          ]
+        }"#;
+        let document: IndexDocument = serde_json::from_str(body).expect("parses");
+        assert_eq!(document.plugins.len(), 1);
+        assert_eq!(document.plugins[0].id, "qing.ok");
+    }
+
+    #[test]
+    fn an_index_written_for_a_newer_schema_is_refused() {
+        // `schema` has been in the document since day one and was read by
+        // nobody. A schema 2 entry shape (new required field) would otherwise be
+        // half-understood by every build shipped before it: empty defaults where
+        // the author filled something in, a market that looks broken instead of
+        // old.
+        let parse = |schema: u32| -> IndexDocument {
+            serde_json::from_str(&format!(
+                r#"{{"schema": {schema}, "plugins": [
+                     {{"id": "qing.a", "name": "A", "version": "1.0.0"}}
+                   ]}}"#
+            ))
+            .expect("the document itself parses")
+        };
+
+        for schema in [0, 1] {
+            let document = parse(schema);
+            assert!(
+                ensure_supported_index_schema(&document).is_ok(),
+                "schema {schema} is readable"
+            );
+        }
+
+        let document = parse(2);
+        let error = ensure_supported_index_schema(&document).expect_err("schema 2 is not");
+        assert!(error.starts_with("E_INDEX_SCHEMA"), "{error}");
+        assert!(error.contains('2'), "the message names the schema it saw: {error}");
+
+        // The cached copy is held to the same rule: a cache written by a newer
+        // build is ignored rather than displayed half-understood.
+        let dir = scratch_dir();
+        let path = dir.join("index-cache.json");
+        write_file(
+            &path,
+            br#"{"fetchedAt":"2026-10-27","fetchedAtEpoch":0,"source":"cache",
+                 "document":{"schema":2,"plugins":[{"id":"qing.a","name":"A","version":"1.0.0"}]}}"#,
+        );
+        assert!(read_index_cache(&path).is_none(), "a newer-schema cache is ignored");
+        write_file(
+            &path,
+            br#"{"fetchedAt":"2026-10-27","fetchedAtEpoch":0,"source":"cache",
+                 "document":{"schema":1,"plugins":[{"id":"qing.a","name":"A","version":"1.0.0"}]}}"#,
+        );
+        let cache = read_index_cache(&path).expect("a schema-1 cache is still usable");
+        assert_eq!(cache.document.plugins.len(), 1);
     }
 }
