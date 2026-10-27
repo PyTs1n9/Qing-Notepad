@@ -765,6 +765,100 @@ export type TranslationKeys = {
   importFailed: string;
   loading: string;
   authSignedOut: string;
+
+  // --- Plugins (L1) ---
+  pluginsTitle: string;
+  pluginsSearchPlaceholder: string;
+  pluginsInstalledSection: string;
+  pluginsAvailableSection: string;
+  pluginsEmptyInstalled: string;
+  pluginsEmptyAvailable: string;
+  pluginsOfflineHint: string;
+  pluginsIndexLoading: string;
+  pluginsInstallFromFile: string;
+  pluginsRefreshIndex: string;
+  pluginsOnline: string;
+  pluginsOffline: string;
+  pluginsSelectHint: string;
+  pluginsSelectHintBody: string;
+  pluginsSidebarFooterHint: string;
+  pluginVersion: string;
+  pluginAuthor: string;
+  pluginRepository: string;
+  pluginLicense: string;
+  pluginPermissions: string;
+  pluginPermissionsNone: string;
+  pluginCommands: string;
+  pluginNoCommands: string;
+  pluginInstall: string;
+  pluginUpdate: string;
+  pluginUninstall: string;
+  pluginUninstallTitle: string;
+  pluginUninstallBody: string;
+  pluginUninstallKeep: string;
+  pluginUninstallDrop: string;
+  pluginRollback: string;
+  pluginEnable: string;
+  pluginDisable: string;
+  pluginEnabled: string;
+  pluginDisabled: string;
+  pluginRunning: string;
+  pluginNotRunning: string;
+  pluginSourceIndex: string;
+  pluginSource: string;
+  pluginInfo: string;
+  pluginSourceFile: string;
+  pluginViewLog: string;
+  pluginLogEmpty: string;
+  pluginLogTitle: string;
+  pluginUpdateAvailable: string;
+  pluginPermissionRevoke: string;
+  pluginPermissionNew: string;
+  pluginLockedNote: string;
+  pluginPermPromptInstallTitle: string;
+  pluginPermPromptUpdateTitle: string;
+  pluginPermPromptBody: string;
+  pluginPermPromptAddedBody: string;
+  pluginPermPromptApprove: string;
+  pluginPermPromptUpdate: string;
+  pluginPermPromptCancel: string;
+  pluginPermStorage: string;
+  pluginPermNotesRead: string;
+  pluginPermNotesWrite: string;
+  pluginPermTodoRead: string;
+  pluginPermTodoWrite: string;
+  pluginPermClipboardRead: string;
+  pluginPermClipboardWrite: string;
+  pluginPermNotify: string;
+  pluginCrashedDisabled: string;
+  pluginPermissionDenied: string;
+  pluginInstalled: string;
+  pluginUpdated: string;
+  pluginUninstalled: string;
+  pluginRolledBack: string;
+  pluginCommandFailed: string;
+  pluginInstallFailed: string;
+  pluginHostIncompatible: string;
+  pluginApiIncompatible: string;
+  pluginCommandConflict: string;
+  pluginNativeModule: string;
+  pluginPackageTooLarge: string;
+  commandPaletteTitle: string;
+  commandPalettePlaceholder: string;
+  commandPaletteEmpty: string;
+  commandPaletteHint: string;
+  commandCategoryView: string;
+  commandCategoryNote: string;
+  commandCategoryApp: string;
+  commandCategoryPlugin: string;
+  commandNewNote: string;
+  commandOpenSettings: string;
+  commandToggleAi: string;
+  settingsPlugins: string;
+  pluginsSettingsOpen: string;
+  pluginsSettingsOpenHint: string;
+  pluginsDisableAll: string;
+  pluginsDisableAllHint: string;
 };
 
 const zh: TranslationKeys = {
@@ -1536,6 +1630,98 @@ const zh: TranslationKeys = {
   importFailed: "导入失败：{message}",
   loading: "正在加载…",
   authSignedOut: "未登录",
+  pluginsTitle: "扩展",
+  pluginsSearchPlaceholder: "搜索扩展",
+  pluginsInstalledSection: "已安装",
+  pluginsAvailableSection: "可安装",
+  pluginsEmptyInstalled: "还没有安装扩展",
+  pluginsEmptyAvailable: "暂无可用插件",
+  pluginsOfflineHint: "离线，数据可能是旧的",
+  pluginsIndexLoading: "正在获取扩展索引…",
+  pluginsInstallFromFile: "从文件安装",
+  pluginsRefreshIndex: "刷新索引",
+  pluginsOnline: "在线",
+  pluginsOffline: "离线",
+  pluginsSelectHint: "未选择扩展",
+  pluginsSelectHintBody: "在左侧选择一个扩展查看详情。扩展只能往命令面板里加命令，不会改动界面。",
+  pluginsSidebarFooterHint: "扩展代码在独立线程中运行，不能联网。",
+  pluginVersion: "版本",
+  pluginAuthor: "作者",
+  pluginRepository: "仓库",
+  pluginLicense: "许可",
+  pluginPermissions: "权限",
+  pluginPermissionsNone: "不需要任何权限",
+  pluginCommands: "命令",
+  pluginNoCommands: "没有提供命令",
+  pluginInstall: "安装",
+  pluginUpdate: "更新",
+  pluginUninstall: "卸载",
+  pluginUninstallTitle: "卸载 {name}？",
+  pluginUninstallBody: "扩展文件会被删除。保留设置数据后，重新安装仍可沿用。",
+  pluginUninstallKeep: "保留数据并卸载",
+  pluginUninstallDrop: "全部删除",
+  pluginRollback: "回滚",
+  pluginEnable: "启用",
+  pluginDisable: "停用",
+  pluginEnabled: "已启用",
+  pluginDisabled: "已停用",
+  pluginRunning: "运行中",
+  pluginNotRunning: "未运行",
+  pluginSourceIndex: "来自扩展索引",
+  pluginSource: "来源",
+  pluginInfo: "信息",
+  pluginSourceFile: "本地文件安装",
+  pluginViewLog: "错误日志",
+  pluginLogEmpty: "没有错误记录",
+  pluginLogTitle: "错误日志（最近 100 条）",
+  pluginUpdateAvailable: "有可用更新",
+  pluginPermissionRevoke: "撤销",
+  pluginPermissionNew: "新增",
+  pluginLockedNote: "撤销后，扩展再调用这项能力会被直接拒绝。",
+  pluginPermPromptInstallTitle: "安装 {name}？",
+  pluginPermPromptUpdateTitle: "更新 {name}？",
+  pluginPermPromptBody: "这个扩展将获得以下权限：",
+  pluginPermPromptAddedBody: "新版本需要这些新增权限：",
+  pluginPermPromptApprove: "同意并安装",
+  pluginPermPromptUpdate: "同意并更新",
+  pluginPermPromptCancel: "取消",
+  pluginPermStorage: "保存该扩展的设置",
+  pluginPermNotesRead: "读取你的笔记",
+  pluginPermNotesWrite: "修改你的笔记",
+  pluginPermTodoRead: "读取你的待办",
+  pluginPermTodoWrite: "修改你的待办",
+  pluginPermClipboardRead: "读取剪贴板",
+  pluginPermClipboardWrite: "写入剪贴板",
+  pluginPermNotify: "显示提示消息",
+  pluginCrashedDisabled: "{name} 连续崩溃，已自动停用",
+  pluginPermissionDenied: "扩展缺少权限：{permission}",
+  pluginInstalled: "已安装 {name}",
+  pluginUpdated: "已更新 {name}",
+  pluginUninstalled: "已卸载 {name}",
+  pluginRolledBack: "已回滚到 {version}",
+  pluginCommandFailed: "命令执行失败：{code}",
+  pluginInstallFailed: "安装失败：{message}",
+  pluginHostIncompatible: "该扩展不支持当前应用版本",
+  pluginApiIncompatible: "该扩展的接口版本不受支持",
+  pluginCommandConflict: "命令 ID 已被占用：{ids}",
+  pluginNativeModule: "包内有原生模块，不能安装",
+  pluginPackageTooLarge: "安装包超过 20 MB 上限",
+  commandPaletteTitle: "命令面板",
+  commandPalettePlaceholder: "输入命令名称…",
+  commandPaletteEmpty: "没有匹配的命令",
+  commandPaletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+  commandCategoryView: "视图",
+  commandCategoryNote: "笔记",
+  commandCategoryApp: "应用",
+  commandCategoryPlugin: "扩展",
+  commandNewNote: "新建笔记",
+  commandOpenSettings: "打开设置",
+  commandToggleAi: "切换 AI 助手",
+  settingsPlugins: "扩展",
+  pluginsSettingsOpen: "打开扩展页",
+  pluginsSettingsOpenHint: "安装、启用、卸载和权限管理都在扩展页完成。",
+  pluginsDisableAll: "禁用所有插件",
+  pluginsDisableAllHint: "临时停用全部扩展，已安装的文件保留。",
 };
 
 const en: TranslationKeys = {
@@ -2310,6 +2496,98 @@ const en: TranslationKeys = {
   importFailed: "Import failed: {message}",
   loading: "Loading…",
   authSignedOut: "Not signed in",
+  pluginsTitle: "Extensions",
+  pluginsSearchPlaceholder: "Search extensions",
+  pluginsInstalledSection: "Installed",
+  pluginsAvailableSection: "Available",
+  pluginsEmptyInstalled: "No extensions installed yet",
+  pluginsEmptyAvailable: "No extensions available",
+  pluginsOfflineHint: "Offline — this list may be out of date",
+  pluginsIndexLoading: "Fetching the extension index…",
+  pluginsInstallFromFile: "Install from file",
+  pluginsRefreshIndex: "Refresh index",
+  pluginsOnline: "Online",
+  pluginsOffline: "Offline",
+  pluginsSelectHint: "No extension selected",
+  pluginsSelectHintBody: "Pick an extension on the left to see its details. Extensions can only add commands; they cannot change the interface.",
+  pluginsSidebarFooterHint: "Extension code runs in a separate worker with no network access.",
+  pluginVersion: "Version",
+  pluginAuthor: "Author",
+  pluginRepository: "Repository",
+  pluginLicense: "License",
+  pluginPermissions: "Permissions",
+  pluginPermissionsNone: "No permissions required",
+  pluginCommands: "Commands",
+  pluginNoCommands: "Provides no commands",
+  pluginInstall: "Install",
+  pluginUpdate: "Update",
+  pluginUninstall: "Uninstall",
+  pluginUninstallTitle: "Uninstall {name}?",
+  pluginUninstallBody: "The extension files will be deleted. Keeping its settings means a reinstall can pick up where it left off.",
+  pluginUninstallKeep: "Keep settings and uninstall",
+  pluginUninstallDrop: "Delete everything",
+  pluginRollback: "Roll back",
+  pluginEnable: "Enable",
+  pluginDisable: "Disable",
+  pluginEnabled: "Enabled",
+  pluginDisabled: "Disabled",
+  pluginRunning: "Running",
+  pluginNotRunning: "Not running",
+  pluginSourceIndex: "From the extension index",
+  pluginSource: "Source",
+  pluginInfo: "Details",
+  pluginSourceFile: "Installed from a file",
+  pluginViewLog: "Error log",
+  pluginLogEmpty: "No errors logged",
+  pluginLogTitle: "Error log (last 100 entries)",
+  pluginUpdateAvailable: "Update available",
+  pluginPermissionRevoke: "Revoke",
+  pluginPermissionNew: "New",
+  pluginLockedNote: "Once revoked, the extension's calls to that capability are refused.",
+  pluginPermPromptInstallTitle: "Install {name}?",
+  pluginPermPromptUpdateTitle: "Update {name}?",
+  pluginPermPromptBody: "This extension will be granted:",
+  pluginPermPromptAddedBody: "The new version asks for these additional permissions:",
+  pluginPermPromptApprove: "Allow and install",
+  pluginPermPromptUpdate: "Allow and update",
+  pluginPermPromptCancel: "Cancel",
+  pluginPermStorage: "Save this extension's settings",
+  pluginPermNotesRead: "Read your notes",
+  pluginPermNotesWrite: "Modify your notes",
+  pluginPermTodoRead: "Read your todos",
+  pluginPermTodoWrite: "Modify your todos",
+  pluginPermClipboardRead: "Read the clipboard",
+  pluginPermClipboardWrite: "Write to the clipboard",
+  pluginPermNotify: "Show notifications",
+  pluginCrashedDisabled: "{name} crashed repeatedly and was disabled",
+  pluginPermissionDenied: "The extension lacks permission: {permission}",
+  pluginInstalled: "Installed {name}",
+  pluginUpdated: "Updated {name}",
+  pluginUninstalled: "Uninstalled {name}",
+  pluginRolledBack: "Rolled back to {version}",
+  pluginCommandFailed: "Command failed: {code}",
+  pluginInstallFailed: "Install failed: {message}",
+  pluginHostIncompatible: "This extension does not support the current app version",
+  pluginApiIncompatible: "This extension's API version is not supported",
+  pluginCommandConflict: "Command IDs already taken: {ids}",
+  pluginNativeModule: "The package contains a native module and cannot be installed",
+  pluginPackageTooLarge: "The package exceeds the 20 MB limit",
+  commandPaletteTitle: "Command palette",
+  commandPalettePlaceholder: "Type a command…",
+  commandPaletteEmpty: "No matching commands",
+  commandPaletteHint: "↑↓ to move · Enter to run · Esc to close",
+  commandCategoryView: "View",
+  commandCategoryNote: "Note",
+  commandCategoryApp: "App",
+  commandCategoryPlugin: "Extension",
+  commandNewNote: "New note",
+  commandOpenSettings: "Open settings",
+  commandToggleAi: "Toggle AI assistant",
+  settingsPlugins: "Extensions",
+  pluginsSettingsOpen: "Open the extensions page",
+  pluginsSettingsOpenHint: "Installing, enabling, uninstalling and permissions all live on the extensions page.",
+  pluginsDisableAll: "Disable all plugins",
+  pluginsDisableAllHint: "Temporarily stops every extension. Installed files are kept.",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

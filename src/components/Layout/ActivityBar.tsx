@@ -1,9 +1,10 @@
 import React from "react";
-import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Users } from "lucide-react";
+import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Puzzle, Settings, Sparkles, Users } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { ViewType } from "@/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
+import { countUpdates, usePluginStore } from "@/plugin/store";
 import { t } from "@/utils/i18n";
 
 interface ActivityBarProps {
@@ -27,16 +28,26 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const setAlwaysOnTop = useSettingsStore((s) => s.setAlwaysOnTop);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const setAiSidebarOpen = useAiStore((s) => s.setSidebarOpen);
+  const updateCount = usePluginStore((s) => countUpdates(s.installed, s.index));
   // `motion` already ships with the app; this only asks it to stop animating,
   // it does not swap the indicator for a static one - the capsule must still be
   // painted on the first frame.
   const reduceMotion = useReducedMotion();
 
-  const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
+  const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean; badge?: number }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
     { view: "todo", label: t(lang, "todo"), icon: <CheckSquare size={22} strokeWidth={1.7} /> },
     { view: "workspace", label: t(lang, "workspace"), icon: <Users size={22} strokeWidth={1.7} /> },
     { view: "canvas", label: t(lang, "canvas"), icon: <Images size={22} strokeWidth={1.7} /> },
+    // Fifth page, not a bottom toggle: the plugin page is a destination like the
+    // other four, and it has to join the sliding capsule (one `layoutId`, never
+    // a second element — see the AI and pin buttons below).
+    {
+      view: "plugins",
+      label: t(lang, "pluginsTitle"),
+      icon: <Puzzle size={22} strokeWidth={1.7} />,
+      badge: updateCount,
+    },
   ];
 
   // One element shared through `layoutId`: it travels between items instead of
@@ -57,7 +68,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
     // `overflow: hidden` rounds the corners of the first and last buttons.
     <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center text-text-primary transition-colors">
       <nav className="flex w-full flex-col items-center gap-1" aria-label="Activity bar">
-        {items.map(({ view, label, icon, disabled }) => {
+        {items.map(({ view, label, icon, disabled, badge }) => {
           const active = !disabled && currentView === view;
           return (
             <button
@@ -78,6 +89,16 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
             >
               {active && indicator("activity-indicator")}
               <span className="relative inline-flex">{icon}</span>
+              {typeof badge === "number" && badge > 0 && (
+                // Counts above nine stop being information and start being a
+                // badge-shaped smudge at 44px wide.
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-0.5 -top-0.5 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-on-accent"
+                >
+                  {badge > 9 ? "9+" : badge}
+                </span>
+              )}
             </button>
           );
         })}

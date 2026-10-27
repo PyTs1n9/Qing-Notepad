@@ -30,9 +30,14 @@ tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2.6.2"
 tauri-plugin-http = "2.8.3"
+# Plugin packages: `zip` reads `.qnp` archives, `sha2` verifies index hashes.
+# `zip` keeps only deflate: store + deflate is what every packer emits, and the
+# other codecs would just be dead weight in the installer.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Memory"] }
 # Same versions wry 0.57 resolves internally: no duplicate crates, no binary growth.
 # Re-check with `cargo tree -i webview2-com` after any tauri/wry bump.
 webview2-com = "0.39"

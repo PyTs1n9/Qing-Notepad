@@ -17,6 +17,7 @@ import {
   Mail,
   Palette,
   Pencil,
+  Puzzle,
   RotateCcw,
   Save,
   Settings,
@@ -78,6 +79,8 @@ interface SettingsModalProps {
   onOpenAuth: () => void;
   /** Section to land on when the modal opens; defaults to the first one. */
   initialSection?: SettingsSection;
+  /** Jumps to the extensions page, which owns the real management UI. */
+  onOpenPlugins?: () => void;
   /**
    * Whether the shell is currently rendering a wallpaper. Owned by App.tsx
    * because that is where the asset URL is resolved - see the comment at the
@@ -86,7 +89,7 @@ interface SettingsModalProps {
   hasWallpaper?: boolean;
 }
 
-export type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal" | "storage";
+export type SettingsSection = "basic" | "theme" | "language" | "ai" | "personal" | "storage" | "plugins";
 type DisplayHistoryItem = StoredImageHistoryItem & { url: string };
 
 function getUploadImageExtension(file: File): string | null {
@@ -138,6 +141,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onOpenAuth,
   initialSection,
+  onOpenPlugins,
   hasWallpaper: hasWallpaperProp = false,
 }) => {
   const {
@@ -175,6 +179,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setGlassBlurBg,
     setGlassTintBg,
     setGlassSaturateBg,
+    pluginsDisabled,
+    setPluginsDisabled,
   } = useSettingsStore();
   const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
   const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
@@ -547,6 +553,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     { id: "language" as const, label: t(lang, "language"), icon: Globe },
     { id: "storage" as const, label: t(lang, "settingsStorage"), icon: HardDrive },
     { id: "ai" as const, label: t(lang, "aiSettings"), icon: Sparkles },
+    { id: "plugins" as const, label: t(lang, "settingsPlugins"), icon: Puzzle },
     { id: "personal" as const, label: t(lang, "personal"), icon: UserRound },
   ];
 
@@ -1326,6 +1333,65 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSection === "storage" && (
                 <PanelErrorBoundary lang={lang}>
                   <StorageSection lang={lang} />
+                </PanelErrorBoundary>
+              )}
+
+              {activeSection === "plugins" && (
+                <PanelErrorBoundary lang={lang}>
+                  <div className="space-y-4">
+                    <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+                          <Puzzle size={16} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-sm font-medium text-text-primary">
+                            {t(lang, "settingsPlugins")}
+                          </h3>
+                          <p className="mt-1 text-xs leading-relaxed text-text-muted">
+                            {t(lang, "pluginsSettingsOpenHint")}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenPlugins?.()}
+                        className="mt-3 w-full rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-opacity hover:opacity-90 active:scale-[0.99]"
+                      >
+                        {t(lang, "pluginsSettingsOpen")}
+                      </button>
+                    </section>
+
+                    <section className="rounded-xl border border-border bg-bg-secondary/40 p-4">
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-bg-primary px-3 py-2.5">
+                        <div className="min-w-0">
+                          <span className="block truncate text-xs font-medium text-text-primary">
+                            {t(lang, "pluginsDisableAll")}
+                          </span>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-text-muted">
+                            {t(lang, "pluginsDisableAllHint")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={pluginsDisabled}
+                          aria-label={t(lang, "pluginsDisableAll")}
+                          onClick={() => setPluginsDisabled(!pluginsDisabled)}
+                          className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors cursor-pointer ${
+                            pluginsDisabled ? "bg-accent" : "bg-bg-active"
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                              pluginsDisabled ? "left-[1.125rem]" : "left-0.5"
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </section>
+                  </div>
                 </PanelErrorBoundary>
               )}
 

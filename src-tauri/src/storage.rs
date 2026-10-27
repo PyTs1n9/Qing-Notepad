@@ -297,6 +297,26 @@ pub fn register_startup_roots(app: &AppHandle) {
     }
 }
 
+/// The directory the app currently reads and writes.
+///
+/// Shared with `plugin.rs`, which stores packages under `<root>/plugins`. It
+/// resolves the same way the frontend does: a pointer file wins, otherwise the
+/// default location. A pointer at a directory that is no longer there is an
+/// error rather than a silent fallback — recreating an empty library is what
+/// makes a moved library look deleted.
+pub fn data_root(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(custom) = read_pointer(app) {
+        if custom.is_dir() {
+            return Ok(custom);
+        }
+        return Err(format!(
+            "E_DATA_DIRECTORY_UNAVAILABLE: {}",
+            custom.to_string_lossy()
+        ));
+    }
+    default_data_root(app).ok_or_else(|| "E_DATA_DIRECTORY_UNAVAILABLE: no data directory".to_string())
+}
+
 /// Open a folder inside the data directory in Explorer.
 ///
 /// The opener permission list can only name build-time paths, and the data

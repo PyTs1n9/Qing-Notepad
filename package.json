@@ -49,6 +49,7 @@
     "motion": "^14.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "semver": "^6.3.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
     "y-codemirror.next": "^0.3.5",

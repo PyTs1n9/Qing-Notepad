@@ -2256,3 +2256,43 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
     animation: none;
   }
 }
+
+/* Plugin notices: one short slide-in, no exit animation. A toast is read, not
+   watched — animating it away would draw the eye to the corner it leaves. */
+.app-toast {
+  animation: app-toast-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes app-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Command palette: the list follows the input, so only the sheet animates. */
+.command-palette {
+  animation: command-palette-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes command-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-toast,
+  .command-palette {
+    animation: none;
+  }
+}

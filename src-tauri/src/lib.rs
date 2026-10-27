@@ -6,8 +6,11 @@ use tauri::{
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
+mod clipboard;
 mod credentials;
 mod pdf_export;
+mod plugin;
+mod plugin_manifest;
 mod storage;
 mod window_bg;
 
@@ -107,6 +110,23 @@ pub fn run() {
             storage::storage_migrate,
             storage::open_data_path,
             window_bg::set_window_background,
+            clipboard::clipboard_read,
+            clipboard::clipboard_write,
+            plugin::plugin_list_installed,
+            plugin::plugin_install,
+            plugin::plugin_uninstall,
+            plugin::plugin_set_enabled,
+            plugin::plugin_set_permissions,
+            plugin::plugin_rollback,
+            plugin::plugin_read_manifest,
+            plugin::plugin_discard_staging,
+            plugin::plugin_storage_get,
+            plugin::plugin_storage_set,
+            plugin::plugin_storage_delete,
+            plugin::plugin_storage_keys,
+            plugin::plugin_fetch_index,
+            plugin::plugin_read_log,
+            plugin::plugin_append_log,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -118,6 +138,10 @@ pub fn run() {
             // `fs:scope` is deliberately narrow, so the directory the app will
             // read from has to be allowed explicitly before the first frame.
             storage::register_startup_roots(app.handle());
+
+            // A crash during an install must not leave a staging tree behind;
+            // it is scratch space, so clearing it unconditionally is safe.
+            plugin::clean_staging_on_startup(app.handle());
 
             // Create tray menu in the fallback language; the frontend replaces
             // it as soon as it knows the persisted `lang`.

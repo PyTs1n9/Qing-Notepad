@@ -23,6 +23,13 @@ import TodoSidebar from "@/components/Todo/TodoSidebar";
 import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
 import AiSidebar from "@/components/AI/AiSidebar";
+import PluginSidebar from "@/components/Plugin/PluginSidebar";
+import PluginDetail from "@/components/Plugin/PluginDetail";
+import CommandPalette from "@/components/Layout/CommandPalette";
+import ToastHost from "@/components/ToastHost";
+import PanelErrorBoundary from "@/components/PanelErrorBoundary";
+import { usePluginStore } from "@/plugin/store";
+import { activateStartupPlugins, deactivateAllPlugins } from "@/plugin/headless";
 import { useAiStore } from "@/stores/aiStore";
 import SettingsModal, { type SettingsSection } from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
@@ -235,6 +242,7 @@ export default function App() {
   const trashRetentionDays = useSettingsStore((s) => s.trashRetentionDays);
   const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
+  const pluginsDisabled = useSettingsStore((s) => s.pluginsDisabled);
   const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
@@ -365,6 +373,7 @@ export default function App() {
           glassBlurBg?: number;
           glassTintBg?: number;
           glassSaturateBg?: number;
+          pluginsDisabled?: boolean;
         });
 
         // Drop recycle-bin entries that outlived the configured retention window.
@@ -429,8 +438,30 @@ export default function App() {
     };
   }, [initialized]);
 
-  // Keep the tab strip in step with the note list: a deleted note drops its tab,
-  // and any note opened through a non-tab entry point (new note button, tray,
+  // Plugin runtime. Reading the install list is cheap; starting a worker is
+  // not, so only plugins that declared `onStartup` are activated here. Five
+  // installed plugins without that event cost zero at launch.
+  useEffect(() => {
+    if (!initialized) return;
+    let cancelled = false;
+    void usePluginStore
+      .getState()
+      .hydrate()
+      .then(() => {
+        if (!cancelled) void activateStartupPlugins(usePluginStore.getState().installed);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized]);
+
+  // The settings kill switch has to stop live workers, not just refuse new
+  // calls: a disabled plugin must not keep a channel into the host.
+  useEffect(() => {
+    if (pluginsDisabled) deactivateAllPlugins();
+  }, [pluginsDisabled]);
+
+  // Keep the tab strip in step with the note list: a deleted note drops its tab,  // and any note opened through a non-tab entry point (new note button, tray,
   // global shortcut) joins the strip instead of opening invisibly.
   useEffect(() => {
     if (!tabsHydrated) return;
@@ -547,6 +578,7 @@ export default function App() {
         glassBlurBg,
         glassTintBg,
         glassSaturateBg,
+        pluginsDisabled,
       });
     }
   }, [
@@ -571,6 +603,7 @@ export default function App() {
     glassBlurBg,
     glassTintBg,
     glassSaturateBg,
+    pluginsDisabled,
     initialized,
   ]);
 
@@ -1215,6 +1248,10 @@ export default function App() {
                   <Suspense fallback={null}>
                     <WorkspaceSidebar />
                   </Suspense>
+                ) : currentView === "plugins" ? (
+                  <PanelErrorBoundary lang={lang}>
+                    <PluginSidebar />
+                  </PanelErrorBoundary>
                 ) : (
                   <Sidebar
                     currentView={currentView}
@@ -1254,7 +1291,13 @@ export default function App() {
                   <WorkspaceView onOpenAuth={() => setAuthOpen(true)} />
                 </Suspense>
               )
-              : currentView === "canvas"
+              : currentView === "plugins"
+                ? (
+                  <PanelErrorBoundary lang={lang}>
+                    <PluginDetail />
+                  </PanelErrorBoundary>
+                )
+                : currentView === "canvas"
                 ? <CanvasView />
                 : (
                   <>
@@ -1291,10 +1334,20 @@ export default function App() {
         </div>
       </div>
 
+      <CommandPalette
+        onViewChange={setCurrentView}
+        onNewNote={handleNewNote}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onToggleAi={() => useAiStore.getState().setSidebarOpen(!useAiStore.getState().sidebarOpen)}
+      />
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onOpenAuth={() => setAuthOpen(true)}
+        onOpenPlugins={() => {
+          setSettingsOpen(false);
+          setCurrentView("plugins");
+        }}
         initialSection={settingsSection}
         hasWallpaper={hasBackground}
       />
@@ -1311,6 +1364,7 @@ export default function App() {
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <PasswordRecoveryModal />
       <AppDialog />
+      <ToastHost />
       <WorkspaceRemovalNotifier />
       {autoLoginLoading && (
         <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">
