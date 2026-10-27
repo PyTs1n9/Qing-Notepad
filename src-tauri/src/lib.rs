@@ -10,6 +10,7 @@ mod clipboard;
 mod credentials;
 mod pdf_export;
 mod plugin;
+mod plugin_host;
 mod plugin_manifest;
 mod storage;
 mod window_bg;
@@ -79,6 +80,11 @@ fn set_tray_language(app: tauri::AppHandle, lang: String) -> Result<(), String> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The extension host's only door. Held as `Arc<HostBridge>` so the protocol
+    // handler and `plugin_ext_host_send` reach the same queue; the poll itself
+    // blocks, so it runs on its own thread rather than the protocol thread.
+    let ext_bridge = std::sync::Arc::new(plugin_host::HostBridge::default());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -95,6 +101,29 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(ext_bridge.clone())
+        // `qing-plugin-rpc`: the hidden extension-host webview's only way out.
+        // `capabilities: []` rules out Tauri IPC there, so the conversation has
+        // to ride a custom scheme — which needs no capability and is still
+        // re-checked on the main window at every hop.
+        .register_asynchronous_uri_scheme_protocol(plugin_host::SCHEME, {
+            let bridge = ext_bridge.clone();
+            move |ctx, request, responder| {
+                let app = ctx.app_handle().clone();
+                let method = request.method().to_string();
+                let path = request.uri().path().to_string();
+                let body = request.into_body();
+                let bridge = bridge.clone();
+                // `/down` blocks until there is something to deliver. One
+                // thread, at most, is parked here: the ext-host keeps a single
+                // poll in flight for all of its workers.
+                std::thread::spawn(move || {
+                    let response =
+                        plugin_host::handle_request(&app, &bridge, &method, &path, &body);
+                    responder.respond(response);
+                });
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             quit_app,
             set_tray_language,
@@ -127,6 +156,7 @@ pub fn run() {
             plugin::plugin_fetch_index,
             plugin::plugin_read_log,
             plugin::plugin_append_log,
+            plugin_host::plugin_ext_host_send,
         ])
         .setup(|app| {
             #[cfg(desktop)]
