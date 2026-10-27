@@ -111,7 +111,14 @@ pub fn run() {
             move |ctx, request, responder| {
                 let app = ctx.app_handle().clone();
                 let method = request.method().to_string();
-                let path = request.uri().path().to_string();
+                // Path *and* query: the probe reports its verdict in the query
+                // string, and dropping it here would blind the only instrument
+                // that can see a blocked `fetch`.
+                let path = request
+                    .uri()
+                    .path_and_query()
+                    .map(|value| value.as_str().to_string())
+                    .unwrap_or_default();
                 let body = request.into_body();
                 let bridge = bridge.clone();
                 // `/down` blocks until there is something to deliver. One

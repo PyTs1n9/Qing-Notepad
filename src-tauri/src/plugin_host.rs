@@ -212,7 +212,9 @@ pub enum Route {
 /// Map a request onto the bridge. Method and path only — the body is parsed for
 /// `/up` and rejected there if it is not one of ours.
 pub fn route(method: &str, path: &str, body: &[u8]) -> Result<Route, String> {
-    let path = path.trim_start_matches('/');
+    // `path` may carry a query string (the probe reports through one); it is
+    // not part of the routing.
+    let path = path.split('?').next().unwrap_or_default().trim_start_matches('/');
     // The scheme is addressed as `qing-plugin-rpc://<host>/<path>`; both the
     // host segment and a trailing slash are ignored, so `//up`, `/up` and
     // `ext/up` all mean the same thing.
@@ -222,6 +224,27 @@ pub fn route(method: &str, path: &str, body: &[u8]) -> Result<Route, String> {
         ("POST", "up") => Ok(Route::Up(parse_up(body)?)),
         ("GET", "down") => Ok(Route::Down),
         _ => Err(format!("E_INTERNAL: no route for {method} {path}")),
+    }
+}
+
+/// Append a line to the probe log.
+///
+/// `eprintln!` is invisible from a GUI-subsystem binary launched detached —
+/// which is exactly how this app runs when it is not a child of a console — so
+/// the CSP probe reports to a file instead of stderr. Only written while
+/// `QING_EXT_HOST_PROBE` is set: this is a dev instrument, not a log.
+fn probe_log(line: &str) {
+    if std::env::var("QING_EXT_HOST_PROBE").is_err() {
+        return;
+    }
+    use std::io::Write;
+    let path = std::env::temp_dir().join("qing-probe-result.txt");
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{line}");
     }
 }
 
@@ -262,8 +285,14 @@ pub fn plugin_ext_host_open(app: tauri::AppHandle) -> Result<String, String> {
         .title("Qing Extension Host")
         .visible(false)
         .skip_taskbar(true)
+        // The probe's only other instrument: if this line never appears, the
+        // page did not load and the CSP question is not even being asked yet.
+        .on_page_load(move |_window, payload| {
+            probe_log(&format!("page load: {}", payload.url()));
+        })
         .build()
         .map_err(|error| format!("E_INTERNAL: {error}"))?;
+    probe_log("ext-host webview created");
     Ok("opened".into())
 }
 
@@ -303,8 +332,10 @@ pub fn handle_request(
 ) -> tauri::http::Response<Vec<u8>> {
     use tauri::Emitter;
 
-    // One line per request. Cheap, and it is the only place the CSP probe can
-    // report from — a page with no capabilities has no other channel out.
+    // One line per request, and it is the only place the CSP probe can report
+    // from: a page with no capabilities has no other channel out. The query
+    // string is kept because that is where the probe puts its verdict.
+    probe_log(&format!("{method} {path}"));
     eprintln!("[plugin-host] {method} {path}");
 
     match route(method, path, body) {
