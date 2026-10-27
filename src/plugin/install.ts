@@ -346,6 +346,10 @@ export function describeInstallError(error: unknown): string {
       return tWithParams(current, "pluginPermissionUnknown", { detail });
     case "E_INDEX_PERMISSION_MISMATCH":
       return tWithParams(current, "pluginIndexPermissionMismatch", { detail });
+    case "E_HOST_RESTARTED":
+      return t(current, "pluginHostRestarted");
+    case "E_BUSY":
+      return t(current, "pluginHostBusy");
     case "E_ZIP_SLIP":
       return t(current, "pluginEntryNameInvalid");
     default:

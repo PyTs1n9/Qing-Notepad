@@ -857,6 +857,8 @@ export type TranslationKeys = {
   pluginPermissionUnknown: string;
   pluginEntryNameInvalid: string;
   pluginIndexPermissionMismatch: string;
+  pluginHostRestarted: string;
+  pluginHostBusy: string;
   commandPaletteTitle: string;
   commandPalettePlaceholder: string;
   commandPaletteEmpty: string;
@@ -1734,6 +1736,8 @@ const zh: TranslationKeys = {
   pluginPermissionUnknown: "清单声明了未知权限：{detail}",
   pluginEntryNameInvalid: "包内有非法的文件名，可能是伪装过的压缩包",
   pluginIndexPermissionMismatch: "索引里写的权限与安装包不一致，已拒绝安装：{detail}",
+  pluginHostRestarted: "插件宿主已重启，刚才的操作没有生效，请重试",
+  pluginHostBusy: "插件宿主正在启动或重启，请稍后重试",
   commandPaletteTitle: "命令面板",
   commandPalettePlaceholder: "输入命令名称…",
   commandPaletteEmpty: "没有匹配的命令",
@@ -2614,6 +2618,8 @@ const en: TranslationKeys = {
   pluginPermissionUnknown: "The manifest declares a permission this app does not know: {detail}",
   pluginEntryNameInvalid: "The package contains an invalid file name; it may be a disguised archive",
   pluginIndexPermissionMismatch: "The permissions listed in the index do not match the package; the install was refused: {detail}",
+  pluginHostRestarted: "The plugin host restarted, so that operation did not take effect. Please try again",
+  pluginHostBusy: "The plugin host is starting or restarting. Please try again in a moment",
   commandPaletteTitle: "Command palette",
   commandPalettePlaceholder: "Type a command…",
   commandPaletteEmpty: "No matching commands",

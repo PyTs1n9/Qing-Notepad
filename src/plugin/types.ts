@@ -200,6 +200,14 @@ export type PluginErrorCode =
   | "E_RANGE_INVALID"
   /** P1a-1.5: the index advertises a different permission set than the package. */
   | "E_INDEX_PERMISSION_MISMATCH"
+  /**
+   * P1b: the extension host restarted under us. Every call that was in flight
+   * against it is dead — not refused, not slow, *gone* — and the honest answer
+   * is to say so and let the caller retry against a rebuilt pool.
+   */
+  | "E_HOST_RESTARTED"
+  /** P1b: the extension host is between states (starting, restarting). */
+  | "E_BUSY"
   | string;
 
 export class PluginError extends Error {
