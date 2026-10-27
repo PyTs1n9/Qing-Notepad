@@ -1,5 +1,12 @@
 # 架构评审：把 Worker 插件机制改造成 VS Code 式扩展宿主
 
+> **TL;DR**（0.7.3 起；体积数字本机实测，工期为人日量级估算）
+> - 推荐：**保留 Worker 为唯一代码执行边界**，包格式与 API 向 VS Code 形态对齐；**不自带 Node**；"独立宿主进程"用隐藏 webview 承载 Worker（0 MiB）。
+> - 不自带 Node 的两条硬依据：安装包 26.05 → 约 51–56 MiB（`node.exe` 83 MiB）；Node 官方自认权限模型"不防恶意代码"，一旦有 Node 进程 `fs`/`net` 就绕过 `bridge.ts`。
+> - **跑不了 `.vsix`**：`require('vscode')` 是边界，不是运行时差异；"VS Code 式"只能做到形状（`package.json` + JS 脚本），做不到生态。
+> - 分期：P0 8–12 / P1a 10–14 / P1b 12–18 人日 / P2 可选 Node（不随包）。与 L1 全增量、已装用户零迁移。
+> - 笔记正文是 **CodeMirror 6 + Markdown**（TipTap 仅画布富文本）；编辑器 API 已按落地实现记法，未验证项见附录 B。
+
 > 评审对象：`0.7.3` 上刚落地的 L1 插件机制（`docs/verification-plugin-l1.md`）。
 > 评审输入：用户新诉求（脚本、独立扩展宿主、`package.json` 声明、可操作界面/文本/命令/侧边栏）。
 > 本文件只做判断与取舍，不含实现代码。所有体积数字均为本机实测，工期为人日量级估算。
@@ -16,7 +23,7 @@
 | --- | --- | --- | --- |
 | 不用 `.qnp`，直接写 JS/TS 脚本 | ✅ 完全能 | ≈ 0.5 人日 | 做（`.zip`/文件夹/`.qnp` 三收，布局不变，**零迁移**） |
 | `package.json` 声明 `main`/`activationEvents`/`contributes`/`engines` | ✅ 能，`plugin.json` 已有 4 个字段中的 3 个 | 3–5 人日 | 做（改名 `package.json`，`contributes` 用 VS Code 词汇） |
-| 插件能操作编辑器界面/文本/命令/侧边栏 | ✅ 能，但必须经宿主代理 | 10–14 人日 | 做（P1，声明式侧边栏 + TipTap 区间 API） |
+| 插件能操作编辑器界面/文本/命令/侧边栏 | ✅ 能，但必须经宿主代理 | 10–14 人日 | 做（P1，声明式侧边栏 + CodeMirror 6 文本读写/装饰 API） |
 | 插件跑在**独立扩展宿主进程** | ⚠️ 能，但**不能是 Node 进程** | 12–18 人日 | 有条件做（专用隐藏 webview 承载 Worker） |
 | 自带 Node 运行时以便 `require('fs')`/npm | ⚠️ 能，但**会同时废掉现有安全模型并让安装包翻倍** | +25–30 MiB + 10–15 人日 | **不做**，改为"用户自备 Node"的可选后端 |
 | 直接跑现成 `.vsix` | ❌ **不能，且不建议追** | — | 不做 |
@@ -87,11 +94,13 @@ NSIS 用 LZMA（比 deflate 通常再小 10–20%），据此估 **+25–30 MiB*
 ```mermaid
 flowchart TB
   subgraph MAIN["主窗口 renderer（现有 WebView2）"]
-    UI["React UI / TipTap 编辑器 / ActivityBar"]
+    UI["React UI / CodeMirror 6 笔记编辑器 / ActivityBar"]
     CP["CommandPalette"]
     BR["bridge.ts<br/>权限闸门：REQUIREMENTS + hasPermission"]
+    EH2["editorHandle.ts<br/>活动 view 注册 + 装饰 StateField"]
     NS["noteStore / todoStore / toastStore"]
     UI --> BR
+    UI --- EH2
     CP --> BR
     BR --> NS
   end
@@ -105,16 +114,16 @@ flowchart TB
   end
 
   subgraph RUST["Rust 核心（src-tauri）"]
-    PM["plugin.rs<br/>安装/校验/存储/索引/日志"]
+    PL["plugin.rs<br/>安装/校验/存储/索引/日志"]
     RP["custom protocol: qing-plugin-rpc<br/>（JSON-RPC 入口）"]
     BRG["plugin_bridge_call<br/>（转发到主窗口）"]
-    PM --- RP
+    PL --- RP
     RP --- BRG
   end
 
   BOOT <-->|"fetch('qing-plugin-rpc://call')<br/>CSP: connect-src qing-plugin-rpc:"| RP
   BRG <-->|"Tauri event（只传 id/range/句柄，不传全文）"| BR
-  PM --- DISK[("<data>/plugins/<id>/<version>/<br/>storage.json / error.log")]
+  PL --- DISK[("<data>/plugins/<id>/<version>/<br/>storage.json / error.log")]
 ```
 
 P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.ts` 直接调 `dispatchPluginCall`（= 今天的样子）。**Transport 抽成接口，两条路径共用同一套协议与权限表**，切换是配置项而不是分支重写——这是控制风险的关键。
@@ -140,7 +149,7 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 | CJS（`module.exports`） | ⚠️ 可垫片 | ✅ | boot 前注入 6–10 行 `module/exports` 垫片即可吃掉大部分 CJS 脚本，成本极低，建议 P0 做 |
 | `require('vscode')` | ❌ | ❌ | **这才是 `.vsix` 跑不起来的真正原因**，不是运行时 |
 | `contributes` 语法 | ❌ 不兼容 | ❌ | VS Code 用 `command` 不是 `id`，另有 `when` 子句、`menus`、`viewsContainers` |
-| Monaco / LSP / DAP | ❌ | ❌ | 编辑器是 TipTap（ProseMirror），没有语言服务与调试协议 |
+| Monaco / LSP / DAP | ❌ | ❌ | **笔记正文是 CodeMirror 6 + Markdown 源模式**（`NoteEditor.tsx` 挂 `<MarkdownSourceEditor>`，默认视图 `"source"`）；画布富文本另有 TipTap，两者不是同一个编辑面。没有语言服务与调试协议 |
 
 **所以"能跑 VS Code 扩展"是假的；能跑的是"用 `package.json` 描述、`main` 指向单个 JS 文件的脚本"——只共享形状。**
 
@@ -166,22 +175,70 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 ### P1a｜API 面扩张（10–14 人日，体积 ±0）
 
+> **编辑器部分已按落地实现校正**（`a4637bb` 功能 + `8670e8e` 收尾）。下面写的是**代码里实际存在的 API**，
+> 不是最初设计稿；与设计稿的差异见本节末尾「未做与待落地的两项」。
+
 **可验收的最小成果**：一个插件能声明一个侧边栏树、读到当前笔记的选中文本、把选中文本替换掉，全程走权限。
 
 | 贡献点 | 最小 API 面 |
 | --- | --- |
 | **命令** | 已有 `commands.register`；补 `commands.execute(id)` 仅限**自己**的命令（跨插件仍禁止，D6 不变） |
 | **侧边栏（声明式树）** | `contributes.views: [{id,title,icon}]`（第 6 个 ActivityBar 图标，或并进 plugins 页左栏）；`qing.views.registerTreeProvider(id, {getChildren})`；节点 `{id,label,description,icon,tooltip,command,collapsibleState}`；`onView:xxx` 激活事件 |
-| **编辑器（TipTap 映射）** | `getDoc()` → `{text, length, selection:{from,to}}`（ProseMirror 文档位置）；`getText({from,to})`；`replaceRange({from,to,text})`；`setSelection({from,to})`；`setDecorations(key, ranges[])` |
+| **编辑器（CodeMirror 6，已落地 4 个方法）** | 编辑面是 CM6 的 Markdown 文档，位置一律是 **CM6 doc 偏移**（UTF-16 码元）。<br>`getText(range?)` → 不传 / `undefined` / `null` 返回整篇（`doc.toString()`）；传 `{from,to}` 返回 `doc.sliceString(from,to)`（与 `replace` 同一套区间语义）：`from/to` 必须是整数且 `0 <= from <= to <= doc.length`，越界/小数/`from > to` → `E_RANGE_INVALID`；`from === to` 返回 `""`（空区间不是错误，就是"没有选区"）；多余字段忽略，可直接把 `getSelection()` 的结果丢进去<br>`getSelection()` → `{from, to, anchor, head, text}`（`from/to` 归一化且 `from <= to`；`anchor/head` 是 CM6 原生字段，用于判断光标在哪一端；`text = sliceDoc(from,to)`）<br>`replace({from,to}, text)` → 半开区间 `[from,to)`，`from/to` 必须是整数，越界或小数 → `E_RANGE_INVALID`；`text` 上限 1,000,000 字符 → `E_TOO_LARGE`<br>`setDecorations(key, ranges)` → `ranges: {from,to,kind}[]`，`kind ∈ {error,warning,success,muted,highlight}`，`key` 截断到 64 字符，单 key 上限 1000 段 → `E_TOO_LARGE`<br>无活动笔记一律 `E_NO_EDITOR` |
 | **界面** | `ui.toast` 已有；补 `ui.showQuickPick(items)`（复用 `CommandPalette` 的渲染） |
-| 新权限码 | `editor:read`、`editor:write`、`editor:decorate`、`views`（前三个加进 `PLUGIN_PERMISSIONS` 与 `KNOWN_PERMISSIONS`，两处必须同步） |
+| 新权限码 | **当前全集 11 个** = 8 个 L1（`storage` / `notes:read|write` / `todo:read|write` / `clipboard:read|write` / `notify`）+ 3 个编辑器（`editor:read|write|decorate`）。映射：`getText|getSelection → editor:read`、`replace → editor:write`、`setDecorations → editor:decorate`。<br>**注意 `editor:read` 不被 `editor:write` 隐含**（与 `notes:write → notes:read` 不同）：能改不等于能读，两个码独立授予。<br>**尚未落地的 2 个**：`views`（侧边栏贡献点，随声明式树交付）；`editor:selection`（移动用户光标与滚动位置），**不并入 `editor:write`**，排 **P1a-2**。理由是这套权限模型的卖点即"可见即可管"：「改正文」与「移动你的光标」是两种不同的用户风险，混在一个码里会让"只允许它读笔记"的人被迫连光标一起让出去。终态是 `editor:read|write|decorate|selection` 四码并列 |
 
-**TipTap 映射的三条硬约束**（写进实现与文档）：
+**CodeMirror 6 映射的七条硬约束**（写进实现与文档）：
 
-1. `replaceRange` 必须在主窗口执行，并复用 `notes.update` 已有的收尾：落盘 + `emit(NOTE_EXTERNAL_SAVE_EVENT)` + `emit("sticky:note-updated")`——否则打开的编辑器、便签窗口会看到旧内容（`bridge.ts:165–171` 是现成先例）。
-2. **装饰只允许 `class` 与白名单 `attrs`**，不接受任意 CSS/HTML。`setDecorations` 在宿主侧维护"每插件一个 PM Plugin + DecorationSet"，禁用即整套拆除。
-3. **永不开放 schema/node/mark 注册**（维持 D2）。这是"笔记数据完整性"的最后一条线，比任何功能都重要。
-4. 位置语义只承诺"当前活动文档的 PM 位置"，不承诺跨 Markdown 源模式（CodeMirror）一致。
+> 读者区分：本清单是**宿主实现者**的完整纪律（7 条）；`examples/qing-editor-demo/README.md` 的「三条硬约束」是给**插件作者**的最小集（CM6 偏移 / Markdown 源 / `replace` 走编辑器变更管线），两者是刻意的两种粒度，不是漂移。示例 README 不必改成七条。
+
+1. **写操作走正常事务，不要加 `externalDocumentUpdate` 注解。** 那个注解（`MarkdownSourceEditor.tsx:25`，用于 `:151` 附近的回灌 effect）是反方向的：宿主把外部值塞进 CM6 时用它抑制 `onChange` 回环。插件的编辑要等价于用户键入，让 `updateListener → handleMdChange → updateNote + markDirty → 自动保存` 这条链正常走完；混用会导致"改完没保存"，且只在重启后暴露。`scripts/verify-plugin-runtime/run.mjs` 已加静态断言（剥注释后 `bridge.ts` 不得出现该注解）。
+2. **不要照搬 `notes.update` 的收尾。** 数据 API（`notes.update`）是"落盘 + `emit(NOTE_EXTERNAL_SAVE_EVENT)` + `emit("sticky:note-updated")`"；**编辑器写入不走这条**——它走编辑器自己的保存链，`NoteEditor.tsx:207` 自己就会 emit `sticky:note-updated`。两条路径混用会重复落盘。
+3. **写入的是 Markdown，不是 HTML。** 历史笔记存储为 HTML，加载时经 turndown 转换（`NoteEditor.tsx:291` `isStoredEditorHtml(content) ? htmlToMarkdown(content) : content`，`:331` 同）；因此插件写回 Markdown 字符串可被正确加载，**不要**让插件自己产出 HTML（会绕过 `:60` / `:69` 的规范化规则）。
+4. **装饰是语义 kind，不是 class 名。** 插件无法传任何类名或属性：5 个 kind 由宿主映射到固定的 `.qing-dec-<kind>`（定义在 `index.css`）。只用 `Decoration.mark`，**不开 `Decoration.replace` / `Decoration.widget`**（那两个能嵌 DOM）。
+5. **装饰字段是"一个字段 + Map"，不是"每插件一个字段"。** `StateField<Map<\`pluginId::key\`, DecorationSet>>`，经 `EditorView.decorations.from(field, flatten)` 合并渲染；停用一个插件 = 删掉带该前缀的所有 key（语义仍是整套撤销，且天然支持同插件多 key）。理由：CM6 里动态增删字段要走 `Compartment` 重新配置扩展，代码量与出错面都更大。
+6. **位置漂移必须 `.map(tr.changes)`**，每次事务把每个 owner 的 set 映射过去；已验证断言：标记 `0..5`，在其前插入 `XX` 后必须落在 `2..7`。
+7. **永不开放 CM6 扩展/`StateField` 注入、Markdown 语法扩展**（维持 D2 的精神）。这是"笔记数据完整性"的最后一条线。装饰是唯一例外，且由宿主托管。
+
+**边界：P1a-1 不覆盖云笔记。** `setActiveEditor` 全仓只有 `NoteEditor.tsx:558` 一处调用，`Workspace/CloudNoteEditor.tsx` 从不调用它；因此活动面是云笔记时 `qing.editor.*` 返回 `E_NO_EDITOR`，不会写进协同文档。注意反向的一条：**预览/分栏模式仍然有编辑器**（`NoteEditor.tsx:807` 只是用 CSS `hidden` 藏起源码窗格，并未卸载 view），只有"完全没打开笔记"才返回 `E_NO_EDITOR`。
+
+**未做与待落地的两项**（明确记录，避免下一个人当成漏项或"漏改"）：
+
+- **`getDoc()`（含 `length`）不做**，它是 `getText()` 的冗余（`length` 即 `getText().length`）。
+- **`setSelection()` 排 P1a-2，权限归属已定：新码 `editor:selection`**（不并入 `editor:write`，理由见上表）。落地前不得顺手加进 `editor:write`；`setSelection` 与该码一起交付，不拆开。
+
+> `getText(range?)` 的区间变体已在 `175f71c` 落地（`bridge.ts:294-306`、`worker-boot.js:203-211`），已从本清单摘除。区间读取用 `doc.sliceString`，所以统计类插件不必把整篇拉进 worker——示例 `examples/qing-editor-demo` 就是这么用的（有选区只取选区）。
+
+**加一个新权限码：6 处同步点 + 2 张蕴含表（5 个函数镜像）+ 1 个计数绊线**（P1a-2 加 `editor:selection` 时照这张单子走，漏一处就红或漏授权项）：
+
+**A. 必改的 6 处同步点**
+
+1. `src-tauri/src/plugin_manifest.rs::KNOWN_PERMISSIONS` —— 不在表里会被安装器以 `E_PERMISSION_UNKNOWN` 直接拒；
+2. `src/plugin/types.ts::PLUGIN_PERMISSIONS` —— 同时决定 `PluginPermission` 类型；
+3. `src/plugin/types.ts::PERMISSION_LABEL_KEYS` —— `Record<PluginPermission, …>`，漏了 tsc 直接红；
+4. `src/utils/i18n.ts` **三处**：`TranslationKeys` 接口、zh 表、en 表（如 `pluginPermEditorSelection`）；
+5. `src/plugin/bridge.ts::REQUIREMENTS` —— 决定哪个方法要这个码；
+6. `src/components/Plugin/PermissionList.tsx:29` 的 `ICONS` —— `Record<PluginPermission, ComponentType>`，漏了 tsc 红，而且授权弹窗里那一行没有图标。
+
+**B. 2 张蕴含表、5 个函数镜像——只在"新码需要蕴含关系"时才改；`editor:selection` 明确不改**
+
+蕴含关系是"授权 A 就自动带上 B"，现在只有 `notes:write → notes:read`、`todo:write → todo:read` 两条。**它们不是同步点**，是产品决策：
+
+- **正向展开 2 个**：`plugin.rs::expand_permissions`、`types.ts::expandPermissions`；
+- **反向放行 3 个**：`plugin.rs::is_grantable`、`types.ts::hasPermission`、**`install.ts::67` 的 `isDeclared`**。
+
+三个反向镜像漏改的症状各不相同，所以要分列：漏 `is_grantable`/`hasPermission` 是"授权了却调用被拒"（或反过来授权过多）；漏 `isDeclared` **更隐蔽**——它在 `commitPreparedInstall`（`install.ts:238` 的 `previous.grantedPermissions.filter((p) => isDeclared(p, declared))`）里决定**升级/回滚时旧的 `grantedPermissions` 哪些能带过去**，漏改的结果是"新版本装上了、用户此前授过的权限被静默丢掉"，表面上像"升级后功能坏了"，很难回溯到权限规则。
+
+按本节的纪律，**`editor:selection` 不被 `editor:write` 隐含**（同 `editor:read`），所以这 5 个函数在 P1a-2 里**必须原样不动**。单子只写"同步 6 处"而不点名这里，下一个人大概率会顺手把蕴含补上——那条纪律就废了。
+
+**C. 1 个计数绊线：`plugin_manifest.rs:1197` 的 `assert_eq!(KNOWN_PERMISSIONS.len(), 11)`**
+
+连同紧邻的"无重复"断言。加 `editor:selection` 或 `views` 时它**必然红，这是故意的**——只改一处就会红，逼作者把 6 处走完，再回来把 `11` 改成 `12`/`13`。实现 P1a-2 的人看到它**不要当"测试过时了"随手删掉或放宽**，它就是那道拦网；也不要为了绿而在没改完 6 处时先改这个数。
+
+> `editor:selection` 交付时的三条纪律（已定，写在这里防止 P1a-2 走样）：**与 `setSelection` 一起交付，不拆开**（不能只加方法不加码，也不能只加码不校验）；**不被 `editor:write` 隐含**（与 `editor:read` 同一条纪律）；**授权文案已定稿**，弹窗写「**移动你的光标与滚动位置**」，不复用 `editor:write` 的"修改正文"（措辞已进 P1a-2 实现规格，除非 UI 上放不下，不必再跟产品对）。
+
+
+
 
 ### P1b｜独立扩展宿主进程（12–18 人日，体积 ±0）
 
@@ -208,7 +265,7 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 - 检测顺序：用户显式指定路径 → `PATH` 里的 `node` → 不启用（**绝不静默回退到某个捆绑二进制**）；
 - 协议：`stdio` 上的 **JSON-RPC 2.0，按行分隔（NDJSON）**，不用 LSP 的 `Content-Length` 头（多一层解析、无收益）；
 - 启动参数尽量收：`node --permission --allow-fs-read=<pluginDir> --allow-fs-write=<dataDir>/plugins/<id> --allow-net=false`。**明确告知：这是"安全带"不是"边界"**（Node 官方原文见 §1）；
-- 安装授权：单独一段红字 + 独立的 `runtime:node` 权限码，与现有 8 个权限码并列展示；
+- 安装授权：单独一段红字 + 独立的 `runtime:node` 权限码，与现有 11 个权限码并列展示（新增一个码是「6 处同步点 + 2 张蕴含表 / 5 个函数镜像 + 1 个计数绊线」，见 §4 P1a 末尾清单）；
 - 索引策略：带 `runtime:node` 的插件在列表里明确标注"需要本机 Node"，且不进入默认推荐；
 - 更强的隔离（AppContainer / 受限令牌）列为**未验证的后续项**，不要写进这一期的承诺。
 
@@ -254,16 +311,16 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 | # | 风险 | 触发条件 | 缓解 |
 | --- | --- | --- | --- |
-| R1 | **编辑器 API 污染文档结构**（最严重） | 插件写坏 HTML/PM 结构；或 decoration 注入恶意 class | 只读能力先上线；装饰白名单；写操作强制走 `notes.update` 同一条落盘+广播路径；schema/node/mark 注册**永久不开放**；Yjs 协同路径需单独实测（`@hocuspocus` 在场时的远程事务映射**未验证**） |
+| R1 | **编辑器 API 污染文档结构**（最严重） | 插件写坏 Markdown / CM6 文档结构；或借装饰做视觉伪装 | 只读能力先上线；装饰只接受 5 个语义 kind（插件无法传 class/属性），由宿主唯一的 `StateField` 施加；写操作走编辑器正常事务与保存链；CM6 扩展/Markdown 语法扩展注册**永久不开放**；云笔记不发布为活动编辑器（`E_NO_EDITOR`），远程事务合并**未验证**因此不碰 |
 | R2 | **P1b 链路变长导致难调试** | 三跳（Worker → ext-host → Rust → 主窗口），时序/超时/错误码归属混乱 | P0 就把 `Transport` 抽出来，两种 transport 共用一套协议与权限表；用 `qing-isolation-probe` 同款插件做端到端探针（时延、崩溃注入、权限拒绝）；feature flag 可回退到 in-process |
 | R3 | **Node 后端的"假安全感"** | 用户以为"有权限弹窗所以安全"，实际 Node 侧 `fs` 全开 | 默认关闭；独立红字授权；只在用户显式指定时启用；索引对 `runtime:node` 插件显著标注；不做自动更新（D4）；把"Node 插件 = 全信任"写进开发者文档第一屏 |
 
 ### 6.2 明确不做（即使做了也拿不到 VS Code 那种生态）
 
 - ❌ **`.vsix` 兼容 / `vscode` 命名空间 shim**。`require('vscode')` 是 10 万扩展的第一行代码，实现一个语义正确的 shim 等于重做一个 Monaco 语义层，且永远追不上版本。**投多少人都追不上，这是结构性事实，不是工期问题。**
-- ❌ **LSP / DAP**。TipTap 是富文本编辑器，没有文件式工作区语义；协议化的前提不存在。
+- ❌ **LSP / DAP**。笔记正文是 CM6 + Markdown（不是文件式工作区，也没有语言服务器可接），画布富文本同理；协议化的前提不存在。
 - ❌ **Monaco 式 `TextEditor` 语义**（多编辑器组、语言服务、跳转定义、断点）。
-- ❌ **schema / TipTap Extension 注册**（D2 已定，本次维持）。
+- ❌ **编辑器内核扩展注册**：CM6 扩展 / `StateField` / Markdown 语法扩展（笔记正文），TipTap Extension（画布富文本）。均维持 D2 的边界；装饰是唯一例外（宿主托管）。
 - ❌ **插件间 `import` 与依赖解析**（D6 维持）。
 - ❌ **自动更新**（D4 维持；生态分析里 GlassWorm 的投递通道正是自动更新）。
 - ❌ **下载量排行**（已定结论：只给"最近更新 / 兼容区间 / 权限数量"）。
@@ -296,7 +353,8 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 | --- | --- |
 | 只有 `commands` 一个贡献点 | `plugin_manifest.rs::Contributions` 只有 `commands` 字段；`types.ts::PluginManifest.contributes` 同 |
 | D1 的 Track B（插件独立窗口）**未落地** | `capabilities/` 只有 `default.json`、`tile.json`，无 `plugin-window.json`；全仓搜不到 `plugin-window` |
-| 权限校验位置 | `bridge.ts::REQUIREMENTS` + `hasPermission`；8 个权限码两处同步（`types.ts::PLUGIN_PERMISSIONS`、`plugin_manifest.rs::KNOWN_PERMISSIONS`） |
+| 权限校验位置 | `bridge.ts::REQUIREMENTS` + `hasPermission`；当前 **11 个**权限码（8 L1 + 3 `editor:*`）。新增一个码：**6 处同步点** + **2 张蕴含表 / 5 个函数镜像（需蕴含时才改）** + **1 个计数绊线**（`plugin_manifest.rs:1197` 的 `assert_eq!(…, 11)`，加码必红、故意的）——完整清单见 §4 P1a 末尾 |
+| 两张权限表当前完全一致 | `plugin_manifest.rs::KNOWN_PERMISSIONS` 与 `types.ts::PLUGIN_PERMISSIONS` 均为 11 个，**内容与顺序逐项相同**（已用脚本比对）；P1a-2 加码时可直接拿这个顺序当 diff 锚点。**顺序锚点的前提**：新增项插在哪一位都行（如 `notify` 之后），但**两张表必须插到同一位置**——顺序一旦分叉，锚点就失效，diff 看不出漏改 |
 | RPC 超时 5 s / 连崩 3 次停用 | `headless.ts:36–37` |
 | Worker 无内存上限 | `headless.ts` 全文无内存监控逻辑；堆受 renderer 进程约束 |
 | CSP 关键位 | `tauri.conf.json`：`script-src` 无 `blob:`（主线程不能 `import(blob)`）、`worker-src 'self' blob:`、`connect-src` 显式列表 |
@@ -304,11 +362,21 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 | 私有存储配额 | 1 MB（`STORAGE_QUOTA_BYTES`），日志 100 行，索引 24 h 缓存双源 |
 | `.qnp` 无文件关联 | `tauri.conf.json` 无 `fileAssociations`；唯一硬编码是 `install.ts:317` 的 dialog filter |
 | Rust 侧与扩展名无关 | `plugin.rs:532` 仅用 `.qnp` 作暂存文件名，读的是字节 |
+| **笔记正文 = CodeMirror 6 + Markdown 源模式** | `NoteEditor.tsx:816` 挂 `<MarkdownSourceEditor>`，`markdownViewMode` 初值 `"source"`（`:142`）；`MarkdownSourceEditor.tsx:127` `new EditorView({state, parent})`（`@codemirror/view`） |
+| **编辑器句柄是独立模块** | `src/utils/editorHandle.ts`：活动 view 注册（`setActiveEditor`，全仓仅 `NoteEditor.tsx:558` 调用）+ 装饰 `StateField`；`bridge.ts` 与 `headless.ts` 都用它，但都不能 import 组件 |
+| **装饰 = 一个字段 + Map** | `editorHandle.ts:107` `StateField<Map<"pluginId::key", DecorationSet>>`，`provide: EditorView.decorations.from(field, flatten)`；`docChanged` 时逐 owner `.map(transaction.changes)`；停用按前缀删 key |
+| **装饰只有 5 个语义 kind** | `editorHandle.ts:37` `DECORATION_KINDS = error/warning/success/muted/highlight` → `.qing-dec-<kind>`（样式在 `index.css`）；插件无法传 class 或属性 |
+| **编辑器 API 限额** | `bridge.ts:58/60`：`MAX_EDITOR_INSERT = 1_000_000` 字符、`MAX_DECORATION_KEY_LENGTH = 64`；`editorHandle.ts:56` `MAX_DECORATION_RANGES = 1000`；区间必须是整数，越界 → `E_RANGE_INVALID`，超限 → `E_TOO_LARGE` |
+| **云笔记不发布为活动编辑器** | `Workspace/CloudNoteEditor.tsx` 从不调用 `setActiveEditor` → `qing.editor.*` 返回 `E_NO_EDITOR`（`bridge.ts::requireEditor`） |
+| **TipTap 只用于画布富文本** | `@tiptap/react` 仅出现在 `src/components/Canvas/`（`CanvasRichTextEditor.tsx`、`CanvasTextToolbar.tsx`、`CanvasView.tsx`），与笔记正文无关 |
+| **存储是 HTML、编辑面是 Markdown** | `NoteEditor.tsx:78` `htmlToMarkdown()`（turndown + gfm），`:291` `isStoredEditorHtml(content) ? htmlToMarkdown(content) : content`，`:331` 同 |
+| **协同只在云笔记，本地笔记无 Yjs** | `Workspace/CloudNoteEditor.tsx:980/1126` `yCollab(...)`（`y-codemirror.next`）+ `HocuspocusProvider`；`src/components/Editor/` 内搜不到 `yjs`/`yCollab`/`hocuspocus` |
+| **CM6 外部写入的既有机制** | `MarkdownSourceEditor.tsx:25` `externalDocumentUpdate` 注解，`:151` 用它 + `Transaction.addToHistory.of(false)` 同步外部值；用途是抑制 `onChange` 回环，不是给插件复用 |
 
 ## 附录 B：未验证项清单（不要当成结论引用）
 
 - NSIS LZMA 对 `node.exe` 的实际压缩比（§2.1 的 +25–30 MiB 是估算）；
 - `deno_core` / `rquickjs` / `boa` 嵌入后的真实二进制增量；
 - 隐藏 WebView2 窗口是否稳定拿到独立 renderer 进程、其内存基线；
-- TipTap 在 Yjs 协同（`@hocuspocus/provider`）在场时，插件驱动的远程事务映射是否与本地一致；
+- **云笔记**（`Workspace/CloudNoteEditor.tsx`，CM6 + `yCollab` + Hocuspocus）在协同在场时，插件驱动的写回是否与远程事务正确合并——**这项尚未验证，且当前不触碰**：P1a-1 已定不覆盖云笔记，`CloudNoteEditor` 不发布为活动编辑器，`qing.editor.*` 直接返回 `E_NO_EDITOR`。只有将来明确决定接云笔记时，这条才变成排期前提；到那时仍不能当已验证来估。
 - `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序。
