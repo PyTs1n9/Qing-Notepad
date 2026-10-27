@@ -45,7 +45,7 @@
 | **b) 打包 `node.exe` 作 sidecar** | **+25–30 MiB**（见 §2.1 实测推导）→ 安装包 26.05 → **约 51–56 MiB** | 12–16 | **5** | **1**（Node 官方承认权限模型不防恶意代码；且 `fs:scope`/CSP 全部失效） | 不做 |
 | **c) 嵌 Rust JS 引擎** | `deno_core`(V8)：量级与 b 同源（V8+ICU 就是 `node.exe` 83 MiB 的主体）；`rquickjs`(QuickJS)：约 +1–2 MiB；`boa`：约 +2–3 MiB。**均未在本仓库实测** | 10–14 | 1–2（无 npm、无 Node API；QuickJS 对 ES2023 覆盖不全） | 4–5（默认可零能力，完全自定义） | 不推荐（小体积选项牺牲兼容性，大体积选项不如 b 省事） |
 | **d) 双运行时（Worker 默认 + 可选 Node）** | **0 MiB**（Node 不随包，检测用户环境或用户指定路径） | 22–30（含 a 的全部 + 桥接） | 4（仅对装了 Node 的用户） | 3（Worker 侧仍 5；Node 侧需单独"全信任"红字授权） | **采用，但只作为 P2 出口** |
-| **e) 专用隐藏 webview 作扩展宿主（本评审补充）** | **0 MiB**（复用已打包的 WebView2） | 12–18 | 1 | 4（renderer 进程隔离 + capability 为空的 deny-by-default；代价是 `__TAURI_INTERNALS__` 存在而非缺失） | **推荐作为"独立进程"诉求的答案（P1b）** |
+| **e) 专用隐藏 webview 作扩展宿主（本评审补充）** | **0 MiB**（复用已打包的 WebView2） | 12–18 | 1 | **4**（renderer 进程隔离**已实测**：每 webview 独立 renderer，杀进程只带走自己；**真实收益是 OOM 与 renderer 崩溃隔离**，`while(true)` 卡死两种模式都不杀死宿主（Worker 线程 + 5 s 超时），不是 P1b 的差异化收益；capability 为空的 deny-by-default；代价是 `__TAURI_INTERNALS__` 存在而非缺失，但 invoke 全被拒） | **推荐作为"独立进程"诉求的答案（P1b）**；实施方案见 `plan-plugin-p1b-extension-host.md` |
 
 ### 2.1 体积数据（本机实测，非引用）
 
@@ -175,18 +175,20 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 ### P1a｜API 面扩张（10–14 人日，体积 ±0）
 
-> **编辑器部分已按落地实现校正**（`a4637bb` 功能 + `8670e8e` 收尾）。下面写的是**代码里实际存在的 API**，
-> 不是最初设计稿；与设计稿的差异见本节末尾「未做与待落地的两项」。
+> **编辑器部分已按落地实现校正**（`a4637bb` 功能 + `8670e8e` 收尾 + `175f71c` 区间读取 + `157f5e4` P1a-2 + `dc1811a` 两条实证命令）。
+> 下面写的是**代码里实际存在的 API**，不是最初设计稿；与设计稿的差异见本节末尾「未做的一项」。
+>
+> **验收结论：P1a 可收**（2026-10-27，dev 构建 + 真实 WebView2 端到端）。7 项全过：文件夹安装（6 权限齐，含 `editor:selection`）→ 侧栏大纲树 → 点节点移光标 → `editor:write` 只动选区 → `editor:decorate` 标 3 处 → 标记随 `tr.changes` 跟随 → 停用即清装饰（`before: 3 → afterDisable: 0`）。**市场一键安装未验**（见附录 B）。
 
 **可验收的最小成果**：一个插件能声明一个侧边栏树、读到当前笔记的选中文本、把选中文本替换掉，全程走权限。
 
 | 贡献点 | 最小 API 面 |
 | --- | --- |
 | **命令** | 已有 `commands.register`；补 `commands.execute(id)` 仅限**自己**的命令（跨插件仍禁止，D6 不变） |
-| **侧边栏（声明式树）** | `contributes.views: [{id,title,icon}]`（第 6 个 ActivityBar 图标，或并进 plugins 页左栏）；`qing.views.registerTreeProvider(id, {getChildren})`；节点 `{id,label,description,icon,tooltip,command,collapsibleState}`；`onView:xxx` 激活事件 |
-| **编辑器（CodeMirror 6，已落地 4 个方法）** | 编辑面是 CM6 的 Markdown 文档，位置一律是 **CM6 doc 偏移**（UTF-16 码元）。<br>`getText(range?)` → 不传 / `undefined` / `null` 返回整篇（`doc.toString()`）；传 `{from,to}` 返回 `doc.sliceString(from,to)`（与 `replace` 同一套区间语义）：`from/to` 必须是整数且 `0 <= from <= to <= doc.length`，越界/小数/`from > to` → `E_RANGE_INVALID`；`from === to` 返回 `""`（空区间不是错误，就是"没有选区"）；多余字段忽略，可直接把 `getSelection()` 的结果丢进去<br>`getSelection()` → `{from, to, anchor, head, text}`（`from/to` 归一化且 `from <= to`；`anchor/head` 是 CM6 原生字段，用于判断光标在哪一端；`text = sliceDoc(from,to)`）<br>`replace({from,to}, text)` → 半开区间 `[from,to)`，`from/to` 必须是整数，越界或小数 → `E_RANGE_INVALID`；`text` 上限 1,000,000 字符 → `E_TOO_LARGE`<br>`setDecorations(key, ranges)` → `ranges: {from,to,kind}[]`，`kind ∈ {error,warning,success,muted,highlight}`，`key` 截断到 64 字符，单 key 上限 1000 段 → `E_TOO_LARGE`<br>无活动笔记一律 `E_NO_EDITOR` |
+| **编辑器（CodeMirror 6，已落地 5 个方法）** | 编辑面是 CM6 的 Markdown 文档，位置一律是 **CM6 doc 偏移**（UTF-16 码元）。<br>`getText(range?)` → 不传 / `undefined` / `null` 返回整篇（`doc.toString()`）；传 `{from,to}` 返回 `doc.sliceString(from,to)`（与 `replace` 同一套区间语义）：`from/to` 必须是整数且 `0 <= from <= to <= doc.length`，越界/小数/`from > to` → `E_RANGE_INVALID`；`from === to` 返回 `""`（空区间不是错误，就是"没有选区"）；多余字段忽略，可直接把 `getSelection()` 的结果丢进去<br>`getSelection()` → `{from, to, anchor, head, text}`（`from/to` 归一化且 `from <= to`；`anchor/head` 是 CM6 原生字段，用于判断光标在哪一端；`text = sliceDoc(from,to)`）<br>`replace({from,to}, text)` → 半开区间 `[from,to)`，`from/to` 必须是整数，越界或小数 → `E_RANGE_INVALID`；`text` 上限 1,000,000 字符 → `E_TOO_LARGE`<br>`setSelection({anchor,head})` → 两序皆可（反向选区是真实存在的）；也接受 `from`/`to` 简写，于是 `getSelection()` 的结果可原样回传。滚动位置**不单独开 API**，跟随 CM6 自己的 scroll-into-view<br>`setDecorations(key, ranges)` → `ranges: {from,to,kind}[]`，`kind ∈ {error,warning,success,muted,highlight}`，`key` 截断到 64 字符，单 key 上限 1000 段 → `E_TOO_LARGE`<br>无活动笔记一律 `E_NO_EDITOR` |
+| **侧边栏（声明式树，P1a-2 已落地）** | 清单 `contributes.views: [{id,title}]`（`id` 全局唯一，约定 `<plugin id>.<name>`；`title` 是插件自己的文案，宿主不翻译；激活事件 `onView:<id>`）。运行时 `qing.views.registerTreeDataProvider(viewId, provider)`（`provider.getChildren`）+ `qing.views.refresh(viewId)`。**`refresh` 只能刷新自己贡献的 view**，越界 → `E_PERMISSION_DENIED`（防一个插件改画另一个插件的面板） |
 | **界面** | `ui.toast` 已有；补 `ui.showQuickPick(items)`（复用 `CommandPalette` 的渲染） |
-| 新权限码 | **当前全集 11 个** = 8 个 L1（`storage` / `notes:read|write` / `todo:read|write` / `clipboard:read|write` / `notify`）+ 3 个编辑器（`editor:read|write|decorate`）。映射：`getText|getSelection → editor:read`、`replace → editor:write`、`setDecorations → editor:decorate`。<br>**注意 `editor:read` 不被 `editor:write` 隐含**（与 `notes:write → notes:read` 不同）：能改不等于能读，两个码独立授予。<br>**尚未落地的 2 个**：`views`（侧边栏贡献点，随声明式树交付）；`editor:selection`（移动用户光标与滚动位置），**不并入 `editor:write`**，排 **P1a-2**。理由是这套权限模型的卖点即"可见即可管"：「改正文」与「移动你的光标」是两种不同的用户风险，混在一个码里会让"只允许它读笔记"的人被迫连光标一起让出去。终态是 `editor:read|write|decorate|selection` 四码并列 |
+| 新权限码 | **当前全集 13 个，全部落地**（`157f5e4`）= 8 个 L1（`storage` / `notes:read|write` / `todo:read|write` / `clipboard:read|write` / `notify`）+ 5 个 P1a（`editor:read|write|decorate` + `views` + `editor:selection`）。映射：`getText|getSelection → editor:read`、`replace → editor:write`、`setDecorations → editor:decorate`、`setSelection → editor:selection`、`views.* → views`。<br>**蕴含关系**：`editor:read` 不被 `editor:write` 隐含（与 `notes:write → notes:read` 不同）；`views` 与 `editor:selection` 也**不蕴含任何东西**——`types.ts` 原注释："painting a panel is not 'edit my notes', and moving the cursor is not 'rewrite my note'"。终态是 `editor:read|write|decorate|selection` 四码并列 + `views` 独立 |
 
 **CodeMirror 6 映射的七条硬约束**（写进实现与文档）：
 
@@ -202,12 +204,14 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 **边界：P1a-1 不覆盖云笔记。** `setActiveEditor` 全仓只有 `NoteEditor.tsx:558` 一处调用，`Workspace/CloudNoteEditor.tsx` 从不调用它；因此活动面是云笔记时 `qing.editor.*` 返回 `E_NO_EDITOR`，不会写进协同文档。注意反向的一条：**预览/分栏模式仍然有编辑器**（`NoteEditor.tsx:807` 只是用 CSS `hidden` 藏起源码窗格，并未卸载 view），只有"完全没打开笔记"才返回 `E_NO_EDITOR`。
 
-**未做与待落地的两项**（明确记录，避免下一个人当成漏项或"漏改"）：
+**未做的一项**（明确记录，避免下一个人当成漏项或"漏改"）：
 
 - **`getDoc()`（含 `length`）不做**，它是 `getText()` 的冗余（`length` 即 `getText().length`）。
-- **`setSelection()` 排 P1a-2，权限归属已定：新码 `editor:selection`**（不并入 `editor:write`，理由见上表）。落地前不得顺手加进 `editor:write`；`setSelection` 与该码一起交付，不拆开。
 
-> `getText(range?)` 的区间变体已在 `175f71c` 落地（`bridge.ts:294-306`、`worker-boot.js:203-211`），已从本清单摘除。区间读取用 `doc.sliceString`，所以统计类插件不必把整篇拉进 worker——示例 `examples/qing-editor-demo` 就是这么用的（有选区只取选区）。
+> 已落地并从本清单摘除：`getText(range?)` 的区间变体（`175f71c`，`bridge.ts:294-306`、`worker-boot.js:203-211`）；`setSelection` + `views` 侧边栏树 + `views`/`editor:selection` 两个权限码（`157f5e4`，P1a-2）。
+> 区间读取用 `doc.sliceString`，所以统计类插件不必把整篇拉进 worker——示例 `examples/qing-editor-demo` 就是这么用的（有选区只取选区）。
+
+> `editor:selection` 交付时的三条纪律**已按此执行**（`157f5e4` 核对通过）：与 `setSelection` 同批交付、不拆开 ✓；不被 `editor:write` 隐含，5 个蕴含镜像一行未动 ✓；授权弹窗写「**移动你的光标与滚动位置**」，不复用 `editor:write` 的"修改正文" ✓。
 
 **加一个新权限码：6 处同步点 + 2 张蕴含表（5 个函数镜像）+ 1 个计数绊线**（P1a-2 加 `editor:selection` 时照这张单子走，漏一处就红或漏授权项）：
 
@@ -229,34 +233,60 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 
 三个反向镜像漏改的症状各不相同，所以要分列：漏 `is_grantable`/`hasPermission` 是"授权了却调用被拒"（或反过来授权过多）；漏 `isDeclared` **更隐蔽**——它在 `commitPreparedInstall`（`install.ts:238` 的 `previous.grantedPermissions.filter((p) => isDeclared(p, declared))`）里决定**升级/回滚时旧的 `grantedPermissions` 哪些能带过去**，漏改的结果是"新版本装上了、用户此前授过的权限被静默丢掉"，表面上像"升级后功能坏了"，很难回溯到权限规则。
 
-按本节的纪律，**`editor:selection` 不被 `editor:write` 隐含**（同 `editor:read`），所以这 5 个函数在 P1a-2 里**必须原样不动**。单子只写"同步 6 处"而不点名这里，下一个人大概率会顺手把蕴含补上——那条纪律就废了。
+按本节的纪律，**`editor:selection` 不被 `editor:write` 隐含**（同 `editor:read`），所以这 5 个函数在加码时**必须原样不动**。单子只写"同步 6 处"而不点名这里，下一个人大概率会顺手把蕴含补上——那条纪律就废了。**P1a-2 已按此执行并核对通过**（`157f5e4`：5 个镜像一行未动，`views`/`editor:selection` 未引入任何蕴含）。
 
-**C. 1 个计数绊线：`plugin_manifest.rs:1197` 的 `assert_eq!(KNOWN_PERMISSIONS.len(), 11)`**
+**C. 1 个计数绊线：`plugin_manifest.rs` 的 `assert_eq!(KNOWN_PERMISSIONS.len(), N)`**（当前 `N = 13`，位于 `:1297`；加码时它跟着走）
 
-连同紧邻的"无重复"断言。加 `editor:selection` 或 `views` 时它**必然红，这是故意的**——只改一处就会红，逼作者把 6 处走完，再回来把 `11` 改成 `12`/`13`。实现 P1a-2 的人看到它**不要当"测试过时了"随手删掉或放宽**，它就是那道拦网；也不要为了绿而在没改完 6 处时先改这个数。
+连同紧邻的"无重复"断言。加新码时它**必然红，这是故意的**——只改一处就会红，逼作者把 6 处走完，再回来把 `13` 改成 `14`/`15`。实现的人看到它**不要当"测试过时了"随手删掉或放宽**，它就是那道拦网；也不要为了绿而在没改完 6 处时先改这个数。P1a-2 的实际路径就是这么走的（11 → 13，两个新码一起进）。
 
-> `editor:selection` 交付时的三条纪律（已定，写在这里防止 P1a-2 走样）：**与 `setSelection` 一起交付，不拆开**（不能只加方法不加码，也不能只加码不校验）；**不被 `editor:write` 隐含**（与 `editor:read` 同一条纪律）；**授权文案已定稿**，弹窗写「**移动你的光标与滚动位置**」，不复用 `editor:write` 的"修改正文"（措辞已进 P1a-2 实现规格，除非 UI 上放不下，不必再跟产品对）。
+
+> `editor:selection` 的三条纪律已全部执行完毕并核对通过，见上方「未做的一项」下方的注记（含定稿文案）。**`editor:selection` 的授权文案在 UI 上放不下时，要缩就两种语言一起缩**——理由见下面 D 段。
+
+**D. en 文案不得比 zh 窄（两种语言的权限承诺必须等价）—— 通用规矩，已定稿**
+
+权限弹窗是承诺书，中英两版承诺的范围必须一致。P1a-2 的实际例子：zh 定稿「移动你的光标与滚动位置」覆盖"光标 + 滚动"两件事，若 en 缩成 "Move your cursor"，**英文用户看到的授权范围就比中文窄**——等于英文弹窗少承诺了"滚动位置"那一半。所以 en 定为 `"Move your cursor and scroll position"`（`i18n.ts:2596`，35 字符；同表兄弟文案 28–30 字符，`PermissionList` 行是 icon + 左对齐文本，放得下）。
+
+`views` 的 en 同理：`"Add a panel to the sidebar"` 对应 zh「贡献侧边栏视图」，en 不比 zh 窄。
+
+**规矩（两条边界，防止被过度推广或钻空子）**：
+
+1. **只约束"承诺能力范围"的文案**——权限名称/描述、安装弹窗里的能力清单。纯操作文案（按钮标签「同意并安装」之类）不受约束：它不承诺任何能力，短一点没关系。
+2. **UI 真放不下时的唯一解法是"两种语言一起换措辞"**，不是缩范围，也不是删能力项。例：zh「移动光标与滚动位置」↔ en `"Move cursor and scroll"`，两版同步改。**只缩一版 = 拒绝。**
+
+
+
 
 
 
 
 ### P1b｜独立扩展宿主进程（12–18 人日，体积 ±0）
 
-**可验收的最小成果**：任务管理器里多一个 renderer 进程；插件里 `while(1){}` + 内存炸弹只死那个进程，主窗口存活并弹出"扩展宿主已重启"。
+> **前提已验证（第 −1 步实测，2026-10-27）**：隐藏 webview **真的拿到独立 renderer 进程**，崩溃隔离收益成立——**走方向甲**。三条实测：① 单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 **19 个**（+7），按 `--type` 分类 3 browser / 5 renderer / 6 utility / 3 gpu，**renderer 每个 webview 独立**；② 杀掉便签 renderer（PID 59276，90 MB）主窗口照常存活、CDP 正常应答；③ 在便签**页面主线程**（不是 Worker）跑 `while(true)` 25 秒，主窗口 `alive: true`——**页面级 renderer 隔离成立**。
+>
+> **真实收益要说准**：`while(true)` 在 **Worker** 里卡住的是 worker 线程，**两种模式下宿主页面都活着**（靠 5 s `RPC_TIMEOUT_MS` 判死，in-process 现在就有）。P1b 的差异化收益是**内存炸弹 / renderer 崩溃只带走扩展宿主**。验收因此拆成两条（2a 两种模式都有 / 2b 仅 ext-host），见 `plan-plugin-p1b-extension-host.md` §7。
+>
+> **完整实施方案见 `docs/plan-plugin-p1b-extension-host.md`**（含架构图、Transport 抽象、协议形状、文件清单、8 步实施、验收）。本节只保留架构取舍。
+
+**由此推出的两条硬约束**：
+1. **崩溃恢复必须处理 renderer 被 WebView2 自动重启的情况**（实测杀进程后页面仍在）：恢复逻辑不能假设"进程死了 = 窗口没了"，要能识别"重启后 worker 状态已丢"并重建 Worker 池（心跳 + `epoch` 计数）。
+2. **协议层只传引用与小载荷**；`getText()` 返回值是唯一大载荷（必须跨一次）——"传句柄不传值"只对协议层成立。
+
+**可验收的最小成果**：任务管理器里多一个 renderer 进程；**内存炸弹**只炸扩展宿主、主窗口存活并提示；`while(true)` 走 5 s 超时判死（两种模式一致，不是差异化项）。
 
 | 内容 | 说明 |
 | --- | --- |
 | 第二个 Vite 入口 `extension-host.html` | 只加载 `host-boot.js`，不含 React |
 | 隐藏 `WebviewWindow`（label `extension-host`） | 新增 `capabilities/extension-host.json`，`permissions: []` → deny-by-default |
-| `qing-plugin-rpc` custom protocol | Rust `register_asynchronous_uri_scheme_protocol`；请求体 JSON，响应体 JSON；**大文本走句柄** |
-| CPS | `default-src 'none'; script-src 'self'; worker-src 'self' blob:; connect-src qing-plugin-rpc:` |
-| 监督者 | 心跳 + 崩溃计数（沿用"连崩 3 次停用"）+ 指数退避重启 |
-| Transport 抽象 | `headless.ts` 抽出 `Transport` 接口，P0 路径用 `inprocess` 实现，P1b 用 `protocol` 实现 |
+| `qing-plugin-rpc` custom protocol | Rust `register_asynchronous_uri_scheme_protocol`；请求体 JSON，响应体 JSON；**大文本走句柄（传输层细节，插件 API 形状冻结）**——详见 `plan-plugin-p1b-extension-host.md` §4.2 |
+| CSP | `default-src 'none'; script-src 'self'; worker-src 'self' blob:; connect-src qing-plugin-rpc:` |
+| 监督者 | 心跳 + `epoch` 计数识别 renderer 自动重启；**崩溃归属**：宿主重启 3 次 → 退回 `in-process` + 提示（**不**全局停用插件，共享宿主会连坐）；单插件"连崩 3 次停用"保持原样 |
+| Transport 抽象 | `headless.ts` 抽出 `Transport` 接口，`inprocess` 为默认实现，`protocol` 为 opt-in |
 
-**未验证项（必须实测后再排期确认）**：
-- 隐藏 WebView2 窗口是否稳定拿到**独立 renderer 进程**（Chromium 进程模型下通常成立，但本项目未测）；
-- `register_asynchronous_uri_scheme_protocol` 在 P1 的 CSP 下与 blob worker 共存的时序；
-- 隐藏窗口的内存基线（量级参考 30–60 MB，未测）。
+**默认保持 in-process，直到四条验收全绿**（已定）：P1b 落地时**不切默认**，`in-process` 仍是默认 Transport。当前四条验收里只有「示例不回归」在现状下已知成立，其余三条（真独立进程 / 崩了不死主窗口 / 回退真能用）都是设计预期。**四条全绿后由 team-lead 拍切换默认**——不要在实现时顺手把默认改成 `protocol`，那等于让所有用户先当小白鼠。
+
+**剩余未验证项**（只有两条，不影响开工）：
+- `register_asynchronous_uri_scheme_protocol` 与 blob worker 的 CSP 共存时序（失败则退化为经隐藏窗口 `postMessage` 转发，不改语义）；
+- 隐藏窗口内存基线（参考 30–60 MB，未测）。
 
 ### P2｜可选 Node 后端（10–15 人日，体积 ±0）
 
@@ -265,7 +295,7 @@ P0 阶段同一张图去掉 `EH` 与 `RP`：Worker 仍在主窗口，`headless.t
 - 检测顺序：用户显式指定路径 → `PATH` 里的 `node` → 不启用（**绝不静默回退到某个捆绑二进制**）；
 - 协议：`stdio` 上的 **JSON-RPC 2.0，按行分隔（NDJSON）**，不用 LSP 的 `Content-Length` 头（多一层解析、无收益）；
 - 启动参数尽量收：`node --permission --allow-fs-read=<pluginDir> --allow-fs-write=<dataDir>/plugins/<id> --allow-net=false`。**明确告知：这是"安全带"不是"边界"**（Node 官方原文见 §1）；
-- 安装授权：单独一段红字 + 独立的 `runtime:node` 权限码，与现有 11 个权限码并列展示（新增一个码是「6 处同步点 + 2 张蕴含表 / 5 个函数镜像 + 1 个计数绊线」，见 §4 P1a 末尾清单）；
+- 安装授权：单独一段红字 + 独立的 `runtime:node` 权限码，与现有 13 个权限码并列展示（新增一个码是「6 处同步点 + 2 张蕴含表 / 5 个函数镜像 + 1 个计数绊线」，见 §4 P1a 末尾清单）；
 - 索引策略：带 `runtime:node` 的插件在列表里明确标注"需要本机 Node"，且不进入默认推荐；
 - 更强的隔离（AppContainer / 受限令牌）列为**未验证的后续项**，不要写进这一期的承诺。
 
@@ -351,10 +381,12 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 
 | 事实 | 证据 |
 | --- | --- |
-| 只有 `commands` 一个贡献点 | `plugin_manifest.rs::Contributions` 只有 `commands` 字段；`types.ts::PluginManifest.contributes` 同 |
+| 贡献点：`commands` + `views` 两个（P1a-2 起） | `plugin_manifest.rs::Contributions` 有 `commands` 与 `views` 字段（`ViewContribution { id, title }`，`views` 为空时序列化省略，故不贡献视图的包与 P1a-2 之前输出一致）；`types.ts::PluginManifest.contributes` 同 |
 | D1 的 Track B（插件独立窗口）**未落地** | `capabilities/` 只有 `default.json`、`tile.json`，无 `plugin-window.json`；全仓搜不到 `plugin-window` |
-| 权限校验位置 | `bridge.ts::REQUIREMENTS` + `hasPermission`；当前 **11 个**权限码（8 L1 + 3 `editor:*`）。新增一个码：**6 处同步点** + **2 张蕴含表 / 5 个函数镜像（需蕴含时才改）** + **1 个计数绊线**（`plugin_manifest.rs:1197` 的 `assert_eq!(…, 11)`，加码必红、故意的）——完整清单见 §4 P1a 末尾 |
-| 两张权限表当前完全一致 | `plugin_manifest.rs::KNOWN_PERMISSIONS` 与 `types.ts::PLUGIN_PERMISSIONS` 均为 11 个，**内容与顺序逐项相同**（已用脚本比对）；P1a-2 加码时可直接拿这个顺序当 diff 锚点。**顺序锚点的前提**：新增项插在哪一位都行（如 `notify` 之后），但**两张表必须插到同一位置**——顺序一旦分叉，锚点就失效，diff 看不出漏改 |
+| 权限校验位置 | `bridge.ts::REQUIREMENTS` + `hasPermission`；当前 **13 个**权限码（8 L1 + `editor:read|write|decorate` + `views` + `editor:selection`），全部落地。新增一个码：**6 处同步点** + **2 张蕴含表 / 5 个函数镜像（需蕴含时才改）** + **1 个计数绊线**（`plugin_manifest.rs:1297` 的 `assert_eq!(…, 13)`，加码必红、故意的）——完整清单见 §4 P1a 末尾 |
+| 两张权限表当前完全一致 | `plugin_manifest.rs::KNOWN_PERMISSIONS` 与 `types.ts::PLUGIN_PERMISSIONS` 均为 13 个，**内容与顺序逐项相同**（已用脚本比对，`in sync: true`）；可直接拿顺序当 diff 锚点。**顺序锚点的前提**：新增项插在哪一位都行，但**两张表必须插到同一位置**——P1a-2 的实际做法是 `views`/`editor:selection` 插在 `editor:decorate` 之后（下标 11、12），顺序一旦分叉锚点就失效 |
+| **示例覆盖的权限面**（P1a 实证索引） | `qing.outline`：`editor:read` + `editor:write` + `editor:decorate` + `editor:selection` + `views` + `notify`（侧边栏树 → 点节点移动光标；`qing.outline.bold` 用 `replace` 只改选区；`qing.outline.mark-duplicates` 用 `setDecorations`）；`qing.editor-demo`：`editor:read` + `notify`（含 `getText(range)` 只取选区）；`qing.wordcount-ts` / `qing.note-wordcount`：`notes:read` + `notify`；`qing.hello-headless`：`clipboard:write` + `notify`；`qing.isolation-probe`：`notify`。**六个示例全部已打包可安装**（`examples/*.qnp` 均在 git，`qing.outline-1.0.0.qnp` 含 4 条命令 + 6 个权限码）。**13 个码里 8 个有示例实证**（`notify` / `notes:read` / `clipboard:write` / `editor:read` / `editor:write` / `editor:decorate` / `editor:selection` / `views`）；剩 5 个只有单测/验收覆盖：`storage`、`notes:write`、`todo:read|write`、`clipboard:read` |
+| **`.qnp` 文件名 = 插件 id + 版本** | id 组合规则见 `examples/pack.mjs:68-73`：`manifest.id` 优先，否则 `publisher.name`，否则 `name`。所以 `publisher: "qing"` + `name: "outline"` → id `qing.outline` → 产物 `qing.outline-1.0.0.qnp`（**不是** `qing.editor-outline-*`；查文件名时别按显示名拼） |
 | RPC 超时 5 s / 连崩 3 次停用 | `headless.ts:36–37` |
 | Worker 无内存上限 | `headless.ts` 全文无内存监控逻辑；堆受 renderer 进程约束 |
 | CSP 关键位 | `tauri.conf.json`：`script-src` 无 `blob:`（主线程不能 `import(blob)`）、`worker-src 'self' blob:`、`connect-src` 显式列表 |
@@ -372,11 +404,25 @@ VS Code 的生态来自"平台方自己就是最大开发者 + 10 万扩展 + �
 | **存储是 HTML、编辑面是 Markdown** | `NoteEditor.tsx:78` `htmlToMarkdown()`（turndown + gfm），`:291` `isStoredEditorHtml(content) ? htmlToMarkdown(content) : content`，`:331` 同 |
 | **协同只在云笔记，本地笔记无 Yjs** | `Workspace/CloudNoteEditor.tsx:980/1126` `yCollab(...)`（`y-codemirror.next`）+ `HocuspocusProvider`；`src/components/Editor/` 内搜不到 `yjs`/`yCollab`/`hocuspocus` |
 | **CM6 外部写入的既有机制** | `MarkdownSourceEditor.tsx:25` `externalDocumentUpdate` 注解，`:151` 用它 + `Transaction.addToHistory.of(false)` 同步外部值；用途是抑制 `onChange` 回环，不是给插件复用 |
+| **验收插件清单/权限改动前，Rust 侧必须重编译** | 权限码在 `plugin_manifest.rs::KNOWN_PERMISSIONS`（Rust 侧）。前端热更新不会刷新它：用旧 debug 二进制 + 新前端跑 P1a-2，`editor:selection` 会报 `unknown permission`，**看起来像"代码漏了权限"，其实是二进制旧**。重编译后 6 个码一次通过。验收 runbook 应把这条列为第一步 |
+| **授权弹窗的挂载条件绑在界面状态上**（**已修**：`a3cf48f`，P1b 前第 0 步） | **同一堵墙撞了两次**：① P0 那次 `PermissionPrompt` 挂在"未选中插件"的提前 return 之后 → 首次安装看不到弹窗；② 这次挂在 `PluginDetail.tsx:463`（只在插件视图渲染）→ 别的视图调 `beginInstallFromFolder` 时 store 的 `installPrompt` 已就绪、界面无按钮。**根因是同一句：授权是全局状态，挂载条件却绑在界面状态上**。修法不是挪一次位置，而是**搬到与视图无关的挂载点、无条件渲染**——把这类 bug 的发生条件去掉。**现状**：新增 `components/Plugin/InstallPermissionPrompt.tsx`（纯接线，不含视图状态分支），挂在 `App.tsx:1377` 的 `ToastHost` 同层；`PluginDetail` 不再持有弹窗（`:452` 留注释防回流）。判定标准「无 `if (currentView)` / `if (selectedId)` 之类条件」已满足。<br>**影响面比缺口描述的更大**：四个 UI 入口共用同一条 `stage → 授权 → commit` 链路（`install.ts` 头注释），所以一次搬家四条路径一起修好——从文件（`PluginSidebar:195`）、从文件夹（`PluginSidebar:209`）、索引安装（`PluginDetail:214`）、版本更新（`PluginDetail:225`），不止 folder 那条 |
+
+**下一个示例的选题建议**（已定排期：**P1b 之后**，不是待办也不是"暂不排期"）：
+
+**选区处理教学样例**——统计选区 → 把选区替换成处理结果（全角转半角 / 去掉连续空行），**只处理选区**，权限申请 `editor:read` + `editor:write` + `notify`。它的价值不是补覆盖，而是**教学**：让用户一眼看懂 `editor:write` 到底会动他哪几个字。`editor:write` 是 13 个码里唯一能改**用户此刻正在看、正在打字的那一篇**的码（`notes:write` 改的是库里某篇笔记），风险等级不同，所以这个样例值得单独做。
+
+排在 P1b 之后的理由：用户选定的范围是 P0 + P1a + P1b，**P1b（独立宿主）是当前唯一未完成的交付物**；示例属强化项，插在 P1b 前面会推迟用户真正要的东西。
+
+> **覆盖缺口已闭合**（`dc1811a`）：`editor:write` / `editor:decorate` 的可运行实证由 `qing.outline` 的两条命令提供——`qing.outline.bold`（「给选中标题加粗」，用 `replace`）+ `qing.outline.mark-duplicates`（「标记重复词」，用 `setDecorations`），权限码同步补 `editor:write`/`editor:decorate`。两条行为都有证据锚点：
+> - **`bold` 只动选区**：`examples/qing-outline/src/extension.ts:201` 是唯一写入点 `replace({ from: selection.from, to: selection.to }, next)`，`next` 只由 `selection.text` 派生；选区外正文不进这次 change。无选区时连 `replace` 都不调用。
+> - **标记随编辑跟随**：宿主行为（`DecorationSet.map(tr.changes)`），被 `scripts/verify-plugin-runtime/run.mjs:424-431` 的断言钉住（标记 `0..5`，其前插入 `XX` → 必须落在 `2..7`），门禁每次跑都验，不是"设计上应该跟随"。
+
 
 ## 附录 B：未验证项清单（不要当成结论引用）
 
 - NSIS LZMA 对 `node.exe` 的实际压缩比（§2.1 的 +25–30 MiB 是估算）；
 - `deno_core` / `rquickjs` / `boa` 嵌入后的真实二进制增量；
-- 隐藏 WebView2 窗口是否稳定拿到独立 renderer 进程、其内存基线；
+- ~~隐藏 WebView2 是否分进程~~ **已实测通过**（2026-10-27，方向甲）：单窗口 12 个 `msedgewebview2` → 开第二个 webview 后 19 个，renderer 每 webview 独立；杀 renderer 主窗口存活；`while(true)` 25 秒不牵连。三条实测见 `plan-plugin-p1b-extension-host.md` §0。剩余未验证的只有 CSP 共存时序与隐藏窗口内存基线（见 §4 P1b）。
 - **云笔记**（`Workspace/CloudNoteEditor.tsx`，CM6 + `yCollab` + Hocuspocus）在协同在场时，插件驱动的写回是否与远程事务正确合并——**这项尚未验证，且当前不触碰**：P1a-1 已定不覆盖云笔记，`CloudNoteEditor` 不发布为活动编辑器，`qing.editor.*` 直接返回 `E_NO_EDITOR`。只有将来明确决定接云笔记时，这条才变成排期前提；到那时仍不能当已验证来估。
-- `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序。
+- `register_asynchronous_uri_scheme_protocol` 与 blob worker 在同一 CSP 下的共存时序；
+- **市场一键安装**（从索引列表点装，非本地文件/文件夹）**未验证**：CDN 上的 `index.json` 仍发旧 `download` 地址，`download` 字段正在改钉 SHA。P1a 端到端只覆盖了「文件夹安装」路径；一键安装要等索引侧收口后补验。
