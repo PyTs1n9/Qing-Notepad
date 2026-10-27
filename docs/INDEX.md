@@ -61,6 +61,7 @@
 
 | 文档 | 摘要 | 什么时候读它 | 大小 |
 | --- | --- | --- | --- |
+| `plugin-guide.md` | **插件入门**：加了什么功能、怎么维护、怎么装插件、怎么开发插件（含 API 速查与最小示例） | 想写插件 / 想知道插件能干什么 | 8.5 KB |
 | `verification-plugin-l1.md` | L1 插件**实测**做了什么：Worker 隔离、两阶段安装、权限闸门、CSP 只在 release 生效、14 项验收 | 动 `src/plugin/`、`src-tauri/plugin*.rs` | 13.9 KB |
 | `analysis-extension-host.md` | 把 Worker 插件扩成 VS Code 式扩展宿主的取舍：不自带 Node、P0–P2 分期、CM6 七条硬约束 | 读插件 P1a 取舍（编辑器 API 已交付、独立宿主 P1b 未做） | 27.8 KB |
 | `analysis-vscode-extension-ecosystem.md` | VS Code 扩展生态五维分析：规模、蠕虫事件、安装量陷阱、命名空间抢注 | 评审插件分发/更新策略时 | 21.2 KB |
@@ -101,6 +102,7 @@
 | AI 会话 / 切换模型 | `decisions-ai-channel-conversations.md` | `decisions-ai-conversations.md` |
 | AI 写笔记 / 权限 | `decisions-ai-note-write.md` | `topics/ai-module.md` |
 | 工作台 / 概览 / 弹窗 | `decisions-workspace-dashboard.md` | `decisions-layout-unification.md` |
+| 想开发插件 / 装插件 | `plugin-guide.md` | `examples/*/src/qing.d.ts` |
 | 插件机制 / 权限 / 安装 | `verification-plugin-l1.md` | `decisions-plugin-system.md` + `topics/plugin-system.md` |
 | 插件 API / 编辑器 / CM6 | `analysis-extension-host.md`（P1a）——编辑器 API 是 **CodeMirror 6** 映射：`getText(range?)` / `getSelection()` / `replace()` / `setDecorations()`，权限 `editor:read\|write\|decorate`（`setSelection` 不在交付物，新码 `editor:selection` 排 P1a-2） | `analysis-vscode-extension-ecosystem.md` |
 | 数据目录 / 迁移 / 图片 | `review-performance-security.md` | `topics/env.md` |
