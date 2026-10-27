@@ -62,7 +62,7 @@
 | 文档 | 摘要 | 什么时候读它 | 大小 |
 | --- | --- | --- | --- |
 | `verification-plugin-l1.md` | L1 插件**实测**做了什么：Worker 隔离、两阶段安装、权限闸门、CSP 只在 release 生效、14 项验收 | 动 `src/plugin/`、`src-tauri/plugin*.rs` | 13.9 KB |
-| `analysis-extension-host.md` | 把 Worker 插件扩成 VS Code 式扩展宿主的取舍：不自带 Node、P0–P2 分期、CM6 七条硬约束 | 规划插件 P1（编辑器 API / 独立宿主） | 27.8 KB |
+| `analysis-extension-host.md` | 把 Worker 插件扩成 VS Code 式扩展宿主的取舍：不自带 Node、P0–P2 分期、CM6 七条硬约束 | 读插件 P1a 取舍（编辑器 API 已交付、独立宿主 P1b 未做） | 27.8 KB |
 | `analysis-vscode-extension-ecosystem.md` | VS Code 扩展生态五维分析：规模、蠕虫事件、安装量陷阱、命名空间抢注 | 评审插件分发/更新策略时 | 21.2 KB |
 | `review-performance-security.md` | 2026-10-24 性能与安全静态审查（P0/P1 分级清单） | 查安全边界、`fs:scope`、CSP 的来历 | 18.7 KB |
 | `verify-batch3.md` | 批次 3 验证报告：CSP + capability 收紧的静态/构建期/探针结果 | 改 CSP 或 capability 时对照 | 11.4 KB |
