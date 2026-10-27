@@ -37,11 +37,11 @@ const INDEX_TTL_SECS: u64 = 24 * 60 * 60;
 const INDEX_URLS: [(&str, &str); 2] = [
     (
         "github",
-        "https://raw.githubusercontent.com/PyTs1n9/qing-notepad-plugins/main/index.json",
+        "https://raw.githubusercontent.com/PyTs1n9/Qing-Notepad-Plugins/main/index.json",
     ),
     (
         "jsdelivr",
-        "https://cdn.jsdelivr.net/gh/PyTs1n9/qing-notepad-plugins@main/index.json",
+        "https://cdn.jsdelivr.net/gh/PyTs1n9/Qing-Notepad-Plugins@main/index.json",
     ),
 ];
 const USER_AGENT: &str = "QingNotepad-PluginManager/1";
