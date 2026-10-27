@@ -182,7 +182,9 @@ pub fn parse_up(body: &[u8]) -> Result<Routed, String> {
         .cloned()
         .ok_or_else(|| "E_INTERNAL: `message` is required".to_string())?;
     match message.get("t").and_then(Value::as_str) {
-        Some("ready" | "rpc" | "res" | "log") => {}
+        // `gone` is the extension host reporting a worker that will not answer
+        // again — the cross-process form of a worker crash.
+        Some("ready" | "rpc" | "res" | "log" | "gone") => {}
         Some(other) => return Err(format!("E_INTERNAL: unknown message `{other}`")),
         None => return Err("E_INTERNAL: `message.t` is required".to_string()),
     }
@@ -281,7 +283,14 @@ pub fn plugin_ext_host_open(app: tauri::AppHandle) -> Result<String, String> {
     if app.get_webview_window("ext-host").is_some() {
         return Ok("already-open".into());
     }
-    tauri::WebviewWindowBuilder::new(&app, "ext-host", WebviewUrl::App("ext-host.html".into()))
+    // The page takes its mode from the URL, not from an env var it cannot see:
+    // `?probe=1` turns on the CSP probe instead of starting the worker pool.
+    let page = if std::env::var("QING_EXT_HOST_PROBE").is_ok() {
+        "ext-host.html?probe=1"
+    } else {
+        "ext-host.html"
+    };
+    tauri::WebviewWindowBuilder::new(&app, "ext-host", WebviewUrl::App(page.into()))
         .title("Qing Extension Host")
         .visible(false)
         .skip_taskbar(true)
@@ -384,16 +393,18 @@ mod tests {
     }
 
     #[test]
-    fn the_four_up_message_kinds_are_accepted_and_nothing_else() {
-        for kind in ["ready", "rpc", "res", "log"] {
+    fn the_up_message_kinds_are_accepted_and_nothing_else() {
+        // `gone` is the cross-process form of a worker crash: the extension host
+        // saying "this one will not answer again".
+        for kind in ["ready", "rpc", "res", "log", "gone"] {
             let routed = parse_up(&up_body(kind)).unwrap_or_else(|error| panic!("{kind}: {error}"));
             assert_eq!(routed.plugin_id, "qing.example");
             assert_eq!(routed.message["t"], kind);
         }
         // An extension host that could send `init` would be able to start a
-        // plugin under an id of its choosing; the four kinds above are all it
-        // is allowed to say.
-        for kind in ["init", "call", "event", "nonsense", ""] {
+        // plugin under an id of its choosing; the kinds above are all it is
+        // allowed to say.
+        for kind in ["init", "call", "event", "load", "unload", "nonsense", ""] {
             let error = parse_up(&up_body(kind)).expect_err("`init` is not an up message");
             assert!(error.starts_with("E_INTERNAL"), "{kind}: {error}");
         }

@@ -39,6 +39,9 @@
  * in sync.
  */
 
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
 /**
  * The answer to a request, travelling in **both** directions:
  * the host sends one to answer a plugin's `rpc`, and the plugin sends one to
@@ -73,6 +76,29 @@ export type WorkerOutbound =
   | { t: "rpc"; rid: number; ns: string; method: string; args: unknown[] }
   | { t: "log"; level: string; args: string[] }
   | WorkerResMessage;
+
+/**
+ * Host → extension host, on the wire.
+ *
+ * `load` / `unload` are for the extension-host page itself (it owns a pool of
+ * workers); anything else is a `WorkerInbound` the page forwards verbatim to
+ * the named worker. Keeping it flat rather than nesting an envelope is
+ * deliberate: the Rust whitelist checks one `t` field, and one shape per
+ * direction is one less thing to get wrong.
+ */
+export type HostToExtMessage =
+  | { t: "load"; body: string }
+  | { t: "unload" }
+  | WorkerInbound;
+
+/**
+ * Extension host → host, on the wire.
+ *
+ * `gone` is the extension host saying a worker it hosted will not answer again
+ * — its context died. The host turns that into `onError`, which is the same
+ * signal an in-process worker gives when it crashes.
+ */
+export type ExtToHostMessage = WorkerOutbound | { t: "gone"; reason: string };
 
 export type TransportMessageHandler = (pluginId: string, message: WorkerOutbound) => void;
 export type TransportErrorHandler = (pluginId: string, message: string) => void;
@@ -172,6 +198,87 @@ export function createInProcessTransport(): PluginTransport {
       entry.worker.onmessageerror = null;
       entry.worker.terminate();
       URL.revokeObjectURL(entry.objectUrl);
+    },
+  };
+}
+
+/** The event the Rust bridge emits for every plugin → host message. */
+const UP_EVENT = "plugin-ext-host-up";
+
+/**
+ * The cross-process transport: same messages, but the workers live in the
+ * hidden extension-host webview and the messages ride `qing-plugin-rpc`.
+ *
+ * What this side owns is *routing* and nothing else: every `send` becomes a
+ * protocol message, every protocol message is matched back to a plugin by its
+ * `pluginId`, and a `gone` is reported exactly the way an in-process crash is —
+ * `headless.ts` above cannot tell the difference, which is the point of the
+ * interface. Permissions still live in `bridge.ts`; the plugin API shape is
+ * still the worker's.
+ */
+export function createProtocolTransport(): PluginTransport {
+  const live = new Set<string>();
+  let messageHandler: TransportMessageHandler = () => undefined;
+  let errorHandler: TransportErrorHandler = () => undefined;
+  let listening = false;
+
+  const push = (pluginId: string, message: HostToExtMessage): void => {
+    void invoke("plugin_ext_host_send", { pluginId, message }).catch((error) => {
+      // A message that cannot even be queued is a transport failure, not a
+      // plugin one — reported against the plugin that was being talked to,
+      // because that is whose calls are now hanging.
+      errorHandler(pluginId, `the extension host did not accept a message: ${String(error)}`);
+    });
+  };
+
+  return {
+    kind: "protocol",
+
+    start(pluginId: string, body: string): void {
+      live.add(pluginId);
+      // Subscribed lazily but only once: `listen` is the only async part of
+      // this transport, and doing it in the constructor would make construction
+      // async for every caller.
+      if (!listening) {
+        listening = true;
+        void listen<{ pluginId: string; message: ExtToHostMessage }>(UP_EVENT, (event) => {
+          const payload = event.payload as { pluginId?: unknown; message?: ExtToHostMessage };
+          const id = payload?.pluginId;
+          const message = payload?.message;
+          if (typeof id !== "string" || !message || typeof message !== "object") return;
+          if (message.t === "gone") {
+            // The worker's context is not coming back. Same signal an
+            // in-process crash gives, so the recovery path is shared.
+            live.delete(id);
+            errorHandler(id, message.reason || "the extension host went away");
+            return;
+          }
+          messageHandler(id, message);
+        }).catch((error) => {
+          listening = false;
+          for (const id of live) {
+            errorHandler(id, `the extension host feed is unavailable: ${String(error)}`);
+          }
+        });
+      }
+      push(pluginId, { t: "load", body });
+    },
+
+    send(pluginId: string, message: WorkerInbound): void {
+      push(pluginId, message);
+    },
+
+    onMessage(handler: TransportMessageHandler): void {
+      messageHandler = handler;
+    },
+
+    onError(handler: TransportErrorHandler): void {
+      errorHandler = handler;
+    },
+
+    dispose(pluginId: string): void {
+      if (!live.delete(pluginId)) return;
+      push(pluginId, { t: "unload" });
     },
   };
 }
