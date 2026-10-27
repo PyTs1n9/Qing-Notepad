@@ -38,6 +38,7 @@
   var nextRid = 1;
   var pending = new Map();
   var commandHandlers = new Map();
+  var viewProviders = new Map();
   var listeners = { activate: [], deactivate: [] };
   var started = false;
 
@@ -232,6 +233,34 @@
       setDecorations: function (key, ranges) {
         return rpc("editor", "setDecorations", [key, ranges]);
       },
+      /**
+       * Move the caret: `{ anchor, head }`, same offsets as everything else,
+       * in either order (a backwards selection is real). `from`/`to` are
+       * accepted as a shorthand so `getSelection()` can be handed straight
+       * back. The scroll position follows CodeMirror's own behaviour — the
+       * caret is scrolled into view, nothing else moves.
+       */
+      setSelection: function (range) {
+        return rpc("editor", "setSelection", [range]);
+      },
+    },
+
+    /**
+     * Declarative sidebar panels (`contributes.views`, permission `views`).
+     *
+     * `registerTreeDataProvider` supplies the rows; the host decides when to
+     * ask. `refresh(viewId)` says "my data changed" and the panel re-fetches —
+     * it may only name a view this plugin contributes.
+     */
+    views: {
+      registerTreeDataProvider: function (viewId, provider) {
+        if (typeof viewId !== "string" || viewId.length === 0) return;
+        if (!provider || typeof provider.getChildren !== "function") return;
+        viewProviders.set(viewId, provider);
+      },
+      refresh: function (viewId) {
+        return rpc("views", "refresh", [viewId]);
+      },
     },
 
     todo: {
@@ -353,11 +382,44 @@
     }
 
     if (data.t === "call") {
+      var callArgs = Array.isArray(data.args) ? data.args : [];
+
+      // Host → worker: the sidebar asking a provider for one level of children.
+      // `elementId` is `callArgs[1]` and is undefined at the root.
+      if (data.ns === "views" && data.method === "getChildren") {
+        var provider = viewProviders.get(callArgs[0]);
+        if (!provider) {
+          post({ t: "res", rid: data.rid, ok: false, code: "E_NO_HANDLER" });
+          return;
+        }
+        try {
+          var rows = await provider.getChildren(callArgs[1]);
+          // Row by row: one item the structured clone cannot carry must not
+          // take the whole panel down with it.
+          var plain = [];
+          if (Array.isArray(rows)) {
+            for (var row = 0; row < rows.length; row += 1) {
+              try {
+                plain.push(JSON.parse(JSON.stringify(rows[row])));
+              } catch (dropError) {
+                post({ t: "log", level: "warn", args: ["dropped an unclonable tree item"] });
+              }
+            }
+          }
+          post({ t: "res", rid: data.rid, ok: true, value: plain });
+        } catch (error) {
+          post({ t: "log", level: "error", args: [describe(error)] });
+          var providerCode = error && typeof error.code === "string" ? error.code : "E_INTERNAL";
+          post({ t: "res", rid: data.rid, ok: false, code: providerCode });
+        }
+        return;
+      }
+
       if (data.ns !== "commands" || data.method !== "execute") {
         post({ t: "res", rid: data.rid, ok: false, code: "E_INTERNAL" });
         return;
       }
-      var commandId = Array.isArray(data.args) ? data.args[0] : undefined;
+      var commandId = callArgs[0];
       var handler = commandHandlers.get(commandId);
       if (!handler) {
         post({ t: "res", rid: data.rid, ok: false, code: "E_NO_HANDLER" });

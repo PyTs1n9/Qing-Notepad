@@ -29,10 +29,18 @@ import {
 } from "@/utils/editorHandle";
 import type { Note, Todo } from "@/types";
 import { hasPermission, PluginError, toPluginError, type PluginPermission } from "./types";
+import { notifyViewRefresh } from "./views";
 
 export interface PluginBridgeContext {
   pluginId: string;
   permissions: readonly string[];
+  /**
+   * The view ids this plugin contributes. `views.refresh` may only name one of
+   * these: "my data changed" is a plugin's own business, poking someone else's
+   * panel is not. Supplied by the host from the install record rather than read
+   * from the store here, so this module stays free of store imports.
+   */
+  viewIds: readonly string[];
 }
 
 type Tone = "info" | "success" | "danger";
@@ -44,14 +52,17 @@ const REQUIREMENTS: Record<string, Record<string, PluginPermission | null>> = {
   todo: { list: "todo:read", create: "todo:write", update: "todo:write" },
   clipboard: { read: "clipboard:read", write: "clipboard:write" },
   ui: { toast: "notify" },
-  // P1a. Three codes for one namespace, and no implication between them: being
-  // allowed to rewrite the document does not hand a plugin the text.
+  // P1a / P1a-2. One code per kind of trust, and no implication between them:
+  // being allowed to rewrite the document does not hand a plugin the text,
+  // being allowed to move the caret does not hand it the right to rewrite.
   editor: {
     getText: "editor:read",
     getSelection: "editor:read",
     replace: "editor:write",
+    setSelection: "editor:selection",
     setDecorations: "editor:decorate",
   },
+  views: { refresh: "views" },
 };
 
 /** One `replace()` may insert this many characters before `E_TOO_LARGE`. */
@@ -179,6 +190,43 @@ function asDecorationRanges(value: unknown, docLength: number): DecorationRange[
     ranges.push({ from, to, kind });
   }
   return ranges;
+}
+
+/**
+ * A caret position: two integer offsets in either order.
+ *
+ * Unlike `asDocumentRange` there is no `from <= to` rule — a backwards
+ * selection (head before anchor) is what shift+arrow produces, and a plugin
+ * that cannot make one cannot match what the user can. `{from, to}` is accepted
+ * as a shorthand so the output of `getSelection()` can be handed straight back.
+ */
+function asDocumentSelection(
+  value: unknown,
+  docLength: number,
+): { anchor: number; head: number } {
+  const candidate = (value ?? {}) as {
+    anchor?: unknown;
+    head?: unknown;
+    from?: unknown;
+    to?: unknown;
+  };
+  const anchorRaw = candidate.anchor ?? candidate.from;
+  const headRaw = candidate.head ?? candidate.to;
+  if (
+    typeof anchorRaw !== "number" ||
+    typeof headRaw !== "number" ||
+    !Number.isInteger(anchorRaw) ||
+    !Number.isInteger(headRaw)
+  ) {
+    throw new PluginError("E_RANGE_INVALID", "`anchor` and `head` must be integers");
+  }
+  if (anchorRaw < 0 || anchorRaw > docLength || headRaw < 0 || headRaw > docLength) {
+    throw new PluginError(
+      "E_RANGE_INVALID",
+      `selection ${anchorRaw}/${headRaw} is outside the document (0..${docLength})`,
+    );
+  }
+  return { anchor: anchorRaw, head: headRaw };
 }
 
 export async function dispatchPluginCall(
@@ -357,6 +405,32 @@ export async function dispatchPluginCall(
         const key = asString(args[0], "key").slice(0, MAX_DECORATION_KEY_LENGTH);
         const ranges = asDecorationRanges(args[1], view.state.doc.length);
         setPluginDecorations(view, context.pluginId, key, ranges);
+        return null;
+      }
+
+      case "editor.setSelection": {
+        const view = requireEditor();
+        const { anchor, head } = asDocumentSelection(args[0], view.state.doc.length);
+        // Same discipline as `replace`: a plain change spec, no annotation. The
+        // caret move is a real, undoable selection change, and CodeMirror's own
+        // scroll-into-view handles the rest — the host does not add a scrolling
+        // API on top of it.
+        view.dispatch({ selection: { anchor, head } });
+        return null;
+      }
+
+      case "views.refresh": {
+        const viewId = asString(args[0], "viewId");
+        if (!context.viewIds.includes(viewId)) {
+          // Refreshing someone else's panel would let one plugin redraw another
+          // plugin's data; the view ids are the plugin's own, so anything else
+          // is a permission failure rather than a typo.
+          throw new PluginError(
+            "E_PERMISSION_DENIED",
+            `views.refresh(${viewId}) is not a view this plugin contributes`,
+          );
+        }
+        notifyViewRefresh(context.pluginId, viewId);
         return null;
       }
 

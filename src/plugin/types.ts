@@ -29,6 +29,12 @@ export const PLUGIN_PERMISSIONS = [
   "editor:read",
   "editor:write",
   "editor:decorate",
+  // P1a-2. `views` is the right to put a panel in the sidebar;
+  // `editor:selection` is the right to move the caret. Neither implies
+  // anything: painting a panel is not "edit my notes", and moving the cursor is
+  // not "rewrite my note" — the user decides each one separately.
+  "views",
+  "editor:selection",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];
@@ -46,6 +52,8 @@ export const PERMISSION_LABEL_KEYS: Record<PluginPermission, keyof TranslationKe
   "editor:read": "pluginPermEditorRead",
   "editor:write": "pluginPermEditorWrite",
   "editor:decorate": "pluginPermEditorDecorate",
+  views: "pluginPermViews",
+  "editor:selection": "pluginPermEditorSelection",
 };
 
 export function isPluginPermission(value: string): value is PluginPermission {
@@ -63,6 +71,39 @@ export interface PluginCommandContribution {
   category?: string | null;
 }
 
+/**
+ * A sidebar panel a plugin contributes (`contributes.views`).
+ *
+ * `id` is a global key — the host names the section, routes
+ * `views.refresh(viewId)` and matches `onView:<id>` activation with it — so the
+ * convention is `<plugin id>.<name>`. `title` is the plugin's own copy: the
+ * host does not translate it.
+ */
+export interface PluginViewContribution {
+  id: string;
+  title: string;
+}
+
+/**
+ * One row of a plugin-contributed tree.
+ *
+ * `id` is scoped to the view and used to fetch children;
+ * `command` may only name a command the *same* plugin contributes — a tree item
+ * is not a way to invoke another plugin.
+ */
+export interface PluginTreeItem {
+  id: string;
+  label: string;
+  description?: string | null;
+  command?: string | null;
+  /**
+   * Whether the row can be opened. Omitted means "no children", which is the
+   * common case: a host that rendered a chevron on every row would make the
+   * plugin author's simplest tree look like a file picker.
+   */
+  collapsibleState?: "none" | "collapsed" | "expanded" | null;
+}
+
 export interface PluginManifest {
   id: string;
   name: string;
@@ -77,7 +118,10 @@ export interface PluginManifest {
   main: string;
   activationEvents?: string[];
   permissions?: string[];
-  contributes?: { commands?: PluginCommandContribution[] | null } | null;
+  contributes?: {
+    commands?: PluginCommandContribution[] | null;
+    views?: PluginViewContribution[] | null;
+  } | null;
 }
 
 export interface InstalledPlugin {
@@ -187,6 +231,10 @@ export function authorName(manifest: PluginManifest | null | undefined): string 
 
 export function manifestCommands(manifest: PluginManifest | null | undefined): PluginCommandContribution[] {
   return manifest?.contributes?.commands ?? [];
+}
+
+export function manifestViews(manifest: PluginManifest | null | undefined): PluginViewContribution[] {
+  return manifest?.contributes?.views ?? [];
 }
 
 export function manifestPermissions(manifest: PluginManifest | null | undefined): PluginPermission[] {

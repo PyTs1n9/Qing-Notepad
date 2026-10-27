@@ -54,6 +54,12 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "editor:read",
     "editor:write",
     "editor:decorate",
+    // P1a-2: a declarative sidebar tree, and the right to move the caret.
+    // Neither is implied by anything: contributing a panel is not "edit my
+    // notes", and moving the cursor is not "rewrite my note" — the user decides
+    // all three separately in the install prompt.
+    "views",
+    "editor:selection",
 ];
 
 const MAX_ID_LEN: usize = 64;
@@ -91,11 +97,28 @@ pub struct CommandContribution {
     pub category: Option<String>,
 }
 
+/// A sidebar panel the plugin wants to fill.
+///
+/// `id` has to be unique across every installed package — the host keys the
+/// tree, the refresh events and the `onView:<id>` activation on it — so the
+/// convention is `<plugin id>.<name>`. `title` is what the section header
+/// shows; it is the plugin's own copy and is not translated by the host.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewContribution {
+    pub id: String,
+    pub title: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Contributions {
     #[serde(default)]
     pub commands: Vec<CommandContribution>,
+    /// Absent from the serialised form when empty, so a package that
+    /// contributes no views produces exactly the JSON it did before P1a-2.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub views: Vec<ViewContribution>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,6 +338,8 @@ struct PackageEngines {
 #[serde(rename_all = "camelCase", default)]
 struct PackageContributions {
     commands: Option<Vec<PackageCommand>>,
+    /// VS Code spells this the same way, so it maps straight through.
+    views: Option<Vec<ViewContribution>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -423,10 +448,15 @@ fn map_activation_events(events: Option<Vec<String>>) -> Vec<String> {
 }
 
 /// `contributes.commands[]` uses `command` in VS Code and `id` here; both are
-/// accepted, `command` wins when a package carries both.
-fn map_commands(contributes: Option<PackageContributions>) -> Vec<CommandContribution> {
-    let mut out: Vec<CommandContribution> = Vec::new();
-    for command in contributes.and_then(|value| value.commands).unwrap_or_default() {
+/// accepted, `command` wins when a package carries both. `contributes.views[]`
+/// is spelled the same in both formats and maps straight through.
+fn map_contributions(contributes: Option<PackageContributions>) -> Contributions {
+    let mut commands: Vec<CommandContribution> = Vec::new();
+    for command in contributes
+        .as_ref()
+        .and_then(|value| value.commands.clone())
+        .unwrap_or_default()
+    {
         let id = command
             .command
             .or(command.id)
@@ -440,9 +470,20 @@ fn map_commands(contributes: Option<PackageContributions>) -> Vec<CommandContrib
         // An entry with no id or no title is a broken contribution, not a
         // broken package: `validate` rejects it with the same code the old
         // format produced, so the author sees one consistent message.
-        out.push(CommandContribution { id, title, category });
+        commands.push(CommandContribution { id, title, category });
     }
-    out
+
+    let views: Vec<ViewContribution> = contributes
+        .and_then(|value| value.views)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|view| ViewContribution {
+            id: view.id.trim().to_string(),
+            title: view.title.trim().to_string(),
+        })
+        .collect();
+
+    Contributions { commands, views }
 }
 
 /// Turn a `package.json` document into the internal manifest.
@@ -547,9 +588,7 @@ fn map_package_json(package: PackageJson) -> Result<PluginManifest, ManifestErro
         main,
         activation_events: map_activation_events(package.activation_events),
         permissions: package.permissions.unwrap_or_default(),
-        contributes: Contributions {
-            commands: map_commands(package.contributes),
-        },
+        contributes: map_contributions(package.contributes),
         dependencies: None,
     })
 }
@@ -606,6 +645,27 @@ pub fn validate(manifest: &PluginManifest) -> Result<(), ManifestError> {
                 "commands[] entries need a non-empty id and title",
             ));
         }
+    }
+    // A view id is a key the host uses three times: it names the sidebar
+    // section, it carries `views.refresh(viewId)`, and it is what
+    // `onView:<id>` activation matches. Duplicates *inside* one package are
+    // refused here; duplicates across packages are refused at install time by
+    // the same kind of check that keeps command ids unique.
+    let mut view_ids: Vec<&str> = Vec::new();
+    for view in &manifest.contributes.views {
+        if view.id.trim().is_empty() || view.title.trim().is_empty() {
+            return Err(ManifestError::new(
+                "E_MANIFEST_INVALID",
+                "contributes.views[] entries need a non-empty id and title",
+            ));
+        }
+        if view_ids.contains(&view.id.as_str()) {
+            return Err(ManifestError::new(
+                "E_MANIFEST_INVALID",
+                format!("duplicate view id `{}`", view.id),
+            ));
+        }
+        view_ids.push(view.id.as_str());
     }
     let has_dependencies = match &manifest.dependencies {
         None | Some(serde_json::Value::Null) => false,
@@ -1186,15 +1246,106 @@ mod tests {
             );
         }
 
-        // The whitelist is the single source of truth: 8 L1 codes + 3 editor
-        // codes, no duplicates, and nothing in it that the frontend's copy
-        // (`PLUGIN_PERMISSIONS` in `types.ts`) does not also have.
+        // The whitelist is the single source of truth; the size and the
+        // no-duplicates rule live in `the_permission_whitelist_size_is_pinned`
+        // below so there is exactly one number to bump when a code is added.
+    }
+
+    #[test]
+    fn the_p1a2_permission_codes_are_known_and_their_neighbours_are_not() {
+        // P1a-2 adds `views` (a sidebar panel) and `editor:selection` (the
+        // right to move the caret). Neither implies anything and nothing implies
+        // them: "may paint a panel" is not "may edit my notes", and "may move my
+        // cursor" is not "may rewrite my note".
+        for permission in ["views", "editor:selection"] {
+            let mut value = package("wordcount", Some("qing"));
+            value["permissions"] = json!(["notify", permission]);
+            let manifest = from_package_json(&doc(value)).expect("permissions map");
+            assert!(validate(&manifest).is_ok(), "{permission} must install");
+            assert!(
+                manifest.permissions.iter().any(|item| item == permission),
+                "{permission} must survive the mapping"
+            );
+        }
+
+        // The sub-code shape an author reaches for next (`views:read`) is still
+        // an unknown permission, and so is the one that would smuggle in a
+        // broader grant.
+        for permission in ["views:read", "views:write", "editor:move", "selection"] {
+            let mut value = package("wordcount", Some("qing"));
+            value["permissions"] = json!([permission]);
+            let manifest = from_package_json(&doc(value)).expect("permissions map");
+            assert_eq!(
+                validate(&manifest).expect_err("not a host permission").code,
+                "E_PERMISSION_UNKNOWN",
+                "{permission}"
+            );
+        }
+    }
+
+    /// The tripwire: adding a permission code makes this go red until the six
+    /// sync points are done and this number is bumped to match. Do not bump it
+    /// first — that turns the net off — and do not loosen it to `>=`.
+    #[test]
+    fn the_permission_whitelist_size_is_pinned() {
         let mut sorted: Vec<&str> = KNOWN_PERMISSIONS.to_vec();
         sorted.sort_unstable();
         let before = sorted.len();
         sorted.dedup();
         assert_eq!(sorted.len(), before, "duplicate permission code");
-        assert_eq!(KNOWN_PERMISSIONS.len(), 11);
+        // 8 L1 + 3 editor (P1a) + 2 (P1a-2: `views`, `editor:selection`) = 13.
+        assert_eq!(KNOWN_PERMISSIONS.len(), 13);
+    }
+
+    #[test]
+    fn contributes_views_map_and_validate() {
+        // New format: `contributes.views` in a package.json.
+        let manifest = from_package_json(&package_json(
+            r#","contributes":{"views":[{"id":"qing.wordcount.tree","title":"字数"}]}"#,
+        ))
+        .expect("views map");
+        assert_eq!(manifest.contributes.views.len(), 1);
+        assert_eq!(manifest.contributes.views[0].id, "qing.wordcount.tree");
+        assert_eq!(manifest.contributes.views[0].title, "字数");
+        assert!(validate(&manifest).is_ok());
+
+        // Old format: the same contribution through plugin.json, because the
+        // two formats share the `Contributions` struct and must not drift.
+        let legacy = serde_json::from_str::<PluginManifest>(
+            r#"{"id":"qing.example","name":"Example","version":"1.0.0","apiVersion":1,
+                "engines":{"host":">=0.7.3 <1.0.0"},"main":"main.js",
+                "contributes":{"views":[{"id":"qing.example.tree","title":"Tree"}]}}"#,
+        )
+        .expect("plugin.json accepts views too");
+        assert_eq!(legacy.contributes.views[0].id, "qing.example.tree");
+        assert!(validate(&legacy).is_ok());
+
+        // A package with no views serialises without the field, so every
+        // manifest written before P1a-2 keeps its exact JSON shape.
+        let plain = from_package_json(&package_json("")).expect("no views");
+        let text = serde_json::to_string(&plain).expect("serialises");
+        assert!(!text.contains("views"), "{text}");
+
+        // Broken contributions are refused, same as commands.
+        for (body, needle) in [
+            (
+                r#","contributes":{"views":[{"id":"","title":"x"}]}"#,
+                "id and title",
+            ),
+            (
+                r#","contributes":{"views":[{"id":"qing.wordcount.tree","title":"  "}]}"#,
+                "id and title",
+            ),
+            (
+                r#","contributes":{"views":[{"id":"a.b","title":"one"},{"id":"a.b","title":"two"}]}"#,
+                "duplicate view id",
+            ),
+        ] {
+            let manifest = from_package_json(&package_json(body)).expect("the mapping itself succeeds");
+            let error = validate(&manifest).expect_err("a broken view is refused");
+            assert_eq!(error.code, "E_MANIFEST_INVALID");
+            assert!(error.detail.contains(needle), "{needle}: {}", error.detail);
+        }
     }
 
     #[test]

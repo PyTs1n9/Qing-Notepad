@@ -1,5 +1,16 @@
 import React from "react";
-import { Bell, CheckSquare, Clipboard, Database, Eye, FileText, Highlighter, PenLine } from "lucide-react";
+import {
+  Bell,
+  CheckSquare,
+  Clipboard,
+  Database,
+  Eye,
+  FileText,
+  Highlighter,
+  PanelLeft,
+  PenLine,
+  TextCursorInput,
+} from "lucide-react";
 import type { LangType } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import {
@@ -40,6 +51,8 @@ const ICONS: Record<PluginPermission, React.ComponentType<{ size?: number; class
   "editor:read": Eye,
   "editor:write": PenLine,
   "editor:decorate": Highlighter,
+  views: PanelLeft,
+  "editor:selection": TextCursorInput,
 };
 
 /**

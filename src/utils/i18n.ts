@@ -835,6 +835,8 @@ export type TranslationKeys = {
   pluginPermEditorRead: string;
   pluginPermEditorWrite: string;
   pluginPermEditorDecorate: string;
+  pluginPermViews: string;
+  pluginPermEditorSelection: string;
   pluginCrashedDisabled: string;
   pluginPermissionDenied: string;
   pluginInstalled: string;
@@ -1710,6 +1712,8 @@ const zh: TranslationKeys = {
   pluginPermEditorRead: "读取当前笔记正文",
   pluginPermEditorWrite: "修改当前笔记",
   pluginPermEditorDecorate: "在正文上做标记",
+  pluginPermViews: "贡献侧边栏视图",
+  pluginPermEditorSelection: "移动你的光标与滚动位置",
   pluginCrashedDisabled: "{name} 连续崩溃，已自动停用",
   pluginPermissionDenied: "扩展缺少权限：{permission}",
   pluginInstalled: "已安装 {name}",
@@ -2588,6 +2592,8 @@ const en: TranslationKeys = {
   pluginPermEditorRead: "Read the note you have open",
   pluginPermEditorWrite: "Change the note you have open",
   pluginPermEditorDecorate: "Mark up the note you have open",
+  pluginPermViews: "Add a panel to the sidebar",
+  pluginPermEditorSelection: "Move your cursor and scroll position",
   pluginCrashedDisabled: "{name} crashed repeatedly and was disabled",
   pluginPermissionDenied: "The extension lacks permission: {permission}",
   pluginInstalled: "Installed {name}",

@@ -78,6 +78,34 @@ interface QingApi {
      * names — a CSS class name is rejected.
      */
     setDecorations(key: string, ranges: QingDecorationRange[]): Promise<void>;
+
+    /**
+     * Needs `editor:selection` (not `editor:write`). `{anchor, head}` in either
+     * order, or `{from, to}` as a shorthand. `E_RANGE_INVALID` when out of
+     * bounds, `E_NO_EDITOR` when no note is open.
+     */
+    setSelection(
+      spec: { anchor: number; head: number } | { from: number; to: number },
+    ): Promise<void>;
+  };
+
+  /** `contributes.views` panels (permission `views`). */
+  views: {
+    registerTreeDataProvider(
+      viewId: string,
+      provider: {
+        getChildren(elementId?: string): Promise<
+          Array<{
+            id: string;
+            label: string;
+            description?: string;
+            command?: string;
+            collapsibleState?: "none" | "collapsed" | "expanded";
+          }>
+        >;
+      },
+    ): void;
+    refresh(viewId: string): Promise<void>;
   };
 
   ui: {

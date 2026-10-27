@@ -85,6 +85,29 @@ interface QingRange {
   to: number;
 }
 
+/**
+ * A caret placement. `{anchor, head}` is the native shape and may be given in
+ * either order (a backwards selection is a real thing); `{from, to}` is
+ * accepted as a shorthand so `getSelection()` can be handed straight back.
+ */
+type QingSelectionSpec = { anchor: number; head: number } | QingRange;
+
+/**
+ * One row of a plugin-contributed sidebar tree.
+ *
+ * `command` may only name a command **this same plugin** contributes — a tree
+ * item is not a way to invoke another plugin, and the host refuses one that
+ * tries (`E_PERMISSION_DENIED`).
+ */
+interface QingTreeItem {
+  id: string;
+  label: string;
+  description?: string;
+  command?: string;
+  /** Omitted (or "none") means the row has no children, so no chevron. */
+  collapsibleState?: "none" | "collapsed" | "expanded";
+}
+
 interface QingApi {
   /** The API contract the host implements. This build is `1`. */
   readonly apiVersion: number;
@@ -173,6 +196,33 @@ interface QingApi {
      * dropped when it is disabled, uninstalled or updated.
      */
     setDecorations(key: string, ranges: QingDecorationRange[]): Promise<void>;
+
+    /**
+     * Needs `editor:selection` — **not** `editor:write`. Moving the caret and
+     * changing the text are different kinds of trust, so they are granted
+     * separately.
+     *
+     * Rejects with `E_RANGE_INVALID` when either position is not inside
+     * `0 … getText().length`, and `E_NO_EDITOR` when no note is open. The scroll
+     * position follows CodeMirror's own behaviour: the caret is scrolled into
+     * view, nothing else moves.
+     */
+    setSelection(spec: QingSelectionSpec): Promise<void>;
+  };
+
+  /**
+   * Declarative sidebar panels (`contributes.views`, permission `views`).
+   *
+   * `registerTreeDataProvider` supplies the rows for one panel; the host asks
+   * when it needs them. `refresh(viewId)` says "my data changed" and the panel
+   * re-fetches — it may only name a view this plugin contributes.
+   */
+  views: {
+    registerTreeDataProvider(
+      viewId: string,
+      provider: { getChildren(elementId?: string): Promise<QingTreeItem[]> },
+    ): void;
+    refresh(viewId: string): Promise<void>;
   };
 
   /**

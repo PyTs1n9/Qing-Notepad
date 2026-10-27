@@ -513,5 +513,90 @@ section("The write path: a plugin edit must stay a normal, saveable change");
   );
 }
 
+// ---------------------------------------------------------------------------
+section("Declarative views (P1a-2): providers answer getChildren, unknown views do not");
+
+{
+  const code = await bundle(
+    `
+    qing.views.registerTreeDataProvider("qing.probe.tree", {
+      getChildren: async function (elementId) {
+        if (!elementId) {
+          return [{ id: "root", label: "Root", collapsibleState: "collapsed", command: "qing.probe.run" }];
+        }
+        return [{ id: elementId + "-child", label: "Child" }];
+      },
+    });
+  `,
+    "cjs",
+  );
+  const worker = makeWorker(code);
+  await worker.dispatch(INIT);
+  await settle();
+
+  await worker.dispatch({ t: "call", ns: "views", method: "getChildren", args: ["qing.probe.tree"], rid: 10 });
+  await settle();
+  const root = worker.posted.find((message) => message.t === "res" && message.rid === 10);
+  check(
+    "the root of a registered provider comes back with its shape intact",
+    root?.ok === true && root.value?.[0]?.id === "root" && root.value[0].collapsibleState === "collapsed",
+    root,
+  );
+
+  await worker.dispatch({ t: "call", ns: "views", method: "getChildren", args: ["qing.probe.tree", "root"], rid: 11 });
+  await settle();
+  const children = worker.posted.find((message) => message.t === "res" && message.rid === 11);
+  check(
+    "elementId reaches getChildren, so a tree can open a level at a time",
+    children?.ok === true && children.value?.[0]?.id === "root-child",
+    children,
+  );
+
+  await worker.dispatch({ t: "call", ns: "views", method: "getChildren", args: ["qing.probe.nobody"], rid: 12 });
+  await settle();
+  const missing = worker.posted.find((message) => message.t === "res" && message.rid === 12);
+  check("an unregistered view answers E_NO_HANDLER", missing?.ok === false && missing.code === "E_NO_HANDLER", missing);
+}
+
+{
+  // A provider that throws is a plugin bug: it lands in the log pane and the
+  // panel can be refreshed later, rather than the host treating it as fatal.
+  const { dispatch, posted } = makeWorker(`
+    qing.views.registerTreeDataProvider("qing.probe.bad", {
+      getChildren: function () { throw new Error("provider exploded"); },
+    });
+  `);
+  await dispatch(INIT);
+  await settle();
+  await dispatch({ t: "call", ns: "views", method: "getChildren", args: ["qing.probe.bad"], rid: 13 });
+  await settle();
+  const failed = posted.find((message) => message.t === "res" && message.rid === 13);
+  check(
+    "a throwing provider is reported as a failure with a code, not silently empty",
+    failed?.ok === false && failed.code === "E_INTERNAL",
+    failed,
+  );
+  check(
+    "and it is logged for the author",
+    posted.some((message) => message.t === "log" && message.level === "error" && String(message.args[0]).includes("provider exploded")),
+    posted,
+  );
+}
+
+{
+  // The permission split the install prompt promises: moving the caret is not
+  // rewriting the note, and contributing a panel is neither.
+  const bridgeSource = fs.readFileSync(path.join(root, "src", "plugin", "bridge.ts"), "utf8");
+  check(
+    "setSelection is gated on editor:selection, not on editor:write",
+    /setSelection:\s*"editor:selection"/.test(bridgeSource) &&
+      !/setSelection:\s*"editor:write"/.test(bridgeSource),
+  );
+  check(
+    "views.refresh is gated on the views code",
+    /refresh:\s*"views"/.test(bridgeSource),
+  );
+}
+
 console.log(`\n${failures === 0 ? "OK" : "FAILED"}: ${checks - failures}/${checks} checks passed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -19,6 +19,11 @@ import { join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { getDataDirectory } from "@/utils/storage";
 import { clearPluginDecorations } from "@/utils/editorHandle";
+import {
+  clearPluginViews,
+  ownCommandIds,
+  sanitizeTreeItem,
+} from "./views";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
 import { tWithParams } from "@/utils/i18n";
@@ -28,8 +33,10 @@ import {
   PLUGIN_API_VERSION,
   PluginError,
   activatesOnStartup,
+  manifestViews,
   toPluginError,
   type InstalledPlugin,
+  type PluginTreeItem,
 } from "./types";
 import { HOST_VERSION, isHostCompatible } from "./version";
 
@@ -162,7 +169,11 @@ async function handleMessage(runner: Runner, message: WorkerMessage): Promise<vo
     case "rpc": {
       try {
         const value = await dispatchPluginCall(
-          { pluginId: runner.plugin.id, permissions: runner.permissions },
+          {
+            pluginId: runner.plugin.id,
+            permissions: runner.permissions,
+            viewIds: manifestViews(runner.plugin.manifest).map((view) => view.id),
+          },
           message.ns,
           message.method,
           Array.isArray(message.args) ? message.args : [],
@@ -311,12 +322,24 @@ async function ensureRunner(plugin: InstalledPlugin): Promise<Runner> {
 /**
  * Run one contributed command. Never throws: the palette has to be able to show
  * a failure without turning it into an unhandled rejection.
+ *
+ * A command id is only runnable by the plugin that contributes it. A plugin
+ * *worker* could not run another plugin's handler anyway (each keeps its own
+ * handler map), but a plugin-contributed tree item names a command as a string,
+ * and that string is the plugin's to choose — so a `command` pointing at
+ * somebody else is refused here, once, for every path that ends up executing.
  */
 export async function executePluginCommand(
   plugin: InstalledPlugin,
   commandId: string,
 ): Promise<CommandResult> {
   try {
+    if (!ownCommandIds(plugin).includes(commandId)) {
+      throw new PluginError(
+        "E_PERMISSION_DENIED",
+        `command \`${commandId}\` is not contributed by plugin ${plugin.id}`,
+      );
+    }
     const runner = await ensureRunner(plugin);
     await sendCall(runner, "commands", "execute", [commandId]);
     return { ok: true };
@@ -327,12 +350,41 @@ export async function executePluginCommand(
   }
 }
 
+/**
+ * Ask a plugin's tree provider for one level of children.
+ *
+ * `elementId` is omitted at the root. Results go through `sanitizeTreeItem`
+ * because the worker is untrusted and the sidebar renders whatever comes back.
+ */
+export async function getPluginViewChildren(
+  plugin: InstalledPlugin,
+  viewId: string,
+  elementId?: string,
+): Promise<PluginTreeItem[]> {
+  const runner = await ensureRunner(plugin);
+  const args: unknown[] = elementId ? [viewId, elementId] : [viewId];
+  const value = await sendCall(runner, "views", "getChildren", args);
+  const allowed = ownCommandIds(plugin);
+  const items: PluginTreeItem[] = [];
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const item = sanitizeTreeItem(entry, allowed);
+      if (item) items.push(item);
+    }
+  }
+  return items;
+}
+
 /** Stop a plugin's worker, e.g. after it was disabled or uninstalled. */
 export function deactivatePlugin(pluginId: string): void {
   // Marks a plugin painted belong to that plugin, not to the note: leaving them
   // behind after a disable, uninstall, update or rollback would show the user
   // annotations from code that no longer exists, with no way to remove them.
   clearPluginDecorations(pluginId);
+  // Same for its sidebar panels: rows fetched from a worker that is being torn
+  // down are not "the plugin's data", they are a snapshot of a process that is
+  // going away.
+  clearPluginViews(pluginId);
   const runner = runners.get(pluginId);
   if (runner) {
     try {

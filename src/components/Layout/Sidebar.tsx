@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react";
 import NoteTree from "@/components/Layout/NoteTree";
+import PluginViewSections from "@/components/Layout/PluginViewSections";
 import ModalShell from "@/components/Layout/ModalShell";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { TRASH_RETENTION_FOREVER, useSettingsStore } from "@/stores/settingsStore";
@@ -235,6 +236,11 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       )}
+
+      {/* Plugin-contributed panels (`contributes.views`) sit at the bottom of
+          this column. The component renders nothing at all when no plugin
+          contributes one, so the column looks exactly as it did before P1a-2. */}
+      {!collapsed && <PluginViewSections lang={lang} />}
 
       {!collapsed && (
         <div className="border-t border-border px-2 py-2">

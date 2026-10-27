@@ -28,6 +28,7 @@ import {
   expandPermissions,
   manifestCommands,
   manifestPermissions,
+  manifestViews,
   toPluginError,
   type InstallResult,
   type InstalledPlugin,
@@ -82,6 +83,23 @@ function commandConflicts(manifest: PluginManifest, installed: InstalledPlugin[]
     .filter((id) => taken.has(id));
 }
 
+/**
+ * A view id is a global key — the sidebar section, `views.refresh(viewId)` and
+ * `onView:<id>` activation all name it — so two packages may not contribute the
+ * same one. The manifest convention (`<plugin id>.<name>`) makes collisions
+ * unlikely on purpose; this is the check that makes it impossible to ship one.
+ */
+function viewConflicts(manifest: PluginManifest, installed: InstalledPlugin[]): string[] {
+  const taken = new Set<string>();
+  for (const plugin of installed) {
+    if (plugin.id === manifest.id) continue;
+    for (const view of manifestViews(plugin.manifest)) taken.add(view.id);
+  }
+  return manifestViews(manifest)
+    .map((view) => view.id)
+    .filter((id) => taken.has(id));
+}
+
 function assertCompatible(manifest: PluginManifest): void {
   if (manifest.apiVersion !== PLUGIN_API_VERSION) {
     throw new PluginError(
@@ -100,6 +118,16 @@ function assertCompatible(manifest: PluginManifest): void {
     throw new PluginError(
       "E_COMMAND_CONFLICT",
       `command id already taken: ${conflicts.join(", ")}`,
+    );
+  }
+  const viewTaken = viewConflicts(manifest, currentInstalled());
+  if (viewTaken.length > 0) {
+    // `E_MANIFEST_INVALID` rather than a code of its own: the manifest is only
+    // wrong in the context of what is already installed, and the message names
+    // the ids so the author can rename one.
+    throw new PluginError(
+      "E_MANIFEST_INVALID",
+      `view id already contributed by another plugin: ${viewTaken.join(", ")}`,
     );
   }
 }
