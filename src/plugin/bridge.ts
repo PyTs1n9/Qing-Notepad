@@ -90,8 +90,32 @@ async function readNoteBody(note: Note): Promise<string> {
 // Positions are CodeMirror document offsets — `0 … view.state.doc.length`, UTF-16
 // code units against the Markdown source that gets written to disk. See
 // `editorHandle.ts` for why this editor and not ProseMirror.
+//
+// The text a plugin reads and writes is **Markdown source**, never HTML. The
+// storage layer holds editor HTML, and `NoteEditor.tsx:291` converts it on load
+// (`isStoredEditorHtml(content) ? htmlToMarkdown(content) : content`); a plugin
+// that went around the editor and produced HTML would skip that normalisation
+// — and turndown's rules at `NoteEditor.tsx:60` / `:69` — which is how format
+// drift accumulates. Writing through `dispatch` is always on the Markdown side.
 // ---------------------------------------------------------------------------
 
+/**
+ * The note editor, or `E_NO_EDITOR`.
+ *
+ * Two behaviours worth knowing because they get asked about:
+ *
+ * - **preview / split mode still has an editor.** `NoteEditor.tsx:807` hides the
+ *   source pane with CSS (`hidden`), it does not unmount it, so `getText()` and
+ *   `replace()` keep working while the user is looking at the rendered view.
+ *   Only "no note open at all" (todo page, settings, empty tab) returns
+ *   `E_NO_EDITOR`.
+ * - **cloud notes are not the active editor.** `Workspace/CloudNoteEditor.tsx`
+ *   is a second CodeMirror instance backed by Yjs; it never calls
+ *   `setActiveEditor`, so a plugin running while the workspace is open gets
+ *   `E_NO_EDITOR` rather than silently writing into a collaborative document.
+ *   Wiring that surface up is a separate decision (remote transaction merge is
+ *   unverified).
+ */
 function requireEditor(): EditorView {
   const view = getActiveEditor();
   if (!view) {
@@ -276,8 +300,13 @@ export async function dispatchPluginCall(
         const view = requireEditor();
         const selection = view.state.selection.main;
         return {
+          // `from`/`to` are normalised (`from <= to`); `anchor`/`head` are
+          // CodeMirror's own fields, so a plugin can tell which end the caret is
+          // on. `text` is always `sliceDoc(from, to)`.
           from: selection.from,
           to: selection.to,
+          anchor: selection.anchor,
+          head: selection.head,
           text: view.state.sliceDoc(selection.from, selection.to),
         };
       }
@@ -292,15 +321,24 @@ export async function dispatchPluginCall(
             `replace() was given ${text.length} characters (limit ${MAX_EDITOR_INSERT})`,
           );
         }
-        // Deliberately *not* annotated as an external document update. The
-        // editor's own update listener has to treat this as a user edit,
-        // because that is the one chain that keeps everything consistent:
+        // Deliberately *not* annotated as an external document update, and this
+        // is the one line of this feature that must not be "tidied up later".
+        // The editor's own update listener has to treat this as a user edit,
+        // because that is the single chain that keeps the app consistent:
         // MarkdownSourceEditor's updateListener → handleMdChange
         // (NoteEditor.tsx:365) → updateNote (NoteEditor.tsx:376) + markDirty →
-        // autosave/`doSave` (NoteEditor.tsx:196, `saveNoteContent`). Annotating
-        // it — as the `value` round-trip effect at NoteEditor.tsx:144 does —
-        // would leave the plugin's text on screen and off disk. It also stays in
-        // the undo history, so the user can Ctrl+Z a plugin's edit.
+        // autosave/`doSave` (NoteEditor.tsx:196 → saveNoteContent).
+        //
+        // The annotation exists for the *opposite* direction:
+        // MarkdownSourceEditor.tsx:144-156 pushes a value that came from disk
+        // into the document and tags it `externalDocumentUpdate` so the
+        // listener does not report it back as an edit. Copying that tag here
+        // would give us "the text changes on screen and is never saved" — a bug
+        // that only shows up after a restart, which is why the discipline is
+        // asserted in `scripts/verify-plugin-runtime/run.mjs`.
+        //
+        // Staying in the normal transaction also keeps the edit in the undo
+        // history: the user can Ctrl+Z a plugin's write.
         view.dispatch({ changes: { from, to, insert: text } });
         return null;
       }

@@ -474,5 +474,44 @@ section("Editor decorations (P1a): marks follow their text and die with their pl
   );
 }
 
+// ---------------------------------------------------------------------------
+section("The write path: a plugin edit must stay a normal, saveable change");
+
+{
+  const bridgeSource = fs.readFileSync(path.join(root, "src", "plugin", "bridge.ts"), "utf8");
+  const editorSource = fs.readFileSync(
+    path.join(root, "src", "components", "Editor", "MarkdownSourceEditor.tsx"),
+    "utf8",
+  );
+
+  // `externalDocumentUpdate` exists for the *opposite* direction: the effect at
+  // MarkdownSourceEditor.tsx:144-156 pushes disk content into the document and
+  // tags it, so the update listener does not echo it back as an edit. Tagging a
+  // plugin's write with it would skip `onChange` → `updateNote` → autosave:
+  // the text would change on screen and never reach disk, and the bug would only
+  // show up after a restart. This is a source assertion because the failure mode
+  // is one missing line rather than a wrong value.
+  //
+  // Comments are stripped first: `bridge.ts` *explains* the annotation at length,
+  // and a naive substring search would read the explanation as a usage.
+  const withoutComments = (source) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  check(
+    "bridge.ts never uses externalDocumentUpdate",
+    !withoutComments(bridgeSource).includes("externalDocumentUpdate"),
+    Boolean(withoutComments(bridgeSource).match(/externalDocumentUpdate/g)),
+  );
+  check(
+    "the editor still uses the annotation for the round-trip it was built for",
+    (withoutComments(editorSource).match(/externalDocumentUpdate/g) ?? []).length >= 3,
+    (withoutComments(editorSource).match(/externalDocumentUpdate/g) ?? []).length,
+  );
+  check(
+    "editor.replace dispatches a plain change set, with no annotation on it",
+    /view\.dispatch\(\{ changes: \{ from, to, insert: text \} \}\)/.test(bridgeSource),
+    (bridgeSource.match(/view\.dispatch\([^)]*\)/g) ?? []).slice(0, 4),
+  );
+}
+
 console.log(`\n${failures === 0 ? "OK" : "FAILED"}: ${checks - failures}/${checks} checks passed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -45,6 +45,37 @@ interface QingApi {
     get(id: string): Promise<QingNote | null>;
   };
 
+  /**
+   * The note the user has open.
+   *
+   * Positions are **CodeMirror document offsets into the Markdown source**:
+   * `0 … getText().length`, counted in UTF-16 code units — the same units
+   * `String.prototype.length` uses. The text is Markdown, not HTML; hand HTML to
+   * `replace()` and it is stored as literal text.
+   *
+   * Every call reads the live document, so a position saved earlier can be
+   * stale by the time it is used.
+   */
+  editor: {
+    /** Needs `editor:read`. Rejects with `E_NO_EDITOR` when no note is open. */
+    getText(): Promise<string>;
+    /** Needs `editor:read`. `from <= to` is guaranteed. */
+    getSelection(): Promise<QingSelection>;
+    /**
+     * Needs `editor:write`. Replaces the half-open range `[from, to)` with
+     * Markdown `text`; an empty range inserts. Rejects with `E_RANGE_INVALID`
+     * when the range is not inside `0 … getText().length`, and `E_NO_EDITOR`
+     * when no note is open.
+     */
+    replace(range: { from: number; to: number }, text: string): Promise<void>;
+    /**
+     * Needs `editor:decorate`. Replaces the marks previously painted under
+     * `key`; an empty array clears them. `kind` is one of the five semantic
+     * names — a CSS class name is rejected.
+     */
+    setDecorations(key: string, ranges: QingDecorationRange[]): Promise<void>;
+  };
+
   ui: {
     toast(message: string, tone?: "info" | "success" | "danger"): void;
   };
@@ -53,6 +84,23 @@ interface QingApi {
     /** Register the handler for one `contributes.commands` entry. */
     register(id: string, handler: () => void | Promise<void>): void;
   };
+}
+
+interface QingSelection {
+  /** Normalised: `from <= to`. */
+  from: number;
+  to: number;
+  /** CodeMirror's own fields: which end the caret is on (`head`). */
+  anchor: number;
+  head: number;
+  /** `getText().slice(from, to)`. */
+  text: string;
+}
+
+interface QingDecorationRange {
+  from: number;
+  to: number;
+  kind: "error" | "warning" | "success" | "muted" | "highlight";
 }
 
 declare const qing: QingApi;

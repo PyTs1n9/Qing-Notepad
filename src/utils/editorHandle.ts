@@ -151,6 +151,18 @@ export const pluginDecorations: Extension = StateField.define<Map<string, Decora
  * The mounted note editor, or `null` when no note is open. Only one is ever
  * mounted: opening another note re-keys `MarkdownSourceEditor`, which destroys
  * the old view and publishes the new one through `onViewChange`.
+ *
+ * Two things this deliberately does *not* include:
+ *
+ * - **Preview mode is not "no editor".** Switching the note between source,
+ *   preview and split only toggles a CSS class (`NoteEditor.tsx:807`), so the
+ *   view stays mounted and plugins keep a working document while the user reads
+ *   the rendered version.
+ * - **Cloud notes are not published here.** `Workspace/CloudNoteEditor.tsx` is
+ *   a separate CodeMirror instance backed by Yjs/Hocuspocus; it never calls
+ *   `setActiveEditor`, so `qing.editor.*` answers `E_NO_EDITOR` while the
+ *   workspace is open instead of writing into a collaborative document whose
+ *   remote transaction merge has not been verified.
  */
 let active: EditorView | null = null;
 

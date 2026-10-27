@@ -191,21 +191,29 @@
      * `0` to `getText().length`, counted in UTF-16 code units. There is no
      * document object to hold on to: every call reads the live text, so a
      * position saved from an earlier call can be stale by the time it is used.
+     *
+     * **The text is Markdown source, not HTML.** Whatever comes back from
+     * `getText()` is exactly what gets saved; hand an HTML string to
+     * `replace()` and it is stored as literal HTML-shaped Markdown. Let the
+     * editor do the conversion — it owns the rules.
+     *
      * `E_NO_EDITOR` means no note is open (the plugin is running while the user
-     * is on the todo page, for example).
+     * is on the todo page, or looking at a cloud note, for example).
      */
     editor: {
       getText: function () {
         return rpc("editor", "getText", []);
       },
+      /** `{ from, to, anchor, head, text }`; `from <= to` is guaranteed. */
       getSelection: function () {
         return rpc("editor", "getSelection", []);
       },
       /**
-       * Replace the half-open range `[from, to)` with `text`. An empty range is
-       * an insertion, `from === to === getText().length` appends. The write goes
-       * through the editor's own change pipeline, so autosave, dirty tracking
-       * and undo see it exactly as if the user had typed it.
+       * Replace the half-open range `[from, to)` with `text` (Markdown, not
+       * HTML). An empty range is an insertion, `from === to ===
+       * getText().length` appends. The write goes through the editor's own
+       * change pipeline, so autosave, dirty tracking and undo see it exactly as
+       * if the user had typed it.
        */
       replace: function (range, text) {
         return rpc("editor", "replace", [range, text]);
