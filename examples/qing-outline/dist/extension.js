@@ -2,7 +2,10 @@
 var VIEW_ID = "qing.outline.toc";
 var FOCUS_COMMAND = "qing.outline.focus";
 var REFRESH_COMMAND = "qing.outline.refresh";
+var BOLD_COMMAND = "qing.outline.bold";
+var MARK_COMMAND = "qing.outline.mark-duplicates";
 var EMPTY_ROW_ID = "qing.outline.empty";
+var DUP_KEY = "dup";
 var roots = [];
 var byId = /* @__PURE__ */ new Map();
 function buildOutline(text) {
@@ -111,5 +114,63 @@ qing.commands.register(FOCUS_COMMAND, async (itemId) => {
 qing.commands.register(REFRESH_COMMAND, async () => {
   await refreshOutline(true);
   if (roots.length === 0) qing.ui.toast("（这篇没有标题）", "info");
+});
+qing.commands.register(BOLD_COMMAND, async () => {
+  const selection = await qing.editor.getSelection();
+  if (selection.from === selection.to) {
+    qing.ui.toast("请先选中要加粗的文字", "info");
+    return;
+  }
+  const text = selection.text;
+  const alreadyBold = text.startsWith("**") && text.endsWith("**") && text.length >= 5;
+  const next = alreadyBold ? text.slice(2, -2) : `**${text}**`;
+  try {
+    await qing.editor.replace({ from: selection.from, to: selection.to }, next);
+    qing.ui.toast(alreadyBold ? "已取消加粗" : "已加粗", "success");
+  } catch (error) {
+    qing.ui.toast(error instanceof Error ? error.message : "替换失败", "danger");
+  }
+});
+var marksActive = false;
+var WORD = /[A-Za-z0-9]+/g;
+qing.commands.register(MARK_COMMAND, async () => {
+  if (marksActive) {
+    await qing.editor.setDecorations(DUP_KEY, []);
+    marksActive = false;
+    qing.ui.toast("已清除标记", "info");
+    return;
+  }
+  let text;
+  try {
+    text = await qing.editor.getText();
+  } catch (error) {
+    qing.ui.toast(error instanceof Error ? error.message : "读取当前笔记失败", "danger");
+    return;
+  }
+  const totals = /* @__PURE__ */ new Map();
+  for (const match of text.matchAll(WORD)) {
+    const word = match[0];
+    if (word.length < 3) continue;
+    const key = word.toLowerCase();
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+  const ranges = [];
+  const seen = /* @__PURE__ */ new Map();
+  for (const match of text.matchAll(WORD)) {
+    const word = match[0];
+    if (word.length < 3) continue;
+    const key = word.toLowerCase();
+    const nth = (seen.get(key) ?? 0) + 1;
+    seen.set(key, nth);
+    if (nth < 2 || (totals.get(key) ?? 0) < 2) continue;
+    const from = match.index ?? 0;
+    ranges.push({ from, to: from + word.length, kind: "warning" });
+  }
+  await qing.editor.setDecorations(DUP_KEY, ranges);
+  marksActive = ranges.length > 0;
+  qing.ui.toast(
+    ranges.length > 0 ? `标记了 ${ranges.length} 处重复词` : "没有重复词",
+    ranges.length > 0 ? "success" : "info"
+  );
 });
 void refreshOutline(false);

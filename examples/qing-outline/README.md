@@ -1,13 +1,14 @@
 # 大纲（侧边栏视图 + setSelection 示例）
 
 把当前笔记的 Markdown 标题列在笔记侧栏底部，点标题把光标移到那一行。
-它是 P1a-2 两个新能力的可跑样例：`qing.views`（声明式侧边栏树）与
-`qing.editor.setSelection`。
+它是 P1a 两个新能力的可跑样例：`qing.views`（声明式侧边栏树）与
+`qing.editor.setSelection`；另加两条命令补齐 `editor:write` 与
+`editor:decorate` 的可运行实证。
 
 | | |
 | --- | --- |
 | 插件 id | `qing.outline` |
-| 权限 | `editor:read`、`editor:selection`、`views`、`notify` |
+| 权限 | `editor:read`、`editor:write`、`editor:decorate`、`editor:selection`、`views`、`notify` |
 | 清单 | `package.json`（VS Code 风格） |
 | 视图 | `contributes.views: [{ id: "qing.outline.toc", title: "大纲" }]` |
 | 入口 | `dist/extension.js`（单文件 ESM） |
@@ -39,6 +40,23 @@
 **`qing.views.refresh("qing.outline.toc")`**：编辑器自己的数据变了就调它。
 宿主在切换笔记时会自动重取视图根节点；「大纲：刷新」这条命令演示的是另一类情况
 （在原地改了标题）。
+
+## 另外两条命令：写入与标记
+
+**「大纲：给选中标题加粗」**（`editor:write`）
+- 有选区：把选中文本包成 `**…**`；**已经是 `**…**` 就拆掉**（幂等，连按两次回到原文，
+  最短的粗体是 `**a**` 共 5 字符，低于此不判为已加粗）。
+- 无选区：提示「请先选中要加粗的文字」，不动文档。
+- 边界：`replace({from,to}, text)` 走的是编辑器自己的变更管线，所以落盘、脏标记、
+  **Ctrl+Z 可撤销**，与手动输入完全一致。选区会被 CM6 的 change mapping 自然调整。
+
+**「大纲：标记重复词」**（`editor:decorate`）
+- 扫全篇，找**长度 ≥3 的拉丁/数字词**（忽略大小写），出现 ≥2 次的，从**第 2 次起**
+  每一处都标 `kind: "warning"`（第 1 次是定义，后面才是回声）。key 用 `"dup"`。
+- **再跑一次 = 清除**（`setDecorations("dup", [])`），提示「已清除标记」。
+- 没有重复词时也走清空：用户删掉重复后再跑一次，旧标记会从屏幕上消失，不会残留。
+- 边界：标记是装饰不是编辑，**不动文档内容**；宿主会把标记跟着文本改动一起平移
+  （在标记前插字，标记跟着走），插件停用/卸载/更新时宿主自动清空全部标记。
 
 ## 构建与打包
 

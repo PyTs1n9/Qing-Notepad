@@ -20,9 +20,18 @@
   "activationEvents": [
     "onView:qing.outline.toc",
     "onCommand:qing.outline.focus",
-    "onCommand:qing.outline.refresh"
+    "onCommand:qing.outline.refresh",
+    "onCommand:qing.outline.bold",
+    "onCommand:qing.outline.mark-duplicates"
   ],
-  "permissions": ["editor:read", "editor:selection", "views", "notify"],
+  "permissions": [
+    "editor:read",
+    "editor:write",
+    "editor:decorate",
+    "editor:selection",
+    "views",
+    "notify"
+  ],
   "contributes": {
     "commands": [
       {
@@ -33,6 +42,16 @@
       {
         "command": "qing.outline.refresh",
         "title": "大纲：刷新",
+        "category": "示例"
+      },
+      {
+        "command": "qing.outline.bold",
+        "title": "大纲：给选中标题加粗",
+        "category": "示例"
+      },
+      {
+        "command": "qing.outline.mark-duplicates",
+        "title": "大纲：标记重复词",
         "category": "示例"
       }
     ],

@@ -26,8 +26,12 @@
 const VIEW_ID = "qing.outline.toc";
 const FOCUS_COMMAND = "qing.outline.focus";
 const REFRESH_COMMAND = "qing.outline.refresh";
+const BOLD_COMMAND = "qing.outline.bold";
+const MARK_COMMAND = "qing.outline.mark-duplicates";
 /** A row with no command, used when there is nothing to show. */
 const EMPTY_ROW_ID = "qing.outline.empty";
+/** Decoration bucket: one key so a re-run replaces the previous marks. */
+const DUP_KEY = "dup";
 
 interface OutlineNode {
   id: string;
@@ -173,6 +177,96 @@ qing.commands.register(FOCUS_COMMAND, async (itemId?: string) => {
 qing.commands.register(REFRESH_COMMAND, async () => {
   await refreshOutline(true);
   if (roots.length === 0) qing.ui.toast("（这篇没有标题）", "info");
+});
+
+// ---------------------------------------------------------------------------
+// `editor:write` — the one code that can change the text the user is typing in.
+// ---------------------------------------------------------------------------
+
+qing.commands.register(BOLD_COMMAND, async () => {
+  const selection = await qing.editor.getSelection();
+  if (selection.from === selection.to) {
+    qing.ui.toast("请先选中要加粗的文字", "info");
+    return;
+  }
+  const text = selection.text;
+  // Idempotent: running it on already-bold text removes the markers instead of
+  // nesting `**…**`. `**a**` is the shortest thing that can be bold, so five
+  // characters is the boundary.
+  const alreadyBold = text.startsWith("**") && text.endsWith("**") && text.length >= 5;
+  const next = alreadyBold ? text.slice(2, -2) : `**${text}**`;
+  try {
+    // A plain change through the editor's own pipeline: it lands on disk and
+    // Ctrl+Z reverses it, exactly like the user typing the asterisks.
+    await qing.editor.replace({ from: selection.from, to: selection.to }, next);
+    qing.ui.toast(alreadyBold ? "已取消加粗" : "已加粗", "success");
+  } catch (error) {
+    qing.ui.toast(error instanceof Error ? error.message : "替换失败", "danger");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// `editor:decorate` — marks, not edits.
+// ---------------------------------------------------------------------------
+
+/** Are the duplicate-word marks currently on screen? */
+let marksActive = false;
+
+/** Latin/numeric words of at least three characters. */
+const WORD = /[A-Za-z0-9]+/g;
+
+qing.commands.register(MARK_COMMAND, async () => {
+  // Second run clears: `setDecorations(key, [])` is how a plugin takes its own
+  // marks back, and the host drops the rest when the plugin is disabled.
+  if (marksActive) {
+    await qing.editor.setDecorations(DUP_KEY, []);
+    marksActive = false;
+    qing.ui.toast("已清除标记", "info");
+    return;
+  }
+
+  let text: string;
+  try {
+    text = await qing.editor.getText();
+  } catch (error) {
+    qing.ui.toast(error instanceof Error ? error.message : "读取当前笔记失败", "danger");
+    return;
+  }
+
+  // Pass one: how often each word turns up. Case-insensitive, so `The` and
+  // `the` are the same word.
+  const totals = new Map<string, number>();
+  for (const match of text.matchAll(WORD)) {
+    const word = match[0];
+    if (word.length < 3) continue;
+    const key = word.toLowerCase();
+    totals.set(key, (totals.get(key) ?? 0) + 1);
+  }
+
+  // Pass two: mark the *second and later* occurrence of each repeated word.
+  // The first one is the definition, the rest are the echoes — and marking only
+  // the echoes is what makes the pattern readable.
+  const ranges: Array<{ from: number; to: number; kind: "warning" }> = [];
+  const seen = new Map<string, number>();
+  for (const match of text.matchAll(WORD)) {
+    const word = match[0];
+    if (word.length < 3) continue;
+    const key = word.toLowerCase();
+    const nth = (seen.get(key) ?? 0) + 1;
+    seen.set(key, nth);
+    if (nth < 2 || (totals.get(key) ?? 0) < 2) continue;
+    const from = match.index ?? 0;
+    ranges.push({ from, to: from + word.length, kind: "warning" });
+  }
+
+  // An empty result is a clear, not a no-op: re-running after the user deleted
+  // the duplicates has to take the old marks off the screen.
+  await qing.editor.setDecorations(DUP_KEY, ranges);
+  marksActive = ranges.length > 0;
+  qing.ui.toast(
+    ranges.length > 0 ? `标记了 ${ranges.length} 处重复词` : "没有重复词",
+    ranges.length > 0 ? "success" : "info",
+  );
 });
 
 // The panel is what starts this plugin (`onView:qing.outline.toc`, and the host
