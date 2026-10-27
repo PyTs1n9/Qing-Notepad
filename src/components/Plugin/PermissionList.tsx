@@ -16,6 +16,12 @@ interface PermissionListProps {
   onRevoke?: (permission: PluginPermission) => void;
   /** False hides the revoke action for that row (e.g. an implied read grant). */
   canRevoke?: (permission: PluginPermission) => boolean;
+  /**
+   * Declared by the plugin but not currently granted. Shown after the granted
+   * rows so a permission taken away can be given back without reinstalling.
+   */
+  missing?: readonly string[];
+  onGrant?: (permission: PluginPermission) => void;
   /** Shown instead of the list when nothing was declared. */
   emptyLabel?: string;
 }
@@ -44,11 +50,16 @@ const PermissionList: React.FC<PermissionListProps> = ({
   emphasize = [],
   onRevoke,
   canRevoke,
+  missing = [],
+  onGrant,
   emptyLabel,
 }) => {
-  const rows = permissions.filter(isPluginPermission);
+  const granted = permissions.filter(isPluginPermission);
+  const absent = missing
+    .filter(isPluginPermission)
+    .filter((permission) => !granted.includes(permission));
 
-  if (rows.length === 0) {
+  if (granted.length === 0 && absent.length === 0) {
     return (
       <p className="text-xs text-text-muted">
         {emptyLabel ?? t(lang, "pluginPermissionsNone")}
@@ -58,7 +69,7 @@ const PermissionList: React.FC<PermissionListProps> = ({
 
   return (
     <ul className="space-y-1">
-      {rows.map((permission) => {
+      {granted.map((permission) => {
         const Icon = ICONS[permission];
         const added = emphasize.includes(permission);
         return (
@@ -83,6 +94,31 @@ const PermissionList: React.FC<PermissionListProps> = ({
                 className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger"
               >
                 {t(lang, "pluginPermissionRevoke")}
+              </button>
+            )}
+          </li>
+        );
+      })}
+
+      {absent.map((permission) => {
+        const Icon = ICONS[permission];
+        return (
+          <li
+            key={permission}
+            className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-2.5 py-1.5"
+          >
+            <Icon size={13} className="flex-shrink-0 text-text-muted/60" />
+            <span className="min-w-0 flex-1 text-xs text-text-muted">
+              {t(lang, PERMISSION_LABEL_KEYS[permission])}
+            </span>
+            <code className="flex-shrink-0 text-[10px] text-text-muted/70">{permission}</code>
+            {onGrant && (
+              <button
+                type="button"
+                onClick={() => onGrant(permission)}
+                className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent-text"
+              >
+                {t(lang, "pluginPermissionGrant")}
               </button>
             )}
           </li>

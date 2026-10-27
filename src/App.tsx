@@ -449,6 +449,10 @@ export default function App() {
       .hydrate()
       .then(() => {
         if (!cancelled) void activateStartupPlugins(usePluginStore.getState().installed);
+      })
+      .catch((error) => {
+        // A wedged store must not leave the page silently empty.
+        console.error("Failed to initialise the plugin store:", error);
       });
     return () => {
       cancelled = true;

@@ -251,14 +251,16 @@ export function describeInstallError(error: unknown): string {
 }
 
 function reportFailure(error: unknown): void {
-  toast(
-    tWithParams(lang(), "pluginInstallFailed", { message: describeInstallError(error) }),
-    "danger",
-  );
+  const message = describeInstallError(error);
+  // A toast disappears in three seconds; an install that refuses a package needs
+  // to stay readable while the user goes back to look at the file.
+  usePluginStore.getState().setLastError(message);
+  toast(tWithParams(lang(), "pluginInstallFailed", { message }), "danger");
 }
 
 async function begin(prepare: () => Promise<PreparedInstall>): Promise<void> {
   const store = usePluginStore.getState();
+  store.setLastError(null);
   store.setInstallBusy(true);
   try {
     const prepared = await prepare();
@@ -294,16 +296,35 @@ async function finishPending(approved: readonly string[]): Promise<void> {
     "success",
   );
   usePluginStore.getState().setInstallPrompt(null);
+  // Jump to the new plugin so "installed" is visibly true, not just a toast.
+  usePluginStore.getState().select(record.id);
 }
 
-/** Pick a `.qnp` and start the install; the permission prompt follows. */
-export async function beginInstallFromFile(): Promise<void> {
-  const selection = await open({
-    multiple: false,
-    directory: false,
-    filters: [{ name: "Qing Plugin", extensions: ["qnp"] }],
-  });
-  const path = typeof selection === "string" ? selection : null;
+/**
+ * Pick a `.qnp` and start the install; the permission prompt follows.
+ *
+ * `selectedPath` skips the OS picker. Nothing in the UI passes it yet — it
+ * exists so the acceptance harness can drive the *same* code path as a click
+ * (a native dialog cannot be scripted), and it is what a future "drop a .qnp on
+ * the window" handler will call.
+ */
+export async function beginInstallFromFile(selectedPath?: string): Promise<void> {
+  let path = selectedPath ?? null;
+  if (!path) {
+    const selection = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Qing Plugin", extensions: ["qnp"] }],
+    });
+    // `multiple: false` should give a string, but the dialog has returned an
+    // array in a single-selection call before; accepting both costs one line
+    // and removes a silent "nothing happened".
+    path = typeof selection === "string"
+      ? selection
+      : Array.isArray(selection)
+        ? selection[0] ?? null
+        : null;
+  }
   if (!path) return;
   await begin(() => prepareInstallFromFile(path));
 }

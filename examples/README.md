@@ -6,13 +6,19 @@
 | --- | --- | --- |
 | `qing-hello-headless/` | `qing.hello-headless` | `clipboard:write`、`notify` |
 | `qing-note-wordcount/` | `qing.note-wordcount` | `notes:read`、`notify` |
+| `qing-isolation-probe/` | `qing.isolation-probe` | `notify` |
 
 已经构建并打包好，可以直接在「扩展」页 → 「从文件安装」里选：
 
 ```
 examples/qing.hello-headless-1.0.0.qnp
 examples/qing.note-wordcount-1.0.0.qnp
+examples/qing.isolation-probe-1.0.0.qnp
 ```
+
+`qing.isolation-probe` 用来回答「隔离到底成没成立」：装上、在命令面板执行「运行隔离自检」，
+提示消息会打印 `window=undefined document=undefined tauri=undefined fetch=blocked`。
+四项全对才说明 Worker 拿不到 DOM、拿不到 Tauri IPC、也联不了网。
 
 ## 两个硬约束
 

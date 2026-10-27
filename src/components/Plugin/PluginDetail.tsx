@@ -26,6 +26,7 @@ import {
   authorName,
   hasPermission,
   manifestCommands,
+  isPluginPermission,
   manifestPermissions,
   type InstalledPlugin,
   type PluginPermission,
@@ -73,14 +74,13 @@ const EmptyState: React.FC<{ lang: "zh" | "en" }> = ({ lang }) => (
  * install action). When it names both, the installed record wins and the index
  * entry is used only to decide whether an update exists.
  */
-const PluginDetail: React.FC = () => {
+const PluginDetailBody: React.FC = () => {
   const lang = useSettingsStore((state) => state.lang);
   const installed = usePluginStore((state) => state.installed);
   const index = usePluginStore((state) => state.index);
   const selectedId = usePluginStore((state) => state.selectedId);
   const lastError = usePluginStore((state) => state.lastError);
   const busy = usePluginStore((state) => state.installBusy);
-  const installPrompt = usePluginStore((state) => state.installPrompt);
   const setEnabled = usePluginStore((state) => state.setEnabled);
   const rollback = usePluginStore((state) => state.rollback);
   const uninstall = usePluginStore((state) => state.uninstall);
@@ -135,7 +135,25 @@ const PluginDetail: React.FC = () => {
           )}
         </div>
         <div className="min-h-0 flex-1">
-          <EmptyState lang={lang} />
+          {lastError ? (
+            // The empty state is exactly where a first install lands when it is
+            // refused, so the reason has to be readable here rather than only in
+            // a toast that has already faded.
+            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+              <p className="max-w-md rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-xs leading-relaxed text-danger">
+                {lastError}
+              </p>
+              <button
+                type="button"
+                onClick={() => usePluginStore.getState().setLastError(null)}
+                className="mt-3 rounded-lg border border-border px-3 py-1.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+              >
+                {t(lang, "close")}
+              </button>
+            </div>
+          ) : (
+            <EmptyState lang={lang} />
+          )}
         </div>
       </div>
     );
@@ -265,6 +283,18 @@ const PluginDetail: React.FC = () => {
             lang={lang}
             onRevoke={record ? revoke : undefined}
             canRevoke={(permission) => !impliedRead(permission)}
+            missing={
+              record
+                ? declared.filter(
+                    (permission) => isPluginPermission(permission) && !hasPermission(granted, permission),
+                  )
+                : []
+            }
+            onGrant={
+              record
+                ? (permission) => void setPermissions(record.id, [...granted, permission])
+                : undefined
+            }
           />
           {record && granted.length > 0 && (
             <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
@@ -357,14 +387,6 @@ const PluginDetail: React.FC = () => {
         )}
       </div>
 
-      <PermissionPrompt
-        state={installPrompt}
-        lang={lang}
-        busy={busy}
-        onCancel={() => void cancelPendingInstall()}
-        onConfirm={() => void confirmPendingInstall()}
-      />
-
       {uninstallOpen && record && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
           <div className="app-modal-backdrop absolute inset-0" onClick={() => setUninstallOpen(false)} />
@@ -419,6 +441,33 @@ const PluginDetail: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+/**
+ * The permission prompt is mounted *outside* the selection-dependent body.
+ *
+ * It used to live inside it, after the "nothing selected" early return — which
+ * meant the very first install (started from the sidebar, so with no selection)
+ * staged the package and then showed nothing at all. The prompt has to be able
+ * to appear no matter what the detail pane is showing.
+ */
+const PluginDetail: React.FC = () => {
+  const lang = useSettingsStore((state) => state.lang);
+  const installPrompt = usePluginStore((state) => state.installPrompt);
+  const busy = usePluginStore((state) => state.installBusy);
+
+  return (
+    <>
+      <PluginDetailBody />
+      <PermissionPrompt
+        state={installPrompt}
+        lang={lang}
+        busy={busy}
+        onCancel={() => void cancelPendingInstall()}
+        onConfirm={() => void confirmPendingInstall()}
+      />
+    </>
   );
 };
 

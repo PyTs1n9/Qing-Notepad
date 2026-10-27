@@ -814,6 +814,7 @@ export type TranslationKeys = {
   pluginUpdateAvailable: string;
   pluginPermissionRevoke: string;
   pluginPermissionNew: string;
+  pluginPermissionGrant: string;
   pluginLockedNote: string;
   pluginPermPromptInstallTitle: string;
   pluginPermPromptUpdateTitle: string;
@@ -1677,6 +1678,7 @@ const zh: TranslationKeys = {
   pluginUpdateAvailable: "有可用更新",
   pluginPermissionRevoke: "撤销",
   pluginPermissionNew: "新增",
+  pluginPermissionGrant: "授予",
   pluginLockedNote: "撤销后，扩展再调用这项能力会被直接拒绝。",
   pluginPermPromptInstallTitle: "安装 {name}？",
   pluginPermPromptUpdateTitle: "更新 {name}？",
@@ -2543,6 +2545,7 @@ const en: TranslationKeys = {
   pluginUpdateAvailable: "Update available",
   pluginPermissionRevoke: "Revoke",
   pluginPermissionNew: "New",
+  pluginPermissionGrant: "Grant",
   pluginLockedNote: "Once revoked, the extension's calls to that capability are refused.",
   pluginPermPromptInstallTitle: "Install {name}?",
   pluginPermPromptUpdateTitle: "Update {name}?",

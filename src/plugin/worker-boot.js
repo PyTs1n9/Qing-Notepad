@@ -250,7 +250,12 @@
         post({ t: "res", rid: data.rid, ok: true, value: plain });
       } catch (error) {
         post({ t: "log", level: "error", args: [describe(error)] });
-        post({ t: "res", rid: data.rid, ok: false, code: "E_INTERNAL" });
+        // A rejected host call carries the host's code (`E_PERMISSION_DENIED`,
+        // `E_QUOTA_EXCEEDED`, …). Flattening every failure to `E_INTERNAL`
+        // would make "you revoked this permission" indistinguishable from a
+        // genuine bug, both in the toast and in the log.
+        var code = error && typeof error.code === "string" ? error.code : "E_INTERNAL";
+        post({ t: "res", rid: data.rid, ok: false, code: code });
       }
       return;
     }

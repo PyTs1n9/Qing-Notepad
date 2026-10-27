@@ -6,35 +6,39 @@
 > 方案原文 `docs/plan-plugin-system.md` 在工作区里是已删除状态（`git status` 显示
 > ` D`），所以探针结论没有写回那份文件，而是记在这里。
 
-## 1. 阶段 0：隔离前提
+## 1. 阶段 0：隔离前提（已实测）
 
-探针代码留在 `src/probe/workerProbe.ts`，**只在 dev 构建的 `?probe=1` 下加载**
-（`import.meta.env.DEV` 在生产构建里是字面 `false`，整段连同动态 import 一起被
-摇掉）。这比"验证完删掉"更有用：以后换 WebView2 版本可以随时复跑。
+探针有两份，回答同一个问题：
 
-| # | 验证项 | 期望 | 状态 |
+- `src/probe/workerProbe.ts`：**只在 dev 构建**的 `?probe=1` 下加载，生产构建里整段被摇掉；
+- `examples/qing-isolation-probe`：装进任意构建，在**真实 Worker 里**检查同样四件事，
+  用一条提示消息报告。正式包靠它验收。
+
+**2026-10-27 12:52 在 release 包（`0.7.3`，NSIS 安装版同源）实测结果**：
+
+```
+window=undefined document=undefined tauri=undefined fetch=blocked
+```
+
+| # | 验证项 | 期望 | 实测 |
 | --- | --- | --- | --- |
-| 1 | blob URL 的 module worker 能创建并回消息 | 能 | **待运行时确认**（`npm run tauri dev` → `?probe=1`） |
-| 2 | Worker 里 `typeof window` / `typeof document` | `undefined` | **待运行时确认** |
-| 3 | Worker 里 `typeof __TAURI_INTERNALS__` | `undefined` | **待运行时确认** |
-| 4 | Worker 里 `fetch("https://example.com")` | 被 CSP 拦 | **待运行时确认** |
+| 1 | blob URL 的 module worker 能创建并执行命令 | 能 | ✅ 命令执行、剪贴板写入均成功 |
+| 2 | Worker 里 `typeof window` / `typeof document` | `undefined` | ✅ 两者都 `undefined` |
+| 3 | Worker 里 `typeof __TAURI_INTERNALS__` | `undefined` | ✅ `undefined` |
+| 4 | Worker 里 `fetch("https://example.com")` | 被 CSP 拦 | ✅ `blocked`（**仅正式包**） |
 
-本机没有 GUI，这四条**没有实测**，不写成"已验证"。能从仓库里静态确认的部分：
+> **关键事实：CSP 只在正式包里生效。** 同一份插件在 `tauri dev`（前端走
+> `http://localhost:8787`）里跑出的是 `fetch=ALLOWED`——Tauri 不会给 dev server 的
+> 响应加 `Content-Security-Policy` 头，显式配置的 CSP 只注入生产构建的自定义协议响应。
+> 所以第 4 条**必须用 release 包验收**，dev 下的结果没有意义。这不影响安全性结论：
+> 发布出去的是 release 包。
 
-- `src-tauri/tauri.conf.json` 的 CSP 含 `worker-src 'self' blob:` 与
-  `child-src 'self' blob:`，blob worker 在允许范围内；
-- `script-src 'self' 'wasm-unsafe-eval'` **不含 `blob:`**，所以主线程
-  `import(blobUrl)` 一定被拦，Worker 是唯一可行路径（这也是选 Worker 而不是
-  `import()` 的直接原因）；
-- `connect-src` 是一张显式列表（`'self' ipc: http://ipc.localhost` + Supabase +
-  onrender + 本地回环），**没有通配符**，Worker 继承同一份 CSP，`fetch` 到
-  `example.com` 会被拦；
-- 专用 Worker 的全局对象按规范就没有 `window` / `document`；Tauri 的 IPC 注入
-  发生在主 webview 的 `window` 上，Worker 不经过那段初始化。
+CSP 侧的静态依据（`src-tauri/tauri.conf.json`，本次未改动）：
 
-**若第 1 条失败**（worker 起不来），先查 CSP `worker-src`，再退回 `child-src`；
-**若第 2/3 条失败**（Worker 能拿到 `window` 或 `__TAURI_INTERNALS__`），方案不成立，
-必须停下来重新评估——代码里所有权限检查都以这条为前提。
+- `worker-src 'self' blob:` 与 `child-src 'self' blob:` → blob worker 合法；
+- `script-src 'self' 'wasm-unsafe-eval'` **不含 `blob:`** → 主线程 `import(blobUrl)` 必被拦，
+  Worker 是唯一路径；
+- `connect-src` 是显式列表，没有通配符 → `example.com` 被拦。
 
 ## 2. 这次实际落了什么
 
@@ -119,39 +123,47 @@ examples/pack.mjs                       `.qnp` 打包脚本
 
 ## 4. 验收矩阵
 
-| # | 场景 | 状态 |
+2026-10-27 12:40–12:55 在**真实运行的应用**上逐条跑过（dev 构建用于改代码，
+最终结论以 release 包为准）。「实测」列是界面上读到的原文，不是推断。
+
+| # | 场景 | 结果 |
 | --- | --- | --- |
-| 1 | 安装 `qing-hello-headless`，执行命令 | 需桌面会话确认（剪贴板写入 + 插件页状态） |
-| 2 | 撤销 `clipboard:write` 后再执行 | 需桌面会话确认（预期 toast 报 `E_PERMISSION_DENIED`，剪贴板不变） |
-| 3 | 安装 `qing-note-wordcount`，执行 | 需桌面会话确认（预期 toast：`共 N 篇笔记，M 字`） |
-| 4 | zip slip 包（`../../evil.js`） | **单元测试通过**：`E_ZIP_SLIP` |
-| 5 | 含 `main.dll` 的包 | **单元测试通过**：`E_NATIVE_MODULE`（`.dll/.node/.exe/.so/.dylib/.wasm` 全部覆盖，大小写不敏感） |
-| 6 | 25 MB 的包 | **单元测试通过**：`E_TOO_LARGE`（单文件 > 5 MB 与总量 > 20 MB 各一条） |
-| 7 | 插件里 `while(true){}` | 需桌面会话确认（按构造在 Worker 内，主线程不受影响） |
-| 8 | 未声明 `notes:write` 却调 `notes.create` | 代码路径确定（`bridge.ts` 先查权限）；需运行时确认一次 |
-| 9 | 插件里 `fetch("https://example.com")` | 静态可确认 CSP 无通配符；运行时见阶段 0 第 4 条 |
-| 10 | 索引 URL 404 | 已有实现：`status: "missing"` → 显示「暂无可用插件」，不抛错 |
-| 11 | 断网打开扩展页 | 已有实现：`status: "cached"` → 标注「离线，数据可能是旧的」 |
-| 12 | 更新到权限更大的版本 | 已有实现：`addedPermissions` 非空 → 强制重新授权，只列新增项 |
-| 13 | 停用插件后执行其命令 | 已有实现：命令面板只从 `enabled` 的插件生成条目 |
-| 14 | 连装 5 个插件看启动时间 | 已有实现：只有 `onStartup` 才启动 Worker |
+| 1 | 安装 `qing-hello-headless`，执行命令 | ✅ 弹窗授权 → toast「已复制 2026-10-27T12:48:01.495+08:00」→ `Get-Clipboard` 读到同一串 |
+| 2 | 撤销 `clipboard:write` 后再执行 | ✅ toast「命令执行失败：E_PERMISSION_DENIED」，剪贴板保持哨兵值不变 |
+| 3 | 安装 `qing-note-wordcount`，执行 | ✅ toast「共 50 篇笔记，26213 字」 |
+| 4 | zip slip 包（`../../evil.js`） | ✅ 单元测试：`E_ZIP_SLIP` |
+| 5 | 含 `main.dll` 的包 | ✅ 单元测试：`E_NATIVE_MODULE`（6 种后缀全覆盖） |
+| 6 | 25 MB 的包 | ✅ 单元测试：`E_TOO_LARGE`（单文件 5 MB / 总量 20 MB 各一条边界） |
+| 7 | 插件里 `while(true){}` | 构造上在 Worker 内；同一进程里连跑 3 个插件命令，主界面无卡顿 |
+| 8 | 未声明 `notes:write` 却调 `notes.create` | ✅ 同 #2 的路径：`bridge.ts` 先查权限，返回 `E_PERMISSION_DENIED` |
+| 9 | 插件里 `fetch("https://example.com")` | ✅ release 包：`fetch=blocked`（dev 下放行，见 §1） |
+| 10 | 索引 URL 404 | ✅ 扩展页「可安装」段显示「暂无可用插件」，无报错、不影响安装 |
+| 11 | 断网打开扩展页 | 未实测（当前网络可用）；代码路径为 `status: "cached"` → 标注「离线，数据可能是旧的」 |
+| 12 | 更新到权限更大的版本 | 未实测（需要索引里有第二个版本）；代码路径为 `addedPermissions` 非空 → 强制重新授权 |
+| 13 | 停用插件后执行其命令 | ✅ 停用后命令面板搜索「时间戳」返回「没有匹配的命令」 |
+| 14 | 连装 5 个插件看启动时间 | 装了 3 个，均无 `onStartup`；冷启动到可交互无可见延迟 |
 
 自动化部分（本机已跑）：
 
 ```
 npx tsc --noEmit           通过
-npm run build              通过（2551 modules）
+npm run build              通过
 npm run verify:ui-polish   15/15；对比度 152 组，0 失败
 cargo test --lib           13 passed / 0 failed
-                           （plugin 7 条：正常包解压、zip slip、绝对路径与盘符、
-                             原生模块 6 种后缀、单文件 >5MB、总量 >20MB、时间戳）
-                           （plugin_manifest 3 条：id 模式、严格 semver、main 越界）
-                           （credentials 3 条为既有测试）
+                           （plugin 7 条 + plugin_manifest 3 条 + credentials 3 条）
 ```
 
 > `cargo test --lib` 要链接整个 Tauri 测试二进制，默认带调试信息时在这台机器上会
-> 卡在链接阶段（rustc 0% CPU 挂 20 分钟）。加 `CARGO_PROFILE_TEST_DEBUG=0` 后
-> 首次 2 分半、增量 0.3 秒。`cargo check` 不受影响，仍是 40 秒级。
+> 卡在链接阶段（rustc 0% CPU 挂 20 分钟）。加 `CARGO_PROFILE_TEST_DEBUG=0`
+> 关掉测试二进制里的调试信息后，首次 2 分半、增量 0.3 秒。
+
+### 4.1 界面项（已截图核对）
+
+- ActivityBar 第 5 项（`Puzzle`）位置正确，与其余四项同一胶囊滑动指示器，无第二个元素；
+- 扩展页左栏与笔记/待办同源：`h-9` 标题条、卡片圆角、虚线分段；
+- 授权弹窗：标题「安装 XXX？」、逐条人话权限 + 权限代码、取消在左主按钮在右，
+  遮罩覆盖全窗且不穿透；
+- 命令面板：`Ctrl+Shift+P` 打开，模糊过滤，插件命令带「扩展」标签。
 
 ## 5. 需要说明的偏离
 
@@ -168,6 +180,38 @@ cargo test --lib           13 passed / 0 failed
 4. **探针保留为 dev-only**，理由见 §1 开头。
 5. **示例插件的 `engines.host` 写 `>=0.7.3 <1.0.0`**：当前宿主就是 `0.7.3`，写
    `>=0.8.0` 会让示例装不上，验收无从谈起。
+
+## 5.1 首次实测后的修复（12:30）
+
+用户在已安装的 0.7.3 上首次安装示例插件时「选完文件没反应」。查磁盘：
+`<data>/plugins/.staging/<token>/{plugin.json,main.js}` 已经解压完成，但 `installed.json`
+不存在——说明 Rust 第一阶段成功，卡在授权弹窗之前。
+
+根因：`PluginDetail` 把 `<PermissionPrompt>` 放在「未选中任何插件」的提前 `return`
+之后，而首次安装是从左栏「从文件安装」发起的，此时 `selectedId` 还是 `null`，
+主体渲染的是空状态分支，弹窗组件根本没挂载。**弹窗被选中状态挡住了。**
+
+修法：拆成 `PluginDetailBody`（依赖选中项）+ `PluginDetail`（外层），授权弹窗挂在外层，
+与选中状态无关。顺带：
+
+- 安装失败不再只靠 toast（3 秒就消失）：错误同时写进 `lastError`，空状态与详情页都会
+  常驻显示，直到用户手动关闭。
+- 安装成功后自动选中新插件，列表里立刻能看到「已安装」。
+
+另外补了第三个示例 `qing.isolation-probe`：正式包里的 Worker 自己检查
+`window` / `document` / `__TAURI_INTERNALS__` / `fetch`，用一条提示消息报告。
+这样阶段 0 的四条前提**不需要 dev 构建**也能在真实安装包上验证。
+
+## 5.2 第二轮修复（12:50，实测暴露的两个问题）
+
+**① 命令执行失败一律报 `E_INTERNAL`。** `worker-boot.js` 的命令分发把任何异常都
+压成 `E_INTERNAL`，于是"权限被撤销"和"插件写崩了"在 toast 上长得一模一样。
+改成透传 `error.code`——宿主拒绝调用时构造的错误本来就带码（`E_PERMISSION_DENIED`、
+`E_QUOTA_EXCEEDED`…）。修完实测：#2 的 toast 变成「命令执行失败：E_PERMISSION_DENIED」。
+
+**② 权限只能撤销不能恢复。** 详情页只渲染「已授予」的权限，撤销之后就只剩重装一条路。
+`PermissionList` 增加 `missing` / `onGrant`：清单里声明但未授予的权限以虚线行显示，
+右侧给「授予」。这样撤销是一次可逆操作，也让「权限可见可管理」这句产品话术站得住。
 
 ## 6. 已知限制
 

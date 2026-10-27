@@ -47,6 +47,7 @@ interface PluginStoreState {
   rollback: (id: string) => Promise<void>;
   setPermissions: (id: string, permissions: string[]) => Promise<void>;
   clearError: () => void;
+  setLastError: (message: string | null) => void;
   setInstallPrompt: (prompt: PluginInstallPrompt | null) => void;
   setInstallBusy: (busy: boolean) => void;
 }
@@ -161,6 +162,7 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   },
 
   clearError: () => set({ lastError: null }),
+  setLastError: (lastError) => set({ lastError }),
 
   setInstallPrompt: (installPrompt) => set({ installPrompt }),
   setInstallBusy: (installBusy) => set({ installBusy }),
