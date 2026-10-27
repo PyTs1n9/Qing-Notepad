@@ -184,6 +184,43 @@
       },
     },
 
+    /**
+     * The open note's document.
+     *
+     * Positions are CodeMirror document offsets into the Markdown source —
+     * `0` to `getText().length`, counted in UTF-16 code units. There is no
+     * document object to hold on to: every call reads the live text, so a
+     * position saved from an earlier call can be stale by the time it is used.
+     * `E_NO_EDITOR` means no note is open (the plugin is running while the user
+     * is on the todo page, for example).
+     */
+    editor: {
+      getText: function () {
+        return rpc("editor", "getText", []);
+      },
+      getSelection: function () {
+        return rpc("editor", "getSelection", []);
+      },
+      /**
+       * Replace the half-open range `[from, to)` with `text`. An empty range is
+       * an insertion, `from === to === getText().length` appends. The write goes
+       * through the editor's own change pipeline, so autosave, dirty tracking
+       * and undo see it exactly as if the user had typed it.
+       */
+      replace: function (range, text) {
+        return rpc("editor", "replace", [range, text]);
+      },
+      /**
+       * Mark ranges of the document. `kind` is one of "error", "warning",
+       * "success", "muted", "highlight" — a CSS class name is rejected. Calling
+       * again with the same `key` replaces that key's marks; an empty array
+       * clears them.
+       */
+      setDecorations: function (key, ranges) {
+        return rpc("editor", "setDecorations", [key, ranges]);
+      },
+    },
+
     todo: {
       list: function () {
         return rpc("todo", "list", []);

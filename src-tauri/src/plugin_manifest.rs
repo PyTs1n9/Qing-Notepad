@@ -45,6 +45,15 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     "clipboard:read",
     "clipboard:write",
     "notify",
+    // P1a: the editor surface. `editor:read` covers the *open* document only,
+    // which is why it is separate from `notes:read` (the whole library):
+    // reading what the user is looking at and reading every note they have are
+    // different amounts of trust. `editor:decorate` is its own code rather than
+    // part of `editor:write` because painting marks on the text a user is
+    // editing is a different decision from changing it.
+    "editor:read",
+    "editor:write",
+    "editor:decorate",
 ];
 
 const MAX_ID_LEN: usize = 64;
@@ -1148,6 +1157,44 @@ mod tests {
         let mut value = package("wordcount", Some("qing"));
         value["permissions"] = json!(["storage", "notes:write", "notify"]);
         assert!(validate(&from_package_json(&doc(value)).expect("maps")).is_ok());
+    }
+
+    #[test]
+    fn the_editor_permission_codes_are_known_and_their_neighbours_are_not() {
+        // P1a adds three editor codes (8 → 11). `editor:delete` is the shape an
+        // author reaches for next, and it has to stay refused: an unknown
+        // permission is stored, shown to the user, and grants nothing.
+        for permission in ["editor:read", "editor:write", "editor:decorate"] {
+            let mut value = package("wordcount", Some("qing"));
+            value["permissions"] = json!(["notes:read", permission]);
+            let manifest = from_package_json(&doc(value)).expect("permissions map");
+            assert!(validate(&manifest).is_ok(), "{permission} must install");
+            assert!(
+                manifest.permissions.iter().any(|item| item == permission),
+                "{permission} must survive the mapping"
+            );
+        }
+
+        for permission in ["editor:delete", "editor", "editor:read:all", "Editor:read"] {
+            let mut value = package("wordcount", Some("qing"));
+            value["permissions"] = json!([permission]);
+            let manifest = from_package_json(&doc(value)).expect("permissions map");
+            assert_eq!(
+                validate(&manifest).expect_err("not a host permission").code,
+                "E_PERMISSION_UNKNOWN",
+                "{permission}"
+            );
+        }
+
+        // The whitelist is the single source of truth: 8 L1 codes + 3 editor
+        // codes, no duplicates, and nothing in it that the frontend's copy
+        // (`PLUGIN_PERMISSIONS` in `types.ts`) does not also have.
+        let mut sorted: Vec<&str> = KNOWN_PERMISSIONS.to_vec();
+        sorted.sort_unstable();
+        let before = sorted.len();
+        sorted.dedup();
+        assert_eq!(sorted.len(), before, "duplicate permission code");
+        assert_eq!(KNOWN_PERMISSIONS.len(), 11);
     }
 
     #[test]

@@ -9,6 +9,10 @@ import {
   literalTabIndentation,
   themeAwareMarkdownHighlighting,
 } from "@/utils/codeMirror";
+// Plugin marks are part of the editor's state, so they are an extension here
+// rather than something a plugin reaches into the view to toggle. `pluginDecorations`
+// is a no-op until a plugin calls `qing.editor.setDecorations`.
+import { pluginDecorations } from "@/utils/editorHandle";
 
 interface MarkdownSourceEditorProps {
   value: string;
@@ -97,6 +101,7 @@ export default function MarkdownSourceEditor({
         markdown(),
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
+        pluginDecorations,
         fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
         EditorView.lineWrapping,
         literalTabIndentation,

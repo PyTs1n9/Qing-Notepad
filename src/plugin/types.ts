@@ -20,6 +20,15 @@ export const PLUGIN_PERMISSIONS = [
   "clipboard:read",
   "clipboard:write",
   "notify",
+  // P1a editor surface. Three codes instead of one because they are three
+  // different decisions for the user: read the document they are looking at,
+  // change it, or paint marks on it. `editor:read` is deliberately *not*
+  // implied by `editor:write` (unlike `notes:write` → `notes:read`): replacing
+  // a range does not let a plugin see anything, so "can rewrite my note" is not
+  // a reason to hand it the whole text.
+  "editor:read",
+  "editor:write",
+  "editor:decorate",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];
@@ -34,6 +43,9 @@ export const PERMISSION_LABEL_KEYS: Record<PluginPermission, keyof TranslationKe
   "clipboard:read": "pluginPermClipboardRead",
   "clipboard:write": "pluginPermClipboardWrite",
   notify: "pluginPermNotify",
+  "editor:read": "pluginPermEditorRead",
+  "editor:write": "pluginPermEditorWrite",
+  "editor:decorate": "pluginPermEditorDecorate",
 };
 
 export function isPluginPermission(value: string): value is PluginPermission {
@@ -138,6 +150,10 @@ export type PluginErrorCode =
   | "E_COMMAND_CONFLICT"
   | "E_NO_HANDLER"
   | "E_QUOTA_EXCEEDED"
+  /** P1a: no note is open, so there is no document to act on. */
+  | "E_NO_EDITOR"
+  /** P1a: a document range that is not inside the current text. */
+  | "E_RANGE_INVALID"
   | string;
 
 export class PluginError extends Error {

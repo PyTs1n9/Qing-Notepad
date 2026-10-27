@@ -20,7 +20,9 @@
  *   - the prelude adds exactly four globals (`qing`, `module`, `exports`,
  *     `require`) and nothing else — no `window`, no `document`, no Tauri IPC;
  *   - `qing` is populated from `init` *before* module-level plugin code runs,
- *     and a command registered by a CJS bundle is reachable over postMessage.
+ *     and a command registered by a CJS bundle is reachable over postMessage;
+ *   - the `qing.editor` decoration layer keeps its marks attached to the text
+ *     through edits, and drops them when the owning plugin goes away.
  *
  *   node scripts/verify-plugin-runtime/run.mjs
  */
@@ -28,7 +30,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+// Imported here *and* handed to the bundled module below (via the `require`
+// shim): `@codemirror/state` ships separate ESM and CJS builds, and mixing them
+// breaks the `instanceof` checks that `EditorState.create` relies on.
+import * as codeMirrorState from "@codemirror/state";
+import * as codeMirrorView from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
 import * as esbuild from "esbuild";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -347,6 +356,122 @@ section("The prelude itself: one source of truth");
     JSON.stringify(definitions) === JSON.stringify(["exports", "module", "qing", "require"]), definitions);
   check("worker-boot.js never mentions window/document/__TAURI_INTERNALS__",
     !/\b(window|document|__TAURI_INTERNALS__|__TAURI__)\b/.test(bootSource.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")));
+}
+
+// ---------------------------------------------------------------------------
+section("Editor decorations (P1a): marks follow their text and die with their plugin");
+
+{
+  // `editorHandle.ts` is TypeScript, so it is bundled the same way a plugin is:
+  // through esbuild, with the CodeMirror packages left external and resolved
+  // from the repository's own node_modules. The decoration field is pure
+  // `EditorState` state — no DOM, no `EditorView` instance — which is exactly
+  // why this can run in Node at all.
+  const handleSource = fs.readFileSync(
+    path.join(root, "src", "utils", "editorHandle.ts"),
+    "utf8",
+  );
+  const handleCode = await bundle(handleSource, "cjs", {
+    external: ["@codemirror/state", "@codemirror/view"],
+    loader: { ".js": "ts" },
+  });
+  const handleModule = { exports: {} };
+  // Same instances the `EditorState` above comes from — see the import comment.
+  const requireCodeMirror = (id) => {
+    if (id === "@codemirror/state") return codeMirrorState;
+    if (id === "@codemirror/view") return codeMirrorView;
+    return createRequire(path.join(root, "package.json"))(id);
+  };
+  new Function("module", "exports", "require", handleCode)(
+    handleModule,
+    handleModule.exports,
+    requireCodeMirror,
+  );
+  const handle = handleModule.exports;
+  const field = handle.pluginDecorations;
+
+  /** The two members `setPluginDecorations` / `clearPluginDecorations` use. */
+  const makeHost = () => {
+    const host = {
+      state: EditorState.create({ doc: "hello world", extensions: [field] }),
+      dispatch(spec) {
+        host.state = host.state.update(spec).state;
+      },
+    };
+    handle.setActiveEditor(host);
+    return host;
+  };
+  const marksOf = (host, pluginId, key) => {
+    const set = host.state.field(field).get(`${pluginId}::${key}`);
+    if (!set) return [];
+    const out = [];
+    const cursor = set.iter();
+    while (cursor.value) {
+      out.push({ from: cursor.from, to: cursor.to, class: cursor.value.spec.class });
+      cursor.next();
+    }
+    return out;
+  };
+
+  const host = makeHost();
+  handle.setPluginDecorations(host, "qing.probe", "spelling", [
+    { from: 0, to: 5, kind: "error" },
+  ]);
+  check(
+    "a plugin's marks land as semantic classes, not caller-supplied CSS",
+    JSON.stringify(marksOf(host, "qing.probe", "spelling")) ===
+      JSON.stringify([{ from: 0, to: 5, class: "qing-dec-error" }]),
+    marksOf(host, "qing.probe", "spelling"),
+  );
+
+  host.dispatch({ changes: { from: 0, insert: "XX" } });
+  check(
+    "an edit before a mark moves it with its text instead of leaving it behind",
+    JSON.stringify(marksOf(host, "qing.probe", "spelling")) ===
+      JSON.stringify([{ from: 2, to: 7, class: "qing-dec-error" }]),
+    marksOf(host, "qing.probe", "spelling"),
+  );
+
+  handle.setPluginDecorations(host, "qing.probe", "other", [{ from: 0, to: 1, kind: "highlight" }]);
+  handle.setPluginDecorations(host, "qing.probe", "spelling", []);
+  check(
+    "an empty array clears that key only",
+    marksOf(host, "qing.probe", "spelling").length === 0 &&
+      marksOf(host, "qing.probe", "other").length === 1,
+    [...host.state.field(field).keys()],
+  );
+
+  handle.setPluginDecorations(host, "qing.other-plugin", "spelling", [
+    { from: 0, to: 2, kind: "success" },
+  ]);
+  handle.clearPluginDecorations("qing.probe");
+  check(
+    "deactivation drops one plugin's marks and leaves the neighbour's alone",
+    host.state.field(field).size === 1 &&
+      marksOf(host, "qing.other-plugin", "spelling").length === 1,
+    [...host.state.field(field).keys()],
+  );
+
+  handle.clearPluginDecorations("qing.other-plugin");
+  check("clearing the last plugin leaves an empty decoration map", host.state.field(field).size === 0);
+
+  // No editor mounted: the call must be a no-op, not a throw. This is the path
+  // `deactivatePlugin` takes when the user is on the todo page.
+  handle.setActiveEditor(null);
+  let threw = false;
+  try {
+    handle.clearPluginDecorations("qing.probe");
+  } catch {
+    threw = true;
+  }
+  check("clearing with no editor open is a no-op", threw === false);
+
+  check(
+    "the kind list is exactly the five semantic names the CSS defines",
+    JSON.stringify(handle.DECORATION_KINDS) ===
+      JSON.stringify(["error", "warning", "success", "muted", "highlight"]),
+    handle.DECORATION_KINDS,
+  );
 }
 
 console.log(`\n${failures === 0 ? "OK" : "FAILED"}: ${checks - failures}/${checks} checks passed`);

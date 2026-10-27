@@ -13,11 +13,20 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import type { EditorView } from "@codemirror/view";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTodoStore } from "@/stores/todoStore";
 import { toast } from "@/stores/toastStore";
 import { loadNoteContent, saveNoteContent } from "@/utils/storage";
 import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
+import {
+  DECORATION_KINDS,
+  MAX_DECORATION_RANGES,
+  getActiveEditor,
+  isDecorationKind,
+  setPluginDecorations,
+  type DecorationRange,
+} from "@/utils/editorHandle";
 import type { Note, Todo } from "@/types";
 import { hasPermission, PluginError, toPluginError, type PluginPermission } from "./types";
 
@@ -35,7 +44,20 @@ const REQUIREMENTS: Record<string, Record<string, PluginPermission | null>> = {
   todo: { list: "todo:read", create: "todo:write", update: "todo:write" },
   clipboard: { read: "clipboard:read", write: "clipboard:write" },
   ui: { toast: "notify" },
+  // P1a. Three codes for one namespace, and no implication between them: being
+  // allowed to rewrite the document does not hand a plugin the text.
+  editor: {
+    getText: "editor:read",
+    getSelection: "editor:read",
+    replace: "editor:write",
+    setDecorations: "editor:decorate",
+  },
 };
+
+/** One `replace()` may insert this many characters before `E_TOO_LARGE`. */
+const MAX_EDITOR_INSERT = 1_000_000;
+/** Decoration keys are a bucket name, not a document. */
+const MAX_DECORATION_KEY_LENGTH = 64;
 
 function asString(value: unknown, name: string): string {
   if (typeof value !== "string") {
@@ -60,6 +82,79 @@ async function readNoteBody(note: Note): Promise<string> {
   const state = useNoteStore.getState();
   const raw = note.id === state.activeNoteId ? note.content : await loadNoteContent(note.id);
   return toPlainText(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Editor (P1a)
+//
+// Positions are CodeMirror document offsets — `0 … view.state.doc.length`, UTF-16
+// code units against the Markdown source that gets written to disk. See
+// `editorHandle.ts` for why this editor and not ProseMirror.
+// ---------------------------------------------------------------------------
+
+function requireEditor(): EditorView {
+  const view = getActiveEditor();
+  if (!view) {
+    throw new PluginError("E_NO_EDITOR", "no note is open, so there is no document to act on");
+  }
+  return view;
+}
+
+/**
+ * A half-open `[from, to)` range inside the document.
+ *
+ * Integers only, because `from: 1.5` is not a position — CodeMirror would round
+ * it, and a plugin that ships a fraction is telling us its own maths is wrong.
+ */
+function asDocumentRange(value: unknown, docLength: number): { from: number; to: number } {
+  const candidate = (value ?? {}) as { from?: unknown; to?: unknown };
+  const { from, to } = candidate;
+  if (
+    typeof from !== "number" ||
+    typeof to !== "number" ||
+    !Number.isInteger(from) ||
+    !Number.isInteger(to)
+  ) {
+    throw new PluginError("E_RANGE_INVALID", "`from` and `to` must be integers");
+  }
+  if (from < 0 || from > to || to > docLength) {
+    throw new PluginError(
+      "E_RANGE_INVALID",
+      `range ${from}..${to} is outside the document (0..${docLength})`,
+    );
+  }
+  return { from, to };
+}
+
+/**
+ * Decorations are `{from, to, kind}` with a semantic `kind`. An empty range is
+ * dropped rather than refused: "I found no matches" is a normal result, and it
+ * has to be able to clear the marks of the previous run.
+ */
+function asDecorationRanges(value: unknown, docLength: number): DecorationRange[] {
+  if (!Array.isArray(value)) {
+    throw new PluginError("E_RANGE_INVALID", "decorations must be an array of { from, to, kind }");
+  }
+  if (value.length > MAX_DECORATION_RANGES) {
+    throw new PluginError(
+      "E_TOO_LARGE",
+      `more than ${MAX_DECORATION_RANGES} decoration ranges`,
+    );
+  }
+  const ranges: DecorationRange[] = [];
+  for (const entry of value) {
+    const { from, to } = asDocumentRange(entry, docLength);
+    const kind = (entry as { kind?: unknown }).kind;
+    if (!isDecorationKind(kind)) {
+      throw new PluginError(
+        "E_RANGE_INVALID",
+        `unknown decoration kind, expected one of ${DECORATION_KINDS.join(", ")}`,
+      );
+    }
+    if (from === to) continue;
+    ranges.push({ from, to, kind });
+  }
+  return ranges;
 }
 
 export async function dispatchPluginCall(
@@ -169,6 +264,52 @@ export async function dispatchPluginCall(
           await emit("sticky:note-updated", { noteId: id, content: updates.content });
           await emit(NOTE_EXTERNAL_SAVE_EVENT, { noteId: id, content: updates.content });
         }
+        return null;
+      }
+
+      case "editor.getText": {
+        const view = requireEditor();
+        return view.state.doc.toString();
+      }
+
+      case "editor.getSelection": {
+        const view = requireEditor();
+        const selection = view.state.selection.main;
+        return {
+          from: selection.from,
+          to: selection.to,
+          text: view.state.sliceDoc(selection.from, selection.to),
+        };
+      }
+
+      case "editor.replace": {
+        const view = requireEditor();
+        const { from, to } = asDocumentRange(args[0], view.state.doc.length);
+        const text = asString(args[1], "text");
+        if (text.length > MAX_EDITOR_INSERT) {
+          throw new PluginError(
+            "E_TOO_LARGE",
+            `replace() was given ${text.length} characters (limit ${MAX_EDITOR_INSERT})`,
+          );
+        }
+        // Deliberately *not* annotated as an external document update. The
+        // editor's own update listener has to treat this as a user edit,
+        // because that is the one chain that keeps everything consistent:
+        // MarkdownSourceEditor's updateListener → handleMdChange
+        // (NoteEditor.tsx:365) → updateNote (NoteEditor.tsx:376) + markDirty →
+        // autosave/`doSave` (NoteEditor.tsx:196, `saveNoteContent`). Annotating
+        // it — as the `value` round-trip effect at NoteEditor.tsx:144 does —
+        // would leave the plugin's text on screen and off disk. It also stays in
+        // the undo history, so the user can Ctrl+Z a plugin's edit.
+        view.dispatch({ changes: { from, to, insert: text } });
+        return null;
+      }
+
+      case "editor.setDecorations": {
+        const view = requireEditor();
+        const key = asString(args[0], "key").slice(0, MAX_DECORATION_KEY_LENGTH);
+        const ranges = asDecorationRanges(args[1], view.state.doc.length);
+        setPluginDecorations(view, context.pluginId, key, ranges);
         return null;
       }
 

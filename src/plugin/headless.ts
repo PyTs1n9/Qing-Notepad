@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { readTextFile } from "@tauri-apps/plugin-fs";
 import { getDataDirectory } from "@/utils/storage";
+import { clearPluginDecorations } from "@/utils/editorHandle";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
 import { tWithParams } from "@/utils/i18n";
@@ -327,7 +328,12 @@ export async function executePluginCommand(
 }
 
 /** Stop a plugin's worker, e.g. after it was disabled or uninstalled. */
-export function deactivatePlugin(pluginId: string): void {  const runner = runners.get(pluginId);
+export function deactivatePlugin(pluginId: string): void {
+  // Marks a plugin painted belong to that plugin, not to the note: leaving them
+  // behind after a disable, uninstall, update or rollback would show the user
+  // annotations from code that no longer exists, with no way to remove them.
+  clearPluginDecorations(pluginId);
+  const runner = runners.get(pluginId);
   if (runner) {
     try {
       runner.worker.postMessage({ t: "event", name: "deactivate" });

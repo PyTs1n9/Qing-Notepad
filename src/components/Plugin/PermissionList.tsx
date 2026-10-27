@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, CheckSquare, Clipboard, Database, FileText } from "lucide-react";
+import { Bell, CheckSquare, Clipboard, Database, Eye, FileText, Highlighter, PenLine } from "lucide-react";
 import type { LangType } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import {
@@ -35,6 +35,11 @@ const ICONS: Record<PluginPermission, React.ComponentType<{ size?: number; class
   "clipboard:read": Clipboard,
   "clipboard:write": Clipboard,
   notify: Bell,
+  // The editor codes get distinct icons rather than one shared one: the three
+  // are different asks, and the install prompt is where the user decides.
+  "editor:read": Eye,
+  "editor:write": PenLine,
+  "editor:decorate": Highlighter,
 };
 
 /**

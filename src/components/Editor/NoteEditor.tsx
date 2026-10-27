@@ -24,6 +24,7 @@ import { handleExternalLinkClick } from "@/utils/externalLinks";
 import { renderMarkdown } from "@/utils/markdown";
 import { useEditorZoom } from "@/utils/editorZoom";
 import { registerNoteFlusher } from "@/utils/noteFlush";
+import { setActiveEditor } from "@/utils/editorHandle";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
 import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
 
@@ -550,6 +551,11 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
 
   const handleCodeMirrorViewChange = useCallback((view: EditorView | null) => {
     codeMirrorViewRef.current = view;
+    // The single publication point for "which document do plugins act on".
+    // `onViewChange` fires on mount and again with `null` on unmount, which is
+    // exactly the lifetime `qing.editor` needs — no second effect, and no way
+    // for the two to disagree.
+    setActiveEditor(view);
   }, []);
 
   // Sync scroll: CodeMirror -> preview

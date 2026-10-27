@@ -832,6 +832,9 @@ export type TranslationKeys = {
   pluginPermClipboardRead: string;
   pluginPermClipboardWrite: string;
   pluginPermNotify: string;
+  pluginPermEditorRead: string;
+  pluginPermEditorWrite: string;
+  pluginPermEditorDecorate: string;
   pluginCrashedDisabled: string;
   pluginPermissionDenied: string;
   pluginInstalled: string;
@@ -1703,6 +1706,9 @@ const zh: TranslationKeys = {
   pluginPermClipboardRead: "读取剪贴板",
   pluginPermClipboardWrite: "写入剪贴板",
   pluginPermNotify: "显示提示消息",
+  pluginPermEditorRead: "读取当前笔记正文",
+  pluginPermEditorWrite: "修改当前笔记",
+  pluginPermEditorDecorate: "在正文上做标记",
   pluginCrashedDisabled: "{name} 连续崩溃，已自动停用",
   pluginPermissionDenied: "扩展缺少权限：{permission}",
   pluginInstalled: "已安装 {name}",
@@ -2577,6 +2583,9 @@ const en: TranslationKeys = {
   pluginPermClipboardRead: "Read the clipboard",
   pluginPermClipboardWrite: "Write to the clipboard",
   pluginPermNotify: "Show notifications",
+  pluginPermEditorRead: "Read the note you have open",
+  pluginPermEditorWrite: "Change the note you have open",
+  pluginPermEditorDecorate: "Mark up the note you have open",
   pluginCrashedDisabled: "{name} crashed repeatedly and was disabled",
   pluginPermissionDenied: "The extension lacks permission: {permission}",
   pluginInstalled: "Installed {name}",

@@ -2296,3 +2296,51 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Plugin decorations (`qing.editor.setDecorations`)                   */
+/*                                                                     */
+/* A plugin asks for a semantic kind and the host maps it to one of    */
+/* these five classes; the theme decides what it looks like. Only the  */
+/* background (and one 1px underline for the three that mean "wrong")  */
+/* are set — the glyph colour stays `--color-text-primary`, so          */
+/* readability in every theme is that theme's own text contrast,       */
+/* untouched.                                                          */
+/*                                                                     */
+/* Tints are `color-mix` against the semantic tokens rather than hex,  */
+/* so the default palette and the dark/blue/yellow/green overrides all */
+/* resolve to their own values, and a future theme inherits them.      */
+/* ------------------------------------------------------------------ */
+.qing-dec-error,
+.qing-dec-warning,
+.qing-dec-success,
+.qing-dec-muted,
+.qing-dec-highlight {
+  border-radius: 2px;
+  /* A mark that wraps keeps its tint on every line instead of only the first. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.qing-dec-error {
+  background-color: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-danger) 50%, transparent);
+}
+
+.qing-dec-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-warning) 50%, transparent);
+}
+
+.qing-dec-success {
+  background-color: color-mix(in srgb, var(--color-success) 16%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-success) 50%, transparent);
+}
+
+.qing-dec-highlight {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.qing-dec-muted {
+  background-color: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+}
