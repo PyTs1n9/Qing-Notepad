@@ -40,6 +40,7 @@ import {
 } from "./types";
 import { HOST_VERSION, isHostCompatible } from "./version";
 import {
+  EXT_HOST_ID,
   createInProcessTransport,
   type PluginTransport,
   type WorkerOutbound,
@@ -93,18 +94,87 @@ const starting = new Map<string, Runner>();
 /**
  * The execution backend. In-process until P1b's process mode is switched on;
  * see `transport.ts` for why the two share one message contract.
+ *
+ * `let`, not `const`: a session whose extension host keeps restarting falls
+ * back to the transport that does not need one (below). The fallback is a
+ * *swap*, not a repair — every runner is rebuilt on demand by `ensureRunner`.
  */
-const transport: PluginTransport = createInProcessTransport();
+let transport: PluginTransport = createInProcessTransport();
 
-transport.onMessage((pluginId, message) => {
-  const runner = runners.get(pluginId) ?? starting.get(pluginId);
-  if (runner) void handleMessage(runner, message);
-});
+/** Restarts in one session before the transport gives up on the process mode. */
+const MAX_HOST_RESTARTS = 3;
 
-transport.onError((pluginId, message) => {
+/** Extension-host restarts seen this session. */
+let hostRestarts = 0;
+
+function wireTransport(): void {
+  transport.onMessage((pluginId, message) => {
+    const runner = runners.get(pluginId) ?? starting.get(pluginId);
+    if (runner) void handleMessage(runner, message);
+  });
+
+  transport.onError((pluginId, message) => {
+    const error = toPluginError(message);
+    if (error.code === "E_HOST_RESTARTED" && pluginId === EXT_HOST_ID) {
+      countHostRestart();
+      return;
+    }
+    if (error.code === "E_HOST_RESTARTED") {
+      // The worker this runner was talking to is gone with the host. Fail its
+      // calls with the same code and drop it, so the next command rebuilds.
+      dropRunner(pluginId, error);
+      return;
+    }
+    const runner = runners.get(pluginId) ?? starting.get(pluginId);
+    if (runner) void recordCrash(runner.plugin, message);
+  });
+}
+
+/**
+ * The extension host came back as a new instance.
+ *
+ * Counted once per restart (the page announces itself once), and three of them
+ * in one session is a host that cannot stay up — at which point the honest
+ * answer is to stop trying to use it, not to keep asking the user to retry.
+ */
+function countHostRestart(): void {
+  hostRestarts += 1;
+  log(EXT_HOST_ID, "error", `extension host restart ${hostRestarts} of ${MAX_HOST_RESTARTS}`);
+  if (hostRestarts < MAX_HOST_RESTARTS) return;
+  hostRestarts = 0;
+  for (const pluginId of [...runners.keys(), ...starting.keys()]) {
+    dropRunner(pluginId, new PluginError("E_HOST_RESTARTED", "the extension host keeps restarting"));
+  }
+  transport.dispose(EXT_HOST_ID);
+  transport = createInProcessTransport();
+  wireTransport();
+  const lang = useSettingsStore.getState().lang;
+  toast(tWithParams(lang, "pluginHostFallback", {}), "danger");
+}
+
+/**
+ * Forget a plugin's runner and fail whatever it was waiting on.
+ *
+ * The decorations and panels go with it for the same reason `deactivatePlugin`
+ * drops them: rows and marks from code that is not running are not "its data",
+ * they are a snapshot of a process that is gone.
+ */
+function dropRunner(pluginId: string, error: PluginError): void {
   const runner = runners.get(pluginId) ?? starting.get(pluginId);
-  if (runner) void recordCrash(runner.plugin, message);
-});
+  clearPluginDecorations(pluginId);
+  clearPluginViews(pluginId);
+  if (!runner) return;
+  runners.delete(pluginId);
+  starting.delete(pluginId);
+  for (const call of runner.pending.values()) {
+    window.clearTimeout(call.timer);
+    call.reject(error);
+  }
+  runner.pending.clear();
+  transport.dispose(pluginId);
+}
+
+wireTransport();
 /** Consecutive crashes per plugin, reset by a successful start. */
 const failureCounts = new Map<string, number>();
 let nextRid = 1;

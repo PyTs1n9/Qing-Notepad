@@ -34,6 +34,17 @@ const workers = new Map();
 let base = null;
 let running = true;
 
+/**
+ * Identifies *this* page instance to the host.
+ *
+ * WebView2 restarts a crashed renderer and the page comes back — the window
+ * never looks gone. So "the host restarted" cannot be observed as a dead
+ * window; it has to be observed as a **new page announcing itself**. The host
+ * keeps the last epoch and treats a changed one as "everything I was doing here
+ * is lost".
+ */
+const epoch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
 /** POST a plugin → host message. Never throws: the poll loop must survive. */
 async function postUp(pluginId, message) {
   if (!base) return;
@@ -208,5 +219,9 @@ async function runProbe() {
     return;
   }
   await detectBase();
+  // Announce this page instance before anything else: the host uses the epoch
+  // to tell "a fresh worker pool" from "the same pool answering again", and it
+  // has to know that before the first real message arrives.
+  void postUp("$ext-host", { t: "hello", epoch });
   void pollDown();
 })();

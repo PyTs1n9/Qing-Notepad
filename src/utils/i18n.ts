@@ -859,6 +859,7 @@ export type TranslationKeys = {
   pluginIndexPermissionMismatch: string;
   pluginHostRestarted: string;
   pluginHostBusy: string;
+  pluginHostFallback: string;
   commandPaletteTitle: string;
   commandPalettePlaceholder: string;
   commandPaletteEmpty: string;
@@ -1738,6 +1739,7 @@ const zh: TranslationKeys = {
   pluginIndexPermissionMismatch: "索引里写的权限与安装包不一致，已拒绝安装：{detail}",
   pluginHostRestarted: "插件宿主已重启，刚才的操作没有生效，请重试",
   pluginHostBusy: "插件宿主正在启动或重启，请稍后重试",
+  pluginHostFallback: "插件宿主反复崩溃，已切回内置模式",
   commandPaletteTitle: "命令面板",
   commandPalettePlaceholder: "输入命令名称…",
   commandPaletteEmpty: "没有匹配的命令",
@@ -2620,6 +2622,7 @@ const en: TranslationKeys = {
   pluginIndexPermissionMismatch: "The permissions listed in the index do not match the package; the install was refused: {detail}",
   pluginHostRestarted: "The plugin host restarted, so that operation did not take effect. Please try again",
   pluginHostBusy: "The plugin host is starting or restarting. Please try again in a moment",
+  pluginHostFallback: "The plugin host kept crashing and has been switched back to the built-in mode",
   commandPaletteTitle: "Command palette",
   commandPalettePlaceholder: "Type a command…",
   commandPaletteEmpty: "No matching commands",

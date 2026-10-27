@@ -97,8 +97,16 @@ export type HostToExtMessage =
  * `gone` is the extension host saying a worker it hosted will not answer again
  * — its context died. The host turns that into `onError`, which is the same
  * signal an in-process worker gives when it crashes.
+ *
+ * `hello` is the page announcing *which instance* it is. WebView2 restarts a
+ * crashed renderer behind the same window, so a dead extension host is not
+ * observable as a dead window — it is observable as a new `epoch` arriving
+ * while the host still believes the old one is live.
  */
-export type ExtToHostMessage = WorkerOutbound | { t: "gone"; reason: string };
+export type ExtToHostMessage =
+  | WorkerOutbound
+  | { t: "gone"; reason: string }
+  | { t: "hello"; epoch: string };
 
 export type TransportMessageHandler = (pluginId: string, message: WorkerOutbound) => void;
 export type TransportErrorHandler = (pluginId: string, message: string) => void;
@@ -206,6 +214,13 @@ export function createInProcessTransport(): PluginTransport {
 const UP_EVENT = "plugin-ext-host-up";
 
 /**
+ * The extension host page's reserved id: it is not a plugin, and no plugin may
+ * take the name. It is how the page announces itself (`hello`) and how a host
+ * restart is reported once, rather than once per plugin.
+ */
+export const EXT_HOST_ID = "$ext-host";
+
+/**
  * The cross-process transport: same messages, but the workers live in the
  * hidden extension-host webview and the messages ride `qing-plugin-rpc`.
  *
@@ -221,6 +236,8 @@ export function createProtocolTransport(): PluginTransport {
   let messageHandler: TransportMessageHandler = () => undefined;
   let errorHandler: TransportErrorHandler = () => undefined;
   let listening = false;
+  /** The page instance currently answering, once it has introduced itself. */
+  let epoch: string | null = null;
 
   const push = (pluginId: string, message: HostToExtMessage): void => {
     void invoke("plugin_ext_host_send", { pluginId, message }).catch((error) => {
@@ -246,6 +263,31 @@ export function createProtocolTransport(): PluginTransport {
           const id = payload?.pluginId;
           const message = payload?.message;
           if (typeof id !== "string" || !message || typeof message !== "object") return;
+
+          if (message.t === "hello") {
+            const next = typeof message.epoch === "string" ? message.epoch : "";
+            if (epoch && next && epoch !== next) {
+              // The renderer came back behind the same window. Every worker
+              // this host started is gone with it, and the calls in flight
+              // against them are not "slow" — they are dead. Say exactly that.
+              // The reserved id announces the restart itself once; the host
+              // counts it there and per-plugin, and the two paths share the
+              // code so `headless.ts` can tell "the host died" from "this
+              // worker died".
+              const gone = [...live];
+              live.clear();
+              errorHandler(EXT_HOST_ID, "E_HOST_RESTARTED: the extension host restarted");
+              for (const pluginId of gone) {
+                errorHandler(
+                  pluginId,
+                  "E_HOST_RESTARTED: the extension host restarted, so that call did not happen",
+                );
+              }
+            }
+            epoch = next || epoch;
+            return;
+          }
+
           if (message.t === "gone") {
             // The worker's context is not coming back. Same signal an
             // in-process crash gives, so the recovery path is shared.
@@ -265,6 +307,14 @@ export function createProtocolTransport(): PluginTransport {
     },
 
     send(pluginId: string, message: WorkerInbound): void {
+      // A *call* into a worker that cannot exist yet is a different thing from
+      // `load`, which is what creates it: the former is answered `E_BUSY` so
+      // the caller retries instead of waiting out the five-second timeout on a
+      // queue nobody is reading.
+      if (!epoch) {
+        errorHandler(pluginId, "E_BUSY: the extension host is still starting");
+        return;
+      }
       push(pluginId, message);
     },
 

@@ -183,8 +183,10 @@ pub fn parse_up(body: &[u8]) -> Result<Routed, String> {
         .ok_or_else(|| "E_INTERNAL: `message` is required".to_string())?;
     match message.get("t").and_then(Value::as_str) {
         // `gone` is the extension host reporting a worker that will not answer
-        // again — the cross-process form of a worker crash.
-        Some("ready" | "rpc" | "res" | "log" | "gone") => {}
+        // again — the cross-process form of a worker crash. `hello` is the page
+        // announcing *which instance* it is (an `epoch`), which is how a
+        // renderer that was restarted behind the same window is recognised.
+        Some("ready" | "rpc" | "res" | "log" | "gone" | "hello") => {}
         Some(other) => return Err(format!("E_INTERNAL: unknown message `{other}`")),
         None => return Err("E_INTERNAL: `message.t` is required".to_string()),
     }
@@ -395,8 +397,9 @@ mod tests {
     #[test]
     fn the_up_message_kinds_are_accepted_and_nothing_else() {
         // `gone` is the cross-process form of a worker crash: the extension host
-        // saying "this one will not answer again".
-        for kind in ["ready", "rpc", "res", "log", "gone"] {
+        // saying "this one will not answer again". `hello` is the page naming
+        // its own instance, which is how a restarted renderer is recognised.
+        for kind in ["ready", "rpc", "res", "log", "gone", "hello"] {
             let routed = parse_up(&up_body(kind)).unwrap_or_else(|error| panic!("{kind}: {error}"));
             assert_eq!(routed.plugin_id, "qing.example");
             assert_eq!(routed.message["t"], kind);
