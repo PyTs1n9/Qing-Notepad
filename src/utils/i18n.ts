@@ -776,6 +776,7 @@ export type TranslationKeys = {
   pluginsOfflineHint: string;
   pluginsIndexLoading: string;
   pluginsInstallFromFile: string;
+  pluginsInstallFromFolder: string;
   pluginsRefreshIndex: string;
   pluginsOnline: string;
   pluginsOffline: string;
@@ -1640,6 +1641,7 @@ const zh: TranslationKeys = {
   pluginsOfflineHint: "离线，数据可能是旧的",
   pluginsIndexLoading: "正在获取扩展索引…",
   pluginsInstallFromFile: "从文件安装",
+  pluginsInstallFromFolder: "从文件夹安装",
   pluginsRefreshIndex: "刷新索引",
   pluginsOnline: "在线",
   pluginsOffline: "离线",
@@ -2507,6 +2509,7 @@ const en: TranslationKeys = {
   pluginsOfflineHint: "Offline — this list may be out of date",
   pluginsIndexLoading: "Fetching the extension index…",
   pluginsInstallFromFile: "Install from file",
+  pluginsInstallFromFolder: "Install from folder",
   pluginsRefreshIndex: "Refresh index",
   pluginsOnline: "Online",
   pluginsOffline: "Offline",

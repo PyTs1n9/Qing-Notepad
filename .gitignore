@@ -12,6 +12,12 @@ node_modules
 dist
 dist-ssr
 
+# …except the example plugins' entry points: `examples/qing-wordcount-ts`
+# declares `main: ./dist/extension.js`, and the example is only useful if it
+# can be installed straight from a checkout.
+!examples/*/dist/
+!examples/*/dist/**
+
 # Environment files (the tracked template is .env.example)
 .env
 .env.local

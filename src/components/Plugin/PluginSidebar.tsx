@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
-import { ArrowUp, FilePlus2, Puzzle, RefreshCw, Search } from "lucide-react";
+import { ArrowUp, FilePlus2, FolderPlus, Puzzle, RefreshCw, Search } from "lucide-react";
 import { usePluginStore, isUpdateAvailable } from "@/plugin/store";
-import { beginInstallFromFile } from "@/plugin/install";
+import { beginInstallFromFile, beginInstallFromFolder } from "@/plugin/install";
 import type { InstalledPlugin, PluginIndexEntry } from "@/plugin/types";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
@@ -198,6 +198,20 @@ const PluginSidebar: React.FC = () => {
         >
           <FilePlus2 size={12} />
           {t(lang, "pluginsInstallFromFile")}
+        </button>
+        {/*
+          Icon-only, like the refresh button: the footer is a fixed-width strip
+          and a second label does not fit in English ("Install from folder").
+          The tooltip and the accessible name carry the meaning.
+        */}
+        <button
+          type="button"
+          onClick={() => void beginInstallFromFolder()}
+          title={t(lang, "pluginsInstallFromFolder")}
+          aria-label={t(lang, "pluginsInstallFromFolder")}
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+        >
+          <FolderPlus size={12} />
         </button>
         <button
           type="button"

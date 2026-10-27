@@ -1,18 +1,34 @@
-//! `plugin.json` deserialisation and validation.
+//! Manifest deserialisation and validation, for both file formats.
+//!
+//! Two manifests are understood:
+//!
+//! - `plugin.json` — the original format, with this project's own vocabulary
+//!   (`id`, `engines.host`, `contributes.commands[].id`). Every field is read
+//!   straight into [`PluginManifest`].
+//! - `package.json` — the VS Code shape (`name` + `publisher`, `engines.qing`,
+//!   `contributes.commands[].command`). It is *mapped* onto the same
+//!   [`PluginManifest`] by [`from_package_json`], so nothing downstream — the
+//!   IPC payload, the frontend types, the installed records — has to know which
+//!   file the package shipped. `plugin.json` stays supported because packages
+//!   installed from the old format must keep working.
 //!
 //! Everything a plugin package claims about itself is untrusted input: the id
 //! becomes a directory name, `main` becomes a file path, and `permissions`
 //! becomes an authorisation grant. So this module validates rather than
 //! normalises — an invalid manifest is rejected with a machine-readable code
-//! instead of being coerced into something that happens to work.
+//! instead of being coerced into something that happens to work. That is also
+//! why the `package.json` mapping is strict about the four fields it cannot
+//! guess (`name`, `version`, `engines.qing`, `main`) and tolerant about the
+//! ones that are decoration (`author`, `repository`, unknown fields).
 //!
-//! `engines.host` is deliberately *not* checked here: range parsing lives in
-//! `src/plugin/version.ts` (the `semver` package), and duplicating it in Rust
-//! would mean two implementations of the same range grammar drifting apart.
-//! The command layer checks that the field is present and non-empty; the
-//! frontend decides whether the range matches the running host.
+//! `engines.host` / `engines.qing` is deliberately *not* range-checked here:
+//! range parsing lives in `src/plugin/version.ts` (the `semver` package), and
+//! duplicating it in Rust would mean two implementations of the same range
+//! grammar drifting apart. The command layer checks that the field is present
+//! and non-empty; the frontend decides whether the range matches the host.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// The only API contract this build implements (see D5).
 pub const SUPPORTED_API_VERSIONS: &[u32] = &[1];
@@ -240,6 +256,279 @@ pub fn is_safe_relative_path(path: &str) -> bool {
         .any(|part| part == ".." || part.is_empty())
 }
 
+// ---------------------------------------------------------------------------
+// `package.json` → `PluginManifest`
+// ---------------------------------------------------------------------------
+
+/// A `package.json` as written by a VS Code extension author.
+///
+/// Deserialised field by field rather than with `rename` aliases because three
+/// of them (`engines`, `main`, `contributes.commands`) accept two spellings
+/// each. Unknown keys — `scripts`, `devDependencies`, `dependencies`, `icon`,
+/// `categories`, everything else in the npm/VS Code world — are ignored by
+/// serde's default behaviour, which is what makes a real `package.json`
+/// readable here at all.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct PackageJson {
+    name: Option<String>,
+    publisher: Option<String>,
+    display_name: Option<String>,
+    description: Option<String>,
+    author: Option<Value>,
+    license: Option<String>,
+    repository: Option<Value>,
+    version: Option<String>,
+    engines: Option<PackageEngines>,
+    main: Option<String>,
+    activation_events: Option<Vec<String>>,
+    permissions: Option<Vec<String>>,
+    contributes: Option<PackageContributions>,
+    api_version: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct PackageEngines {
+    /// Preferred spelling.
+    qing: Option<String>,
+    /// Accepted for packages written before the rename from `host`.
+    host: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct PackageContributions {
+    commands: Option<Vec<PackageCommand>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+struct PackageCommand {
+    /// VS Code spelling.
+    command: Option<String>,
+    /// This project's original spelling, still accepted.
+    id: Option<String>,
+    title: Option<String>,
+    category: Option<String>,
+}
+
+/// `./dist/extension.js` and `dist/extension.js` mean the same thing; the
+/// stored form is always the second one, because that is what every consumer
+/// (`is_safe_relative_path`, `staging_dir.join`, the worker's path walk) expects.
+pub fn normalize_relative_entry(raw: &str) -> String {
+    let mut path = raw.trim().replace('\\', "/");
+    while let Some(rest) = path.strip_prefix("./") {
+        path = rest.to_string();
+    }
+    path
+}
+
+/// `author` is a string, `{name, url}` or `{name, email}` in the wild. A shape
+/// this build does not recognise loses the credit line, not the install.
+fn author_from_value(value: Option<&Value>) -> Option<AuthorField> {
+    match value? {
+        Value::String(name) => {
+            let name = name.trim();
+            if name.is_empty() {
+                None
+            } else {
+                Some(AuthorField::Name(name.to_string()))
+            }
+        }
+        Value::Object(map) => {
+            let name = map.get("name").and_then(Value::as_str)?.trim();
+            if name.is_empty() {
+                return None;
+            }
+            let url = map
+                .get("url")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+                .map(str::to_string);
+            Some(AuthorField::Detailed(PluginAuthor {
+                name: name.to_string(),
+                url,
+            }))
+        }
+        _ => None,
+    }
+}
+
+/// `repository` is a URL string or `{type, url}` (the npm shape).
+fn repository_from_value(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(url) => {
+            let url = url.trim();
+            if url.is_empty() {
+                None
+            } else {
+                Some(url.to_string())
+            }
+        }
+        Value::Object(map) => map
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+            .map(str::to_string),
+        _ => None,
+    }
+}
+
+/// `*` is VS Code's "activate as early as possible". This host has exactly one
+/// such moment, `onStartup`, so the wildcard is translated rather than passed
+/// through as an event no consumer would ever match. Anything else is left
+/// alone: an unknown event is a forward-compatibility problem for the *event*,
+/// never a reason to refuse the package.
+fn map_activation_events(events: Option<Vec<String>>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for event in events.unwrap_or_default() {
+        let event = event.trim();
+        if event.is_empty() {
+            continue;
+        }
+        let event = if event == "*" { "onStartup" } else { event };
+        if !out.iter().any(|existing| existing == event) {
+            out.push(event.to_string());
+        }
+    }
+    out
+}
+
+/// `contributes.commands[]` uses `command` in VS Code and `id` here; both are
+/// accepted, `command` wins when a package carries both.
+fn map_commands(contributes: Option<PackageContributions>) -> Vec<CommandContribution> {
+    let mut out: Vec<CommandContribution> = Vec::new();
+    for command in contributes.and_then(|value| value.commands).unwrap_or_default() {
+        let id = command
+            .command
+            .or(command.id)
+            .map(|id| id.trim().to_string())
+            .unwrap_or_default();
+        let title = command.title.map(|title| title.trim().to_string()).unwrap_or_default();
+        let category = command
+            .category
+            .map(|category| category.trim().to_string())
+            .filter(|category| !category.is_empty());
+        // An entry with no id or no title is a broken contribution, not a
+        // broken package: `validate` rejects it with the same code the old
+        // format produced, so the author sees one consistent message.
+        out.push(CommandContribution { id, title, category });
+    }
+    out
+}
+
+/// Turn a `package.json` document into the internal manifest.
+///
+/// `dependencies` / `devDependencies` are deliberately *not* read: they are
+/// normal, expected fields in a `package.json` and refusing them (the rule that
+/// still applies to `plugin.json`) would reject every real package. The mapped
+/// manifest therefore always carries `dependencies: None`, so [`validate`] has
+/// nothing to reject.
+pub fn from_package_json(raw: &str) -> Result<PluginManifest, ManifestError> {
+    let package: PackageJson = serde_json::from_str(raw).map_err(|error| {
+        ManifestError::new("E_MANIFEST_INVALID", format!("package.json: {error}"))
+    })?;
+    map_package_json(package)
+}
+
+fn map_package_json(package: PackageJson) -> Result<PluginManifest, ManifestError> {
+    let name = package
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| ManifestError::new("E_MANIFEST_INVALID", "package.json needs a `name`"))?;
+    let publisher = package
+        .publisher
+        .as_deref()
+        .map(str::trim)
+        .filter(|publisher| !publisher.is_empty());
+    // `publisher.name` is the documented composition; a package without a
+    // publisher has to put a full, valid id in `name` instead. Either way the
+    // result is checked by `validate`, which is the only place that owns the
+    // id pattern.
+    let id = match publisher {
+        Some(publisher) => format!("{publisher}.{name}"),
+        None => name.to_string(),
+    };
+
+    let version = package
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|version| !version.is_empty())
+        .ok_or_else(|| {
+            ManifestError::new("E_MANIFEST_INVALID", "package.json needs a `version`")
+        })?;
+
+    let engines = package.engines.unwrap_or_default();
+    let host = engines
+        .qing
+        .as_deref()
+        .map(str::trim)
+        .filter(|range| !range.is_empty())
+        .or_else(|| {
+            engines
+                .host
+                .as_deref()
+                .map(str::trim)
+                .filter(|range| !range.is_empty())
+        })
+        .ok_or_else(|| {
+            ManifestError::new(
+                "E_MANIFEST_INVALID",
+                "package.json needs `engines.qing` (or `engines.host`)",
+            )
+        })?;
+
+    let main = normalize_relative_entry(package.main.as_deref().unwrap_or_default());
+    if main.is_empty() {
+        return Err(ManifestError::new(
+            "E_MANIFEST_INVALID",
+            "package.json needs a `main` entry point",
+        ));
+    }
+
+    let display_name = package
+        .display_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(name);
+
+    Ok(PluginManifest {
+        id,
+        name: display_name.to_string(),
+        version: version.to_string(),
+        // Absent means "the one contract this build implements"; present means
+        // the author wrote it down, and `validate` still has to agree.
+        api_version: package.api_version.unwrap_or(1),
+        engines: PluginEngines {
+            host: host.to_string(),
+        },
+        description: package
+            .description
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        author: author_from_value(package.author.as_ref()),
+        license: package
+            .license
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty()),
+        repository: repository_from_value(package.repository.as_ref()),
+        main,
+        activation_events: map_activation_events(package.activation_events),
+        permissions: package.permissions.unwrap_or_default(),
+        contributes: Contributions {
+            commands: map_commands(package.contributes),
+        },
+        dependencies: None,
+    })
+}
+
 pub fn validate(manifest: &PluginManifest) -> Result<(), ManifestError> {
     if !is_valid_plugin_id(&manifest.id) {
         return Err(ManifestError::new(
@@ -344,5 +633,238 @@ mod tests {
         assert!(!is_safe_relative_path("/main.js"));
         assert!(!is_safe_relative_path("C:/main.js"));
         assert!(!is_safe_relative_path("dist//main.js"));
+    }
+
+    // -----------------------------------------------------------------------
+    // package.json mapping
+    // -----------------------------------------------------------------------
+
+    /// The smallest `package.json` this build accepts, with `extra` spliced in
+    /// as additional top-level keys so each test only states what it is about.
+    fn package_json(body: &str) -> String {
+        format!(
+            r#"{{
+              "name": "wordcount",
+              "publisher": "qing",
+              "version": "1.0.0",
+              "engines": {{ "qing": ">=0.7.3 <1.0.0" }},
+              "main": "dist/extension.js"{body}
+            }}"#
+        )
+    }
+
+    #[test]
+    fn publisher_and_name_compose_the_id() {
+        let manifest = from_package_json(&package_json("")).expect("a complete package parses");
+        assert_eq!(manifest.id, "qing.wordcount");
+        assert_eq!(manifest.name, "wordcount");
+        assert!(validate(&manifest).is_ok());
+    }
+
+    #[test]
+    fn a_package_without_a_publisher_must_carry_a_full_id() {
+        let manifest = from_package_json(
+            r#"{"name":"qing.wordcount","version":"1.0.0",
+                "engines":{"qing":">=0.7.3 <1.0.0"},"main":"main.js"}"#,
+        )
+        .expect("a dotted name is a valid id");
+        assert_eq!(manifest.id, "qing.wordcount");
+        assert!(validate(&manifest).is_ok());
+
+        // The same name without a publisher is not an id, so it is refused at
+        // the same place any other bad id would be.
+        let bare = from_package_json(
+            r#"{"name":"wordcount","version":"1.0.0",
+                "engines":{"qing":">=0.7.3 <1.0.0"},"main":"main.js"}"#,
+        )
+        .expect("the mapping itself succeeds");
+        let error = validate(&bare).expect_err("a name without a dot is not an id");
+        assert_eq!(error.code, "E_MANIFEST_INVALID");
+    }
+
+    #[test]
+    fn engines_qing_and_engines_host_are_equivalent() {
+        let qing = from_package_json(&package_json("")).expect("engines.qing parses");
+        let host = from_package_json(
+            r#"{"name":"wordcount","publisher":"qing","version":"1.0.0",
+                "engines":{"host":">=0.7.3 <1.0.0"},"main":"dist/extension.js"}"#,
+        )
+        .expect("engines.host parses");
+        assert_eq!(qing.engines.host, host.engines.host);
+        assert_eq!(qing.engines.host, ">=0.7.3 <1.0.0");
+
+        // Both spellings present: `qing` wins, documented in the module header.
+        let both = from_package_json(
+            r#"{"name":"wordcount","publisher":"qing","version":"1.0.0",
+                "engines":{"qing":">=0.8.0","host":">=0.7.3"},
+                "main":"dist/extension.js"}"#,
+        )
+        .expect("both spellings parse");
+        assert_eq!(both.engines.host, ">=0.8.0");
+
+        let missing = from_package_json(
+            r#"{"name":"wordcount","publisher":"qing","version":"1.0.0",
+                "engines":{"node":">=18"},"main":"dist/extension.js"}"#,
+        )
+        .expect_err("engines.node does not describe the host");
+        assert_eq!(missing.code, "E_MANIFEST_INVALID");
+    }
+
+    #[test]
+    fn commands_accept_both_the_command_and_the_id_spelling() {
+        let vscode = from_package_json(&package_json(
+            r#","contributes":{"commands":[{"command":"qing.wordcount.run","title":"Count"}]}"#,
+        ))
+        .expect("the VS Code spelling parses");
+        let legacy = from_package_json(&package_json(
+            r#","contributes":{"commands":[{"id":"qing.wordcount.run","title":"Count"}]}"#,
+        ))
+        .expect("the legacy spelling parses");
+        assert_eq!(vscode.contributes.commands.len(), 1);
+        assert_eq!(vscode.contributes.commands[0].id, "qing.wordcount.run");
+        assert_eq!(vscode.contributes.commands[0].title, "Count");
+        assert_eq!(vscode.contributes.commands[0].id, legacy.contributes.commands[0].id);
+        assert!(validate(&vscode).is_ok());
+        assert!(validate(&legacy).is_ok());
+
+        // A command with no title is refused, exactly as in `plugin.json`.
+        let untitled = from_package_json(&package_json(
+            r#","contributes":{"commands":[{"command":"qing.wordcount.run"}]}"#,
+        ))
+        .expect("the mapping itself succeeds");
+        assert_eq!(
+            validate(&untitled).expect_err("a command needs a title").code,
+            "E_MANIFEST_INVALID"
+        );
+    }
+
+    #[test]
+    fn a_package_without_a_name_is_refused() {
+        let error = from_package_json(
+            r#"{"publisher":"qing","version":"1.0.0",
+                "engines":{"qing":">=0.7.3"},"main":"main.js"}"#,
+        )
+        .expect_err("a nameless package has no id");
+        assert_eq!(error.code, "E_MANIFEST_INVALID");
+        assert!(error.detail.contains("name"), "{}", error.detail);
+
+        let blank = from_package_json(
+            r#"{"name":"  ","publisher":"qing","version":"1.0.0",
+                "engines":{"qing":">=0.7.3"},"main":"main.js"}"#,
+        )
+        .expect_err("a blank name is not a name");
+        assert_eq!(blank.code, "E_MANIFEST_INVALID");
+    }
+
+    #[test]
+    fn dependencies_in_a_package_json_are_ignored() {
+        let manifest = from_package_json(&package_json(
+            r#","dependencies":{"semver":"^7.0.0"},"devDependencies":{"esbuild":"^0.25.0"},
+                "scripts":{"build":"node build.mjs"},"private":true"#,
+        ))
+        .expect("npm bookkeeping is not a plugin declaration");
+        assert!(
+            manifest.dependencies.is_none(),
+            "dependencies must not survive the mapping: {manifest:?}"
+        );
+        assert!(
+            validate(&manifest).is_ok(),
+            "a package.json with dependencies must install"
+        );
+        // The old format keeps its stricter rule.
+        let legacy: PluginManifest = serde_json::from_str(
+            r#"{"id":"qing.x","name":"X","version":"1.0.0","apiVersion":1,
+                "engines":{"host":">=0.7.3"},"main":"main.js",
+                "dependencies":{"y":"1.0.0"}}"#,
+        )
+        .expect("plugin.json still parses");
+        assert_eq!(
+            validate(&legacy).expect_err("plugin.json may not declare dependencies").code,
+            "E_DEPENDENCIES_UNSUPPORTED"
+        );
+    }
+
+    #[test]
+    fn main_is_normalised_and_still_bounded() {
+        assert_eq!(normalize_relative_entry("./dist/extension.js"), "dist/extension.js");
+        assert_eq!(normalize_relative_entry(".\\dist\\extension.js"), "dist/extension.js");
+        assert_eq!(normalize_relative_entry("dist/extension.js"), "dist/extension.js");
+
+        let manifest = from_package_json(&package_json("").replace(
+            "\"main\": \"dist/extension.js\"",
+            "\"main\": \"./dist/extension.mjs\"",
+        ))
+        .expect("a ./-prefixed .mjs entry parses");
+        assert_eq!(manifest.main, "dist/extension.mjs");
+        assert!(validate(&manifest).is_ok());
+
+        let escape = from_package_json(
+            r#"{"name":"wordcount","publisher":"qing","version":"1.0.0",
+                "engines":{"qing":">=0.7.3"},"main":"./../evil.js"}"#,
+        )
+        .expect("the mapping itself succeeds");
+        assert_eq!(
+            validate(&escape).expect_err("main must stay inside the package").code,
+            "E_MANIFEST_INVALID"
+        );
+    }
+
+    #[test]
+    fn decoration_fields_are_tolerant_and_api_version_defaults_to_one() {
+        let manifest = from_package_json(&package_json(
+            r#","displayName":"字数统计","description":"统计全库字数","license":"MIT",
+                "author":{"name":"Qing Notepad","url":"https://example.invalid"},
+                "repository":{"type":"git","url":"https://example.invalid/repo"},
+                "activationEvents":["onCommand:qing.wordcount.run","onStartup","*","onWebview:x"]"#,
+        ))
+        .expect("a fully decorated package parses");
+        assert_eq!(manifest.name, "字数统计");
+        assert_eq!(manifest.description.as_deref(), Some("统计全库字数"));
+        assert_eq!(manifest.license.as_deref(), Some("MIT"));
+        assert_eq!(manifest.api_version, 1);
+        assert!(matches!(manifest.author, Some(AuthorField::Detailed(_))));
+        assert_eq!(
+            manifest.repository.as_deref(),
+            Some("https://example.invalid/repo")
+        );
+        // `*` becomes the one early-activation moment this host has; the
+        // unknown event is passed through and never matched.
+        assert_eq!(
+            manifest.activation_events,
+            vec![
+                "onCommand:qing.wordcount.run",
+                "onStartup",
+                "onWebview:x"
+            ]
+        );
+
+        // A shape this build does not know loses the credit line, not the install.
+        let odd = from_package_json(&package_json(r#","author":42,"repository":[1,2]"#))
+            .expect("odd decoration still parses");
+        assert!(odd.author.is_none());
+        assert!(odd.repository.is_none());
+        assert!(validate(&odd).is_ok());
+    }
+
+    #[test]
+    fn a_package_json_needs_version_engines_and_main() {
+        for (body, needle) in [
+            (r#"{"name":"qing.x","engines":{"qing":">=0.7.3"},"main":"main.js"}"#, "version"),
+            (r#"{"name":"qing.x","version":"1.0.0","main":"main.js"}"#, "engines.qing"),
+            (r#"{"name":"qing.x","version":"1.0.0","engines":{"qing":">=0.7.3"}}"#, "main"),
+        ] {
+            let error = from_package_json(body).expect_err("a required field is missing");
+            assert_eq!(error.code, "E_MANIFEST_INVALID");
+            assert!(error.detail.contains(needle), "{needle}: {}", error.detail);
+        }
+        // Non-strict semver is refused by the same validator as before.
+        let loose = from_package_json(
+            r#"{"name":"qing.x","version":"1.0","engines":{"qing":">=0.7.3"},"main":"main.js"}"#,
+        )
+        .expect("the mapping itself succeeds");
+        assert_eq!(
+            validate(&loose).expect_err("1.0 is not strict semver").code,
+            "E_MANIFEST_INVALID"
+        );
     }
 }

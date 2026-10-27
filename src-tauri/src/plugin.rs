@@ -113,7 +113,8 @@ pub struct InstalledPluginDto {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallRequest {
-    /// Phase 1: an archive already on disk (the "install from file" path).
+    /// Phase 1: a package already on disk. Either an archive (`.qnp` / `.zip`)
+    /// or a directory — the frontend hands over whatever the picker returned.
     #[serde(default)]
     archive_path: Option<String>,
     /// Phase 1: a URL from the index (downloaded in Rust, outside the CSP).
@@ -295,7 +296,7 @@ fn is_grantable(permission: &str, declared: &[String]) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Archive safety
+// Archive / directory safety
 // ---------------------------------------------------------------------------
 
 fn is_native_module(name: &str) -> bool {
@@ -414,13 +415,133 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn read_manifest_from_dir(dir: &Path) -> Result<PluginManifest, String> {
-    let path = dir.join("plugin.json");
-    if !path.is_file() {
-        return Err("E_MANIFEST_MISSING: plugin.json must sit at the package root".into());
+/// Read the manifest from a package directory, whichever format it shipped.
+///
+/// `package.json` is the preferred name and wins when it is a *plugin*
+/// manifest. The discriminator is `main`: an npm `package.json` used only to
+/// drive a build (scripts, devDependencies) has no `main`, so a package that
+/// still ships `plugin.json` — every example in `examples/`, and every install
+/// made before this format existed — keeps working untouched. A `package.json`
+/// that *does* have `main` is treated as authoritative: if it is missing a
+/// `name` the install fails instead of silently falling back, because silently
+/// installing a different manifest than the author wrote is worse than an error.
+fn read_manifest_any(dir: &Path) -> Result<PluginManifest, String> {
+    let package_path = dir.join("package.json");
+    if package_path.is_file() {
+        let raw = fs::read_to_string(&package_path).map_err(|error| format!("E_IO: {error}"))?;
+        let document: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("E_MANIFEST_INVALID: package.json: {error}"))?;
+        let declares_main = document
+            .get("main")
+            .and_then(Value::as_str)
+            .map(|main| !main.trim().is_empty())
+            .unwrap_or(false);
+        if declares_main {
+            return plugin_manifest::from_package_json(&raw).map_err(|error| error.message());
+        }
     }
-    let raw = fs::read_to_string(&path).map_err(|error| format!("E_IO: {error}"))?;
-    serde_json::from_str(&raw).map_err(|error| format!("E_MANIFEST_INVALID: {error}"))
+
+    let legacy_path = dir.join("plugin.json");
+    if legacy_path.is_file() {
+        let raw =
+            fs::read_to_string(&legacy_path).map_err(|error| format!("E_IO: {error}"))?;
+        return serde_json::from_str(&raw)
+            .map_err(|error| format!("E_MANIFEST_INVALID: {error}"));
+    }
+
+    Err("E_MANIFEST_MISSING: package.json (with a `main` entry) or plugin.json must sit at the package root"
+        .into())
+}
+
+/// Post-extraction checks shared by both install sources.
+///
+/// Everything here operates on the manifest, so a directory and an archive are
+/// held to exactly the same rules: a valid id, a `main` that stays inside the
+/// package, a permission set from the whitelist, and a single-file script entry.
+fn check_staged_package(staging_dir: &Path) -> Result<PluginManifest, String> {
+    let manifest = read_manifest_any(staging_dir)?;
+    plugin_manifest::validate(&manifest).map_err(|error| error.message())?;
+
+    // `main` is the one path the host reads back out of the package, so it is
+    // rebuilt from scratch rather than trusted — the same treatment zip entry
+    // names get.
+    let main_relative = safe_entry_path(&manifest.main)?;
+    if is_native_module(&manifest.main) {
+        return Err(format!("E_NATIVE_MODULE: `{}`", manifest.main));
+    }
+    if !staging_dir.join(main_relative).is_file() {
+        return Err(format!(
+            "E_MISSING_MAIN: `{}` is not in the package",
+            manifest.main
+        ));
+    }
+    Ok(manifest)
+}
+
+/// Copy a package directory into staging.
+///
+/// A directory has no zip-slip problem — there are no entry names to forge —
+/// but it has its own two: symlinks (a link inside the package could point at
+/// `C:\Windows`) and size (`node_modules` alone can be gigabytes). Links are
+/// skipped rather than followed, and the same 5 MB / 20 MB budget the archive
+/// path enforces is applied here so "installs from a folder" cannot become the
+/// way around the package limits.
+fn copy_package_directory(source: &Path, target: &Path) -> Result<(), String> {
+    /// Directories that are build output or version control, never package
+    /// content. Matched on the component name at any depth.
+    const SKIP_DIRS: [&str; 2] = ["node_modules", ".git"];
+
+    struct Budget {
+        total: u64,
+        files: usize,
+    }
+
+    fn walk(from: &Path, to: &Path, budget: &mut Budget) -> Result<(), String> {
+        fs::create_dir_all(to).map_err(|error| format!("E_IO: {error}"))?;
+        let entries = fs::read_dir(from).map_err(|error| format!("E_IO: {error}"))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("E_IO: {error}"))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            // `file_type` does not traverse a link, which is what makes the
+            // `is_symlink` branch below reachable at all.
+            let file_type = entry.file_type().map_err(|error| format!("E_IO: {error}"))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let source_path = entry.path();
+            let target_path = to.join(&name);
+            if file_type.is_dir() {
+                if SKIP_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                walk(&source_path, &target_path, budget)?;
+                continue;
+            }
+            if !file_type.is_file() {
+                // Sockets, devices, junctions: nothing a plugin package is made of.
+                continue;
+            }
+            budget.files += 1;
+            if budget.files > MAX_ENTRIES {
+                return Err(format!(
+                    "E_TOO_MANY_FILES: package has more than {MAX_ENTRIES} files"
+                ));
+            }
+            let meta = entry.metadata().map_err(|error| format!("E_IO: {error}"))?;
+            if meta.len() > MAX_SINGLE_FILE {
+                return Err(format!("E_TOO_LARGE: `{name}` exceeds 5 MB"));
+            }
+            budget.total = budget.total.saturating_add(meta.len());
+            if budget.total > MAX_TOTAL_UNCOMPRESSED {
+                return Err("E_TOO_LARGE: package is larger than 20 MB".into());
+            }
+            fs::copy(&source_path, &target_path).map_err(|error| format!("E_IO: {error}"))?;
+        }
+        Ok(())
+    }
+
+    let mut budget = Budget { total: 0, files: 0 };
+    walk(source, target, &mut budget)
 }
 
 async fn download_archive(url: &str) -> Result<Vec<u8>, String> {
@@ -468,7 +589,7 @@ fn to_dto(id: &str, record: &InstalledRecord, manifest: Option<PluginManifest>) 
 
 fn read_record_manifest(app: &AppHandle, id: &str, version: &str) -> Option<PluginManifest> {
     let dir = installed_record_dir(app, id, version).ok()?;
-    read_manifest_from_dir(&dir).ok()
+    read_manifest_any(&dir).ok()
 }
 
 /// Keep the current version and the one before it; anything older is dead
@@ -548,61 +669,92 @@ async fn stage_install_inner(
     staging_dir: &Path,
     token: &str,
 ) -> Result<InstallResult, String> {
-    let bytes = if let Some(url) = request.archive_url.as_deref() {
-        download_archive(url).await?
-    } else if let Some(path) = request.archive_path.as_deref() {
-        let source = PathBuf::from(path);
-        let meta = fs::metadata(&source).map_err(|error| format!("E_IO: {error}"))?;
-        if !meta.is_file() {
-            return Err("E_NOT_A_PACKAGE: the selected path is not a file".into());
+    let mut digest: Option<String> = None;
+
+    match resolve_source(request).await? {
+        InstallSource::Archive(bytes) => {
+            if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
+                return Err("E_TOO_LARGE: package is larger than 20 MB".into());
+            }
+            let value = sha256_hex(&bytes);
+            if let Some(expected) = request.expected_sha256.as_deref() {
+                if !expected.eq_ignore_ascii_case(&value) {
+                    return Err(format!(
+                        "E_SHA256_MISMATCH: expected {expected}, got {value}"
+                    ));
+                }
+            }
+
+            fs::write(archive_path, &bytes).map_err(|error| format!("E_IO: {error}"))?;
+
+            let archive = archive_path.to_path_buf();
+            let target = staging_dir.to_path_buf();
+            tauri::async_runtime::spawn_blocking(move || extract_archive(&archive, &target))
+                .await
+                .map_err(|error| format!("E_INTERNAL: {error}"))??;
+            digest = Some(value);
         }
-        if meta.len() > MAX_ARCHIVE_BYTES {
-            return Err("E_TOO_LARGE: package is larger than 20 MB".into());
-        }
-        fs::read(&source).map_err(|error| format!("E_IO: {error}"))?
-    } else {
-        return Err("E_INSTALL_SOURCE: no archive path or URL was given".into());
-    };
-
-    if bytes.len() as u64 > MAX_ARCHIVE_BYTES {
-        return Err("E_TOO_LARGE: package is larger than 20 MB".into());
-    }
-    let digest = sha256_hex(&bytes);
-    if let Some(expected) = request.expected_sha256.as_deref() {
-        if !expected.eq_ignore_ascii_case(&digest) {
-            return Err(format!(
-                "E_SHA256_MISMATCH: expected {expected}, got {digest}"
-            ));
+        InstallSource::Directory(directory) => {
+            // A folder cannot be hashed meaningfully (it has no bytes of its
+            // own and its content can change between two reads), so a pinned
+            // digest is refused instead of quietly ignored.
+            if request.expected_sha256.is_some() {
+                return Err(
+                    "E_SHA256_MISMATCH: a directory has no sha256 to verify against".into(),
+                );
+            }
+            let target = staging_dir.to_path_buf();
+            tauri::async_runtime::spawn_blocking(move || {
+                copy_package_directory(&directory, &target)
+            })
+            .await
+            .map_err(|error| format!("E_INTERNAL: {error}"))??;
         }
     }
 
-    fs::write(archive_path, &bytes).map_err(|error| format!("E_IO: {error}"))?;
-
-    let archive = archive_path.to_path_buf();
-    let target = staging_dir.to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || extract_archive(&archive, &target))
-        .await
-        .map_err(|error| format!("E_INTERNAL: {error}"))??;
-
-    let manifest = read_manifest_from_dir(staging_dir)?;
-    plugin_manifest::validate(&manifest).map_err(|error| error.message())?;
-
-    let main_relative = safe_entry_path(&manifest.main)?;
-    if !staging_dir.join(main_relative).is_file() {
-        return Err(format!(
-            "E_MISSING_MAIN: `{}` is not in the package",
-            manifest.main
-        ));
-    }
+    let manifest = check_staged_package(staging_dir)?;
 
     let _ = app;
     Ok(InstallResult {
         dry_run: true,
         staging_id: Some(token.to_string()),
         manifest,
-        sha256: Some(digest),
+        sha256: digest,
         record: None,
     })
+}
+
+/// What the install source turned out to be. The distinction only exists
+/// between "resolve" and "stage": everything after staging works on a directory.
+enum InstallSource {
+    Archive(Vec<u8>),
+    Directory(PathBuf),
+}
+
+/// `.qnp`, `.zip` and a folder are all accepted entry points. The first two are
+/// the same thing by construction (a `.qnp` *is* a zip; the extension exists so
+/// a double-click opens this app instead of the archive tool), so the only
+/// branch here is file-or-directory.
+async fn resolve_source(request: &InstallRequest) -> Result<InstallSource, String> {
+    if let Some(url) = request.archive_url.as_deref() {
+        return Ok(InstallSource::Archive(download_archive(url).await?));
+    }
+    if let Some(path) = request.archive_path.as_deref() {
+        let source = PathBuf::from(path);
+        let meta = fs::metadata(&source).map_err(|error| format!("E_IO: {error}"))?;
+        if meta.is_dir() {
+            return Ok(InstallSource::Directory(source));
+        }
+        if !meta.is_file() {
+            return Err("E_NOT_A_PACKAGE: the selected path is neither a file nor a directory".into());
+        }
+        if meta.len() > MAX_ARCHIVE_BYTES {
+            return Err("E_TOO_LARGE: package is larger than 20 MB".into());
+        }
+        let bytes = fs::read(&source).map_err(|error| format!("E_IO: {error}"))?;
+        return Ok(InstallSource::Archive(bytes));
+    }
+    Err("E_INSTALL_SOURCE: no archive path or URL was given".into())
 }
 
 /// Phase 2: move the validated tree into `<plugins>/<id>/<version>/` and record
@@ -619,8 +771,10 @@ fn commit_install(app: &AppHandle, request: InstallRequest) -> Result<InstallRes
         return Err("E_STAGING_MISSING: the staged package is gone".into());
     }
 
-    let manifest = read_manifest_from_dir(&staging_dir)?;
-    plugin_manifest::validate(&manifest).map_err(|error| error.message())?;
+    // Re-read rather than trusting a manifest smuggled through the frontend:
+    // phase 2 writes into the real plugin directory, so its input gets the same
+    // check phase 1 did.
+    let manifest = check_staged_package(&staging_dir)?;
 
     let granted_source = request
         .granted_permissions
@@ -851,7 +1005,7 @@ pub fn plugin_read_manifest(
             .map(|record| record.version.clone())
             .ok_or("E_NOT_INSTALLED: unknown plugin")?,
     };
-    read_manifest_from_dir(&installed_record_dir(&app, &id, &resolved)?)
+    read_manifest_any(&installed_record_dir(&app, &id, &resolved)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -1291,5 +1445,154 @@ mod tests {
     fn timestamp_is_iso8601() {
         // 1793070000 = 2026-10-27T03:00:00Z, checked with `date -u -d`.
         assert_eq!(iso_from_unix(1_793_070_000), "2026-10-27T03:00:00Z");
+    }
+
+    // -----------------------------------------------------------------------
+    // Directory installs and the dual manifest format
+    // -----------------------------------------------------------------------
+
+    fn scratch_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("qing-plugin-dir-test-{}", unique_token()));
+        fs::create_dir_all(&dir).expect("scratch directory");
+        dir
+    }
+
+    fn write_file(path: &Path, body: &[u8]) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("parent directory");
+        }
+        fs::write(path, body).expect("write file");
+    }
+
+    const PACKAGE_JSON: &str = r#"{
+      "name": "wordcount",
+      "publisher": "qing",
+      "displayName": "字数统计",
+      "version": "1.1.0",
+      "engines": { "qing": ">=0.7.3 <1.0.0" },
+      "main": "./dist/extension.js",
+      "activationEvents": ["onCommand:qing.wordcount.run"],
+      "permissions": ["notes:read", "notify"],
+      "contributes": { "commands": [{ "command": "qing.wordcount.run", "title": "Count" }] },
+      "scripts": { "build": "node build.mjs" },
+      "devDependencies": { "esbuild": "^0.25.0" }
+    }"#;
+
+    #[test]
+    fn a_directory_is_copied_without_its_build_folders() {
+        let source = scratch_dir().join("package");
+        write_file(&source.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&source.join("dist/extension.js"), b"qing.log('hi');");
+        write_file(&source.join("node_modules/esbuild/main.js"), b"// vendored");
+        write_file(&source.join(".git/config"), b"[core]");
+
+        let target = scratch_dir().join("out");
+        copy_package_directory(&source, &target).expect("a normal folder copies");
+
+        assert!(target.join("dist/extension.js").is_file());
+        assert!(target.join("package.json").is_file());
+        assert!(!target.join("node_modules").exists());
+        assert!(!target.join(".git").exists());
+
+        let manifest = check_staged_package(&target).expect("the staged folder is installable");
+        assert_eq!(manifest.id, "qing.wordcount");
+        assert_eq!(manifest.main, "dist/extension.js");
+    }
+
+    #[test]
+    fn a_directory_obeys_the_archive_size_limits() {
+        let source = scratch_dir().join("package");
+        write_file(&source.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&source.join("dist/extension.js"), b"qing.log('hi');");
+        write_file(
+            &source.join("big.bin"),
+            &vec![0_u8; (MAX_SINGLE_FILE + 1024) as usize],
+        );
+        let error = copy_package_directory(&source, &scratch_dir().join("out"))
+            .expect_err("a 6 MB file must be refused");
+        assert!(error.starts_with("E_TOO_LARGE"), "{error}");
+
+        let heavy = scratch_dir().join("package");
+        write_file(&heavy.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&heavy.join("dist/extension.js"), b"qing.log('hi');");
+        for name in ["a.bin", "b.bin", "c.bin", "d.bin", "e.bin"] {
+            write_file(&heavy.join(name), &vec![0_u8; MAX_SINGLE_FILE as usize]);
+        }
+        let error = copy_package_directory(&heavy, &scratch_dir().join("out"))
+            .expect_err("25 MB must be refused");
+        assert!(error.starts_with("E_TOO_LARGE"), "{error}");
+    }
+
+    #[test]
+    fn a_symlink_inside_a_directory_is_skipped_not_followed() {
+        let source = scratch_dir().join("package");
+        write_file(&source.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&source.join("dist/extension.js"), b"qing.log('hi');");
+
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink("/etc", source.join("escape")).is_ok();
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir("C:\\Windows", source.join("escape")).is_ok();
+
+        let target = scratch_dir().join("out");
+        copy_package_directory(&source, &target).expect("a link does not break the copy");
+        assert!(!target.join("escape").exists());
+        // Loud on capable environments, silent where creating a link needs
+        // privileges this test does not have.
+        let _ = linked;
+    }
+
+    #[test]
+    fn a_package_json_with_main_wins_over_plugin_json() {
+        let dir = scratch_dir();
+        write_file(&dir.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&dir.join("plugin.json"), &manifest_bytes("9.9.9"));
+        write_file(&dir.join("dist/extension.js"), b"qing.log('hi');");
+        write_file(&dir.join("main.js"), b"qing.log('legacy');");
+
+        let manifest = read_manifest_any(&dir).expect("package.json is authoritative");
+        assert_eq!(manifest.id, "qing.wordcount");
+        assert_eq!(manifest.version, "1.1.0");
+        assert_eq!(manifest.name, "字数统计");
+        assert_eq!(manifest.contributes.commands[0].id, "qing.wordcount.run");
+        // `devDependencies` here are build bookkeeping, not a plugin dependency.
+        assert!(manifest.dependencies.is_none());
+    }
+
+    #[test]
+    fn a_build_only_package_json_falls_back_to_plugin_json() {
+        // This is exactly what `examples/qing-note-wordcount/` ships: a
+        // package.json that drives esbuild and a plugin.json that describes
+        // the plugin.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            br#"{"name":"qing-note-wordcount","private":true,
+                 "scripts":{"build":"esbuild src/main.js --outfile=main.js"},
+                 "devDependencies":{"esbuild":"^0.25.0"}}"#,
+        );
+        write_file(&dir.join("plugin.json"), &manifest_bytes("1.0.0"));
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+
+        let manifest = read_manifest_any(&dir).expect("the legacy manifest is used");
+        assert_eq!(manifest.id, "qing.example");
+        assert_eq!(manifest.version, "1.0.0");
+        assert!(check_staged_package(&dir).is_ok());
+    }
+
+    #[test]
+    fn a_directory_with_no_manifest_is_refused() {
+        let dir = scratch_dir();
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = read_manifest_any(&dir).expect_err("nothing describes this package");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+    }
+
+    #[test]
+    fn a_manifest_pointing_at_a_missing_main_is_refused() {
+        let dir = scratch_dir();
+        write_file(&dir.join("package.json"), PACKAGE_JSON.as_bytes());
+        let error = check_staged_package(&dir).expect_err("dist/extension.js is not there");
+        assert!(error.starts_with("E_MISSING_MAIN"), "{error}");
     }
 }

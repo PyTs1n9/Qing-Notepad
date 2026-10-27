@@ -139,7 +139,11 @@ async function finalize(
   }
 }
 
-/** Install from a `.qnp` the user picked. Not index-sourced: no sha256 check. */
+/**
+ * Install from a package the user picked: a `.qnp`, a `.zip`, or a folder.
+ * Not index-sourced: there is no `sha256` to check against, and Rust refuses a
+ * digest for a directory rather than pretending to verify one.
+ */
 export async function prepareInstallFromFile(path: string): Promise<PreparedInstall> {
   const result = await invoke<InstallResult>("plugin_install", {
     request: { archivePath: path, dryRun: true, source: "file" },
@@ -301,12 +305,24 @@ async function finishPending(approved: readonly string[]): Promise<void> {
 }
 
 /**
- * Pick a `.qnp` and start the install; the permission prompt follows.
+ * The dialog plugin returns a string for a single selection, but has returned
+ * an array in that same call before. Accepting both costs one line and removes
+ * a silent "nothing happened".
+ */
+function firstSelectedPath(selection: string | string[] | null): string | null {
+  if (typeof selection === "string") return selection;
+  if (Array.isArray(selection)) return selection[0] ?? null;
+  return null;
+}
+
+/**
+ * Pick a package file (`.qnp` or `.zip`) and start the install; the permission
+ * prompt follows.
  *
  * `selectedPath` skips the OS picker. Nothing in the UI passes it yet — it
  * exists so the acceptance harness can drive the *same* code path as a click
- * (a native dialog cannot be scripted), and it is what a future "drop a .qnp on
- * the window" handler will call.
+ * (a native dialog cannot be scripted), and it is what a future "drop a package
+ * on the window" handler will call.
  */
 export async function beginInstallFromFile(selectedPath?: string): Promise<void> {
   let path = selectedPath ?? null;
@@ -314,16 +330,32 @@ export async function beginInstallFromFile(selectedPath?: string): Promise<void>
     const selection = await open({
       multiple: false,
       directory: false,
-      filters: [{ name: "Qing Plugin", extensions: ["qnp"] }],
+      filters: [{ name: "Qing Plugin", extensions: ["qnp", "zip"] }],
     });
-    // `multiple: false` should give a string, but the dialog has returned an
-    // array in a single-selection call before; accepting both costs one line
-    // and removes a silent "nothing happened".
-    path = typeof selection === "string"
-      ? selection
-      : Array.isArray(selection)
-        ? selection[0] ?? null
-        : null;
+    path = firstSelectedPath(selection);
+  }
+  if (!path) return;
+  await begin(() => prepareInstallFromFile(path));
+}
+
+/**
+ * Pick an unpacked package directory and start the install.
+ *
+ * This is the same three-step install as the file path — stage, authorise,
+ * commit — with the picker swapped. Skipping the prompt here would be the
+ * obvious shortcut and the one thing that must not happen: a folder is exactly
+ * as untrusted as an archive, so it goes through `plugin_install` with
+ * `dryRun: true` and the user sees the same permission list.
+ *
+ * The folder is usually a working copy, so Rust skips `node_modules/` and
+ * `.git/` while copying and applies the same 5 MB / 20 MB budget an archive
+ * gets.
+ */
+export async function beginInstallFromFolder(selectedPath?: string): Promise<void> {
+  let path = selectedPath ?? null;
+  if (!path) {
+    const selection = await open({ multiple: false, directory: true });
+    path = firstSelectedPath(selection);
   }
   if (!path) return;
   await begin(() => prepareInstallFromFile(path));

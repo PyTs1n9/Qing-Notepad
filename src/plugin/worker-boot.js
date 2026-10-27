@@ -20,6 +20,10 @@
  * The plugin body therefore starts only after `init` arrives: `qing.plugin.id`,
  * `qing.permissions` and friends are already populated when module-level code
  * runs, and top-level `await` works because the wrapper is async.
+ *
+ * Because the body is a plain global function, everything it needs — `qing`,
+ * and the CommonJS `module` / `exports` / `require` shim below — has to be
+ * published on `self`. Nothing else in this file is reachable from plugin code.
  */
 (function () {
   "use strict";
@@ -60,6 +64,59 @@
     error.code = code;
     return error;
   }
+
+  /*
+   * CommonJS compatibility shim.
+   *
+   * `esbuild --format=cjs` — and any hand-written CommonJS bundle — refers to
+   * `module`, `exports` and `require` as free variables. Inside the wrapper
+   * below those names would be unbound, so such a bundle died with
+   * `exports is not defined` before its first statement ran, which to the
+   * author is indistinguishable from a broken package. These three bindings
+   * make it *load*.
+   *
+   * They are not a module system: packages are single-file by contract (a blob
+   * worker cannot resolve relative imports anyway), so `require` only ever
+   * throws. Nothing here exposes host code, and nothing here resolves paths.
+   *
+   * They live on `self` rather than in this closure because the plugin body is
+   * installed as a separate global function (see `headless.ts`); only globals
+   * are visible from inside it.
+   */
+  var moduleShim = { exports: {} };
+
+  function requireShim(id) {
+    var error = makeError("E_REQUIRE_UNSUPPORTED");
+    error.message =
+      'require("' +
+      String(id) +
+      '") is not supported: a plugin must be a single bundled file';
+    throw error;
+  }
+
+  Object.defineProperty(self, "module", {
+    value: moduleShim,
+    // Writable on purpose: a UMD-style bundle writes `exports = module.exports
+    // = factory()` and an assignment to a non-writable global throws. Nothing
+    // is protected by freezing these — they grant no access to host code.
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  // `exports` starts as the same object as `module.exports`, so the common
+  // `exports.name = ...` form and the `module.exports = ...` form agree.
+  Object.defineProperty(self, "exports", {
+    value: moduleShim.exports,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  Object.defineProperty(self, "require", {
+    value: requireShim,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
 
   function rpc(namespace, method, args) {
     var rid = nextRid++;
