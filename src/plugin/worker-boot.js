@@ -261,6 +261,23 @@
       post({ t: "log", level: "error", args: [describe(error)] });
       return;
     }
+    // A bundle written as CommonJS exports `activate` instead of registering
+    // its commands at module level, so without this the package loads, runs
+    // nothing, and looks broken. The shape below is the one VS Code passes, so
+    // a ported extension does not need a wrapper. `subscriptions` is always
+    // empty: every disposable this host hands out comes from `qing.on`, which
+    // already returns its own unsubscribe function.
+    var exported = self.module && self.module.exports;
+    if (exported && typeof exported.activate === "function") {
+      try {
+        var activated = exported.activate({ subscriptions: [] });
+        if (activated && typeof activated.then === "function") {
+          await activated;
+        }
+      } catch (error) {
+        post({ t: "log", level: "error", args: [describe(error)] });
+      }
+    }
     for (var index = 0; index < listeners.activate.length; index += 1) {
       callSafely(listeners.activate[index]);
     }
@@ -327,6 +344,17 @@
     }
 
     if (data.t === "event") {
+      // The CommonJS counterpart of the `activate` call in `start()`. Best
+      // effort by nature: the host terminates the worker right after posting
+      // this event, so a slow `deactivate` may not finish. It is still worth
+      // reaching — an extension that flushes its own storage here gets that
+      // chance, and one that does not loses nothing.
+      if (data.name === "deactivate") {
+        var exported = self.module && self.module.exports;
+        if (exported && typeof exported.deactivate === "function") {
+          callSafely(exported.deactivate);
+        }
+      }
       var list = listeners[data.name] || [];
       for (var index = 0; index < list.length; index += 1) {
         callSafely(list[index]);

@@ -1,7 +1,7 @@
 //! Plugin packages: install, enable, rollback, private storage, index, logs.
 //!
-//! The threat model is in `docs/plan-plugin-system.md` §7. Two rules shape every
-//! function here:
+//! The threat model is in `docs/analysis-extension-host.md` §6 ("风险与不做什么").
+//! Two rules shape every function here:
 //!
 //! 1. **Nothing from the package is trusted.** Entry names, sizes and the
 //!    manifest are checked before a single byte lands outside `.staging/`, and
@@ -307,6 +307,13 @@ fn is_native_module(name: &str) -> bool {
 
 /// Reject traversal, absolute paths and Windows drive prefixes, then rebuild the
 /// path one component at a time so nothing survives that could escape the root.
+///
+/// A colon anywhere is refused as well. On NTFS `name:stream` is not a file
+/// name: writing it creates the file `name` plus an *alternate data stream*, so
+/// an entry called `addon.node:payload` lands as a zero-byte `addon.node` and
+/// the bytes hide where `is_native_module`, a content scan and the user browsing
+/// the folder all fail to see them. A package has no legitimate use for a
+/// stream, so the shape is refused rather than sanitised.
 fn safe_entry_path(raw: &str) -> Result<PathBuf, String> {
     if raw.trim().is_empty() {
         return Err("E_ZIP_SLIP: empty entry name".into());
@@ -326,6 +333,11 @@ fn safe_entry_path(raw: &str) -> Result<PathBuf, String> {
     for component in normalized.split('/') {
         if component.is_empty() || component == "." {
             continue;
+        }
+        if component.contains(':') {
+            return Err(format!(
+                "E_ZIP_SLIP: entry name contains a colon (an NTFS stream) `{raw}`"
+            ));
         }
         if component == ".." {
             return Err(format!("E_ZIP_SLIP: entry escapes the package root `{raw}`"));
@@ -412,45 +424,172 @@ fn extract_archive(archive: &Path, target: &Path) -> Result<(), String> {
             .map_err(|error| format!("E_IO: {error}"))?;
     }
 
+    if let Some(name) = unwrap_single_wrapper_folder(target)? {
+        eprintln!("[plugin-install] unwrapped single folder: {name}");
+    }
+
     Ok(())
 }
 
-/// Read the manifest from a package directory, whichever format it shipped.
+/// Is there a manifest file at the root of `dir`?
 ///
-/// `package.json` is the preferred name and wins when it is a *plugin*
-/// manifest. The discriminator is `main`: an npm `package.json` used only to
-/// drive a build (scripts, devDependencies) has no `main`, so a package that
-/// still ships `plugin.json` — every example in `examples/`, and every install
-/// made before this format existed — keeps working untouched. A `package.json`
-/// that *does* have `main` is treated as authoritative: if it is missing a
-/// `name` the install fails instead of silently falling back, because silently
-/// installing a different manifest than the author wrote is worse than an error.
-fn read_manifest_any(dir: &Path) -> Result<PluginManifest, String> {
+/// Only the file names matter here; whether the file *parses* is
+/// `read_manifest_any`'s problem. A build-only `package.json` counts as a
+/// manifest for this purpose on purpose: its presence means the author did put
+/// the package at this level, so descending one folder would be wrong.
+fn has_manifest_file(dir: &Path) -> bool {
+    dir.join("package.json").is_file() || dir.join("plugin.json").is_file()
+}
+
+/// Move the contents of a single wrapper folder up one level.
+///
+/// Some zip tools always wrap the package in a folder: Explorer's
+/// "Send to → Compressed (zipped) folder" does, and so does GitHub's
+/// "Download ZIP". The result is a well-formed archive whose root holds one
+/// directory, which by the letter of the layout rule is "no manifest at the
+/// root" — a very common shape to reject.
+///
+/// The layout is normalised once, here, rather than teaching the reader that a
+/// package may be one level deeper. Deliberately not recursive and not a
+/// search: if the root holds anything besides that one folder, or the folder
+/// has no manifest of its own, the archive is left alone and the caller reports
+/// the shape it actually saw. Guessing further would install a different tree
+/// than the author zipped.
+fn unwrap_single_wrapper_folder(staging_dir: &Path) -> Result<Option<String>, String> {
+    if has_manifest_file(staging_dir) {
+        return Ok(None);
+    }
+    let entries: Vec<fs::DirEntry> = fs::read_dir(staging_dir)
+        .map_err(|error| format!("E_IO: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("E_IO: {error}"))?;
+    if entries.len() != 1 {
+        return Ok(None);
+    }
+    let entry = &entries[0];
+    let file_type = entry.file_type().map_err(|error| format!("E_IO: {error}"))?;
+    if !file_type.is_dir() {
+        return Ok(None);
+    }
+    let wrapper = entry.path();
+    if !has_manifest_file(&wrapper) {
+        return Ok(None);
+    }
+    let name = entry.file_name().to_string_lossy().to_string();
+    let children: Vec<fs::DirEntry> = fs::read_dir(&wrapper)
+        .map_err(|error| format!("E_IO: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("E_IO: {error}"))?;
+    // `pkg/pkg/...` would try to move a child onto the path it is already at.
+    // Not a shape worth inventing a rule for: leave it and let the caller report
+    // the missing manifest.
+    if children.iter().any(|child| child.file_name() == name.as_str()) {
+        return Ok(None);
+    }
+    for child in children {
+        let destination = staging_dir.join(child.file_name());
+        fs::rename(child.path(), &destination).map_err(|error| format!("E_IO: {error}"))?;
+    }
+    fs::remove_dir(&wrapper).map_err(|error| format!("E_IO: {error}"))?;
+    Ok(Some(name))
+}
+
+/// Which manifest file a package directory declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ManifestFormat {
+    PackageJson,
+    PluginJson,
+}
+
+const MISSING_MANIFEST: &str = "E_MANIFEST_MISSING: package.json (with a `main` entry) or plugin.json must sit at the package root";
+
+/// Decide which manifest is authoritative, without reading it as a manifest.
+///
+/// The discriminator is `main`: an npm `package.json` used only to drive a build
+/// (scripts, devDependencies) has no `main`, so a package that still ships
+/// `plugin.json` — every example in `examples/`, and every install made before
+/// this format existed — keeps working untouched. A `package.json` that *does*
+/// have `main` is authoritative: if it is missing a `name` the install fails
+/// instead of silently falling back, because installing a different manifest
+/// than the author wrote is worse than an error.
+///
+/// A `package.json` that cannot be parsed counts as authoritative too — it is
+/// the file the install tried and failed to read, and the note added by
+/// `with_shadow_note` is what tells the author why the `plugin.json` next to it
+/// was ignored.
+fn declared_format(dir: &Path) -> ManifestFormat {
     let package_path = dir.join("package.json");
-    if package_path.is_file() {
-        let raw = fs::read_to_string(&package_path).map_err(|error| format!("E_IO: {error}"))?;
-        let document: Value = serde_json::from_str(&raw)
-            .map_err(|error| format!("E_MANIFEST_INVALID: package.json: {error}"))?;
-        let declares_main = document
-            .get("main")
-            .and_then(Value::as_str)
-            .map(|main| !main.trim().is_empty())
-            .unwrap_or(false);
-        if declares_main {
-            return plugin_manifest::from_package_json(&raw).map_err(|error| error.message());
+    if !package_path.is_file() {
+        return ManifestFormat::PluginJson;
+    }
+    let declares_main = fs::read_to_string(&package_path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        .map(|document| {
+            document
+                .get("main")
+                .and_then(Value::as_str)
+                .map(|main| !main.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .unwrap_or(true);
+    if declares_main {
+        ManifestFormat::PackageJson
+    } else {
+        ManifestFormat::PluginJson
+    }
+}
+
+/// Read the manifest from a package directory, whichever format it shipped.
+fn read_manifest_any(dir: &Path) -> Result<PluginManifest, String> {
+    match declared_format(dir) {
+        ManifestFormat::PackageJson => {
+            let path = dir.join("package.json");
+            let raw = fs::read_to_string(&path).map_err(|error| format!("E_IO: {error}"))?;
+            plugin_manifest::from_package_json(&raw).map_err(|error| error.message())
+        }
+        ManifestFormat::PluginJson => {
+            let path = dir.join("plugin.json");
+            if !path.is_file() {
+                return Err(MISSING_MANIFEST.into());
+            }
+            let raw = fs::read_to_string(&path).map_err(|error| format!("E_IO: {error}"))?;
+            serde_json::from_str(&raw).map_err(|error| format!("E_MANIFEST_INVALID: {error}"))
         }
     }
+}
 
-    let legacy_path = dir.join("plugin.json");
-    if legacy_path.is_file() {
-        let raw =
-            fs::read_to_string(&legacy_path).map_err(|error| format!("E_IO: {error}"))?;
-        return serde_json::from_str(&raw)
-            .map_err(|error| format!("E_MANIFEST_INVALID: {error}"));
+/// Explain a second manifest sitting next to the one that won.
+///
+/// Only ever appended to an error, never used to switch files: an install that
+/// silently falls back to the other manifest puts a package on disk that the
+/// author did not write, and the failure mode after that (a command that does
+/// not exist, a `main` pointing at last build's file) is much harder to read
+/// than the sentence below.
+///
+/// "The other one exists" is not enough — the note is only added when the pair
+/// is actually a pair. A lone `package.json` with no `main` has no shadowed
+/// `plugin.json` to mention, and saying otherwise sends the author looking for
+/// a file that is not there.
+fn with_shadow_note(dir: &Path, error: String) -> String {
+    match declared_format(dir) {
+        ManifestFormat::PackageJson => {
+            if !dir.join("plugin.json").is_file() {
+                return error;
+            }
+            format!(
+                "{error}\nnote: plugin.json also exists but package.json (which declares \"main\") takes precedence"
+            )
+        }
+        ManifestFormat::PluginJson => {
+            if !dir.join("plugin.json").is_file() || !dir.join("package.json").is_file() {
+                return error;
+            }
+            format!(
+                "{error}\nnote: package.json also exists but it has no \"main\" entry, so plugin.json takes precedence"
+            )
+        }
     }
-
-    Err("E_MANIFEST_MISSING: package.json (with a `main` entry) or plugin.json must sit at the package root"
-        .into())
 }
 
 /// Post-extraction checks shared by both install sources.
@@ -459,8 +598,16 @@ fn read_manifest_any(dir: &Path) -> Result<PluginManifest, String> {
 /// held to exactly the same rules: a valid id, a `main` that stays inside the
 /// package, a permission set from the whitelist, and a single-file script entry.
 fn check_staged_package(staging_dir: &Path) -> Result<PluginManifest, String> {
-    let manifest = read_manifest_any(staging_dir)?;
-    plugin_manifest::validate(&manifest).map_err(|error| error.message())?;
+    // The note is attached only to "the manifest itself is wrong" — a missing
+    // `main` file is a problem with the package's contents, not with which
+    // manifest won, and the reader is already looking at the right file.
+    let manifest = read_manifest_any(staging_dir)
+        .and_then(|manifest| {
+            plugin_manifest::validate(&manifest)
+                .map(|()| manifest)
+                .map_err(|error| error.message())
+        })
+        .map_err(|error| with_shadow_note(staging_dir, error))?;
 
     // `main` is the one path the host reads back out of the package, so it is
     // rebuilt from scratch rather than trusted — the same treatment zip entry
@@ -1594,5 +1741,554 @@ mod tests {
         write_file(&dir.join("package.json"), PACKAGE_JSON.as_bytes());
         let error = check_staged_package(&dir).expect_err("dist/extension.js is not there");
         assert!(error.starts_with("E_MISSING_MAIN"), "{error}");
+    }
+
+    // -----------------------------------------------------------------------
+    // QA: the real packages in `examples/`, through the real install path
+    //
+    // The point of these is that they read the committed files, not a copy of
+    // them in a fixture: a manifest that drifts from the host's reader fails
+    // here rather than in the app.
+    // -----------------------------------------------------------------------
+
+    fn examples_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("examples")
+    }
+
+    /// The whole folder→staging→manifest path, as `stage_install_inner` runs it.
+    fn stage_folder(folder: &str) -> Result<(PathBuf, PluginManifest), String> {
+        let source = examples_root().join(folder);
+        assert!(source.is_dir(), "{} must be checked in", source.display());
+        let staged = scratch_dir().join("staged");
+        copy_package_directory(&source, &staged)?;
+        let manifest = check_staged_package(&staged)?;
+        Ok((staged, manifest))
+    }
+
+    #[test]
+    fn a_folder_with_a_build_only_package_json_falls_back_to_plugin_json() {
+        // The three original examples ship a `package.json` that drives esbuild
+        // and a `plugin.json` that describes the plugin. Installing the folder
+        // must use the second one — this is the direction the `main`
+        // discriminator exists for.
+        for (folder, id) in [
+            ("qing-hello-headless", "qing.hello-headless"),
+            ("qing-note-wordcount", "qing.note-wordcount"),
+            ("qing-isolation-probe", "qing.isolation-probe"),
+        ] {
+            let (staged, manifest) =
+                stage_folder(folder).unwrap_or_else(|error| panic!("{folder}: {error}"));
+            assert_eq!(manifest.id, id, "{folder}");
+            assert_eq!(manifest.main, "main.js", "{folder}");
+            assert_eq!(manifest.api_version, 1, "{folder}");
+            assert!(
+                !manifest.contributes.commands.is_empty(),
+                "{folder} must keep its contributed command"
+            );
+            assert!(
+                manifest.dependencies.is_none(),
+                "{folder}: devDependencies must not reach the manifest"
+            );
+            assert!(staged.join("main.js").is_file(), "{folder}");
+            // The build file is package content and is still copied; it simply
+            // is not the manifest.
+            assert!(staged.join("package.json").is_file(), "{folder}");
+        }
+    }
+
+    #[test]
+    fn a_folder_using_package_json_as_its_manifest_installs_with_a_composed_id() {
+        let (staged, manifest) = stage_folder("qing-wordcount-ts").expect("the TS example installs");
+        assert_eq!(manifest.id, "qing.wordcount-ts");
+        assert_eq!(manifest.name, "笔记字数统计（TypeScript）");
+        assert_eq!(manifest.version, "1.0.0");
+        assert_eq!(manifest.main, "dist/extension.js");
+        assert_eq!(manifest.engines.host, ">=0.7.3 <1.0.0");
+        assert_eq!(manifest.contributes.commands[0].id, "qing.wordcount-ts.run");
+        assert!(manifest.dependencies.is_none());
+        assert!(staged.join("dist/extension.js").is_file());
+        assert!(
+            !staged.join("plugin.json").exists(),
+            "a package.json package must not need a plugin.json"
+        );
+        // `src/`, `build.mjs` and `tsconfig.json` are not skipped by the folder
+        // copier (only build output directories are), so the entry has to be
+        // found next to them rather than assuming a clean tree.
+        assert!(staged.join("src/extension.ts").is_file());
+    }
+
+    #[test]
+    fn every_shipped_archive_extracts_and_reads_its_manifest() {
+        // Regression for the archive path: a `.qnp` holds the manifest at its
+        // root, so the same `check_staged_package` that serves folders has to
+        // find it there — for both formats.
+        for (file, id) in [
+            ("qing.hello-headless-1.0.0.qnp", "qing.hello-headless"),
+            ("qing.isolation-probe-1.0.0.qnp", "qing.isolation-probe"),
+            ("qing.note-wordcount-1.0.0.qnp", "qing.note-wordcount"),
+            ("qing.wordcount-ts-1.0.0.qnp", "qing.wordcount-ts"),
+        ] {
+            let archive = examples_root().join(file);
+            assert!(archive.is_file(), "{} must be committed", archive.display());
+            let staged = scratch_dir().join("extracted");
+            extract_archive(&archive, &staged).unwrap_or_else(|error| panic!("{file}: {error}"));
+            let manifest =
+                check_staged_package(&staged).unwrap_or_else(|error| panic!("{file}: {error}"));
+            assert_eq!(manifest.id, id, "{file}");
+            let entry = safe_entry_path(&manifest.main).expect("the entry is a safe path");
+            assert!(
+                staged.join(entry).is_file(),
+                "{file}: `{}` did not land on disk",
+                manifest.main
+            );
+        }
+    }
+
+    #[test]
+    fn an_archive_that_wraps_everything_in_one_folder_is_unwrapped() {
+        // The shape `Explorer → Send to → Compressed folder` and GitHub's
+        // "Download ZIP" produce. P0 close-out: it used to report "manifest not
+        // at the root", which is indistinguishable from "this is not a package"
+        // and is the single most likely way a user creates a zip by hand.
+        let target = extract(&[
+            ("pkg/package.json", PACKAGE_JSON.as_bytes().to_vec()),
+            ("pkg/dist/extension.js", b"qing.log('hi');".to_vec()),
+        ])
+        .expect("the archive is well formed");
+        assert!(
+            !target.join("pkg").exists(),
+            "the wrapper folder must be gone, not merely bypassed"
+        );
+        let manifest = check_staged_package(&target).expect("the unwrapped package installs");
+        assert_eq!(manifest.id, "qing.wordcount");
+        assert_eq!(manifest.main, "dist/extension.js");
+    }
+
+    #[test]
+    fn a_wrapper_folder_is_only_unwrapped_when_it_is_the_only_entry() {
+        // Two shapes that must keep failing rather than be guessed at: extra
+        // junk next to the folder, and a folder record ("__MACOSX", a top-level
+        // README) that makes "which folder is the package?" ambiguous.
+        let target = extract(&[
+            ("pkg/package.json", PACKAGE_JSON.as_bytes().to_vec()),
+            ("pkg/dist/extension.js", b"qing.log('hi');".to_vec()),
+            ("README.md", b"downloaded from somewhere".to_vec()),
+        ])
+        .expect("the archive is well formed");
+        let error = check_staged_package(&target).expect_err("two entries is not one folder");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+        assert!(target.join("pkg/package.json").is_file(), "nothing was moved");
+
+        // One folder, but no manifest inside it: nothing to unwrap to.
+        let target = extract(&[
+            ("pkg/main.js", b"qing.log('hi');".to_vec()),
+            ("pkg/README.md", b"no manifest here".to_vec()),
+        ])
+        .expect("the archive is well formed");
+        let error = check_staged_package(&target).expect_err("no manifest anywhere");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+
+        // Two folders: also ambiguous.
+        let target = extract(&[
+            ("a/package.json", PACKAGE_JSON.as_bytes().to_vec()),
+            ("a/dist/extension.js", b"qing.log('hi');".to_vec()),
+            ("b/other.js", b"qing.log('hi');".to_vec()),
+        ])
+        .expect("the archive is well formed");
+        let error = check_staged_package(&target).expect_err("two folders is ambiguous");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+    }
+
+    #[test]
+    fn a_wrapped_legacy_package_is_unwrapped_too() {
+        // The unwrapping is about the archive's layout, not its manifest
+        // format: a `.qnp` rebuilt from a folder by a tool that keeps the
+        // folder must install whatever manifest it ships.
+        let target = extract(&[
+            ("qing.example-1.0.0/plugin.json", manifest_bytes("1.0.0")),
+            ("qing.example-1.0.0/main.js", b"qing.log('hi');".to_vec()),
+        ])
+        .expect("the archive is well formed");
+        let manifest = check_staged_package(&target).expect("the unwrapped package installs");
+        assert_eq!(manifest.id, "qing.example");
+    }
+
+    // -----------------------------------------------------------------------
+    // QA: the two directions of the "manifest format is decided by `main`" rule
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_package_json_without_main_and_without_plugin_json_is_refused() {
+        let dir = scratch_dir();
+        write_file(&dir.join("package.json"), br#"{"name":"qing.x","version":"1.0.0"}"#);
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = read_manifest_any(&dir).expect_err("nothing describes the entry point");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+        assert!(check_staged_package(&dir).is_err(), "must not install silently");
+    }
+
+    #[test]
+    fn a_build_package_json_that_also_declares_main_shadows_plugin_json() {
+        // The cost of the discriminator, pinned deliberately: `examples/`'s
+        // build-only package.json plus the one npm field an author would
+        // naturally add (`main`, since the build output *is* main.js) turns the
+        // build file into the manifest and the install fails — even though the
+        // plugin.json next to it is complete.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            br#"{"name":"qing-note-wordcount","version":"1.0.0","private":true,
+                 "main":"main.js",
+                 "scripts":{"build":"esbuild src/main.js --outfile=main.js"},
+                 "devDependencies":{"esbuild":"^0.25.0"}}"#,
+        );
+        write_file(&dir.join("plugin.json"), &manifest_bytes("1.0.0"));
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+
+        let error = check_staged_package(&dir).expect_err("the build file wins and is invalid");
+        assert!(error.starts_with("E_MANIFEST_INVALID"), "{error}");
+        assert!(
+            error.contains("engines"),
+            "the author is told about engines: {error}"
+        );
+        // …and about *why* the complete plugin.json next to it was ignored.
+        // Before the P0 close-out the report stopped at "engines is missing",
+        // which reads as a bug in the host to anyone who can see their own
+        // plugin.json.
+        assert!(
+            error.contains(
+                "note: plugin.json also exists but package.json (which declares \"main\") takes precedence"
+            ),
+            "the shadowing must be stated: {error}"
+        );
+    }
+
+    #[test]
+    fn a_malformed_package_json_fails_the_install_even_with_a_valid_plugin_json() {
+        // A `package.json` with a trailing comma (or any comment) is read
+        // before the fallback is even considered, so the parse error hides a
+        // plugin.json that would have installed. That is deliberate — see
+        // `with_shadow_note` — but the author has to be told which file they
+        // are actually editing.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            br#"{"name":"qing-note-wordcount","private":true,}"#,
+        );
+        write_file(&dir.join("plugin.json"), &manifest_bytes("1.0.0"));
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = check_staged_package(&dir).expect_err("the malformed file is fatal");
+        assert!(error.starts_with("E_MANIFEST_INVALID"), "{error}");
+        assert!(
+            error.contains(
+                "note: plugin.json also exists but package.json (which declares \"main\") takes precedence"
+            ),
+            "an unparseable package.json still shadows the plugin.json: {error}"
+        );
+    }
+
+    #[test]
+    fn a_broken_plugin_json_says_why_the_neighbouring_package_json_was_ignored() {
+        // The symmetric direction: the package.json is a build file (no
+        // `main`), so plugin.json is the manifest — and it does not parse.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            br#"{"name":"qing-note-wordcount","private":true,
+                 "scripts":{"build":"esbuild src/main.js --outfile=main.js"}}"#,
+        );
+        write_file(&dir.join("plugin.json"), br#"{"id":"qing.example",}"#);
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = check_staged_package(&dir).expect_err("the manifest does not parse");
+        assert!(error.starts_with("E_MANIFEST_INVALID"), "{error}");
+        assert!(
+            error.contains(
+                "note: package.json also exists but it has no \"main\" entry, so plugin.json takes precedence"
+            ),
+            "the note must be symmetric: {error}"
+        );
+
+        // …and no note at all when there is nothing to be shadowed.
+        let dir = scratch_dir();
+        write_file(&dir.join("plugin.json"), br#"{"id":"qing.example",}"#);
+        let error = check_staged_package(&dir).expect_err("the manifest does not parse");
+        assert!(!error.contains("note:"), "nothing to explain: {error}");
+
+        // A lone `package.json` with no `main` is not shadowing anything: there
+        // is no plugin.json, so a note about one would send the author looking
+        // for a file that does not exist.
+        let dir = scratch_dir();
+        write_file(&dir.join("package.json"), br#"{"name":"qing.x","version":"1.0.0"}"#);
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = check_staged_package(&dir).expect_err("no manifest describes the entry");
+        assert!(error.starts_with("E_MANIFEST_MISSING"), "{error}");
+        assert!(!error.contains("note:"), "no plugin.json to mention: {error}");
+    }
+
+    // -----------------------------------------------------------------------
+    // QA: the folder copier's limits and its link handling
+    // -----------------------------------------------------------------------
+
+    fn package_with_entry() -> PathBuf {
+        let source = scratch_dir().join("package");
+        write_file(&source.join("package.json"), PACKAGE_JSON.as_bytes());
+        write_file(&source.join("dist/extension.js"), b"qing.log('hi');");
+        source
+    }
+
+    #[test]
+    fn a_folder_is_limited_to_two_thousand_files() {
+        let source = package_with_entry();
+        // 1998 filler files + manifest + entry = exactly the limit.
+        for index in 0..(MAX_ENTRIES - 2) {
+            write_file(&source.join(format!("filler/{index}.js")), b"");
+        }
+        let staged = scratch_dir().join("out");
+        copy_package_directory(&source, &staged).expect("exactly 2000 files is allowed");
+        assert!(check_staged_package(&staged).is_ok(), "the limit is inclusive");
+
+        write_file(&source.join("filler/one-too-many.js"), b"");
+        let error = copy_package_directory(&source, &scratch_dir().join("out2"))
+            .expect_err("2001 files must be refused");
+        assert!(error.starts_with("E_TOO_MANY_FILES"), "{error}");
+    }
+
+    #[test]
+    fn a_folder_file_of_five_point_one_megabytes_is_refused() {
+        let source = package_with_entry();
+        write_file(&source.join("big.bin"), &vec![0_u8; MAX_SINGLE_FILE as usize + 102_400]);
+        let error = copy_package_directory(&source, &scratch_dir().join("out"))
+            .expect_err("5.1 MB must be refused");
+        assert!(error.starts_with("E_TOO_LARGE"), "{error}");
+    }
+
+    #[test]
+    fn a_folder_file_of_exactly_five_megabytes_is_allowed() {
+        // The boundary in the other direction, so the limit is not quietly
+        // off by one file-system block.
+        let source = package_with_entry();
+        write_file(&source.join("edge.bin"), &vec![0_u8; MAX_SINGLE_FILE as usize]);
+        let staged = scratch_dir().join("out");
+        copy_package_directory(&source, &staged).expect("exactly 5 MB is allowed");
+        assert_eq!(
+            fs::metadata(staged.join("edge.bin")).expect("copied").len(),
+            MAX_SINGLE_FILE
+        );
+    }
+
+    /// A directory link the package must not be able to pull content through.
+    /// A junction needs no privilege on Windows, unlike a symlink, so the test
+    /// is not vacuous on a default developer account.
+    fn link_directory(target: &Path, link: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            if std::os::windows::fs::symlink_dir(target, link).is_ok() {
+                return true;
+            }
+            return std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J", &link.to_string_lossy(), &target.to_string_lossy()])
+                .output()
+                .map(|output| output.status.success())
+                .unwrap_or(false);
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    fn link_file(target: &Path, link: &Path) -> bool {
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).is_ok()
+        }
+    }
+
+    /// Does any file under `root` contain `needle`?
+    fn tree_contains(root: &Path, needle: &[u8]) -> bool {
+        let Ok(entries) = fs::read_dir(root) else {
+            return false;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_dir() {
+                if tree_contains(&path, needle) {
+                    return true;
+                }
+                continue;
+            }
+            if let Ok(body) = fs::read(&path) {
+                if body.windows(needle.len()).any(|window| window == needle) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn content_behind_a_link_inside_a_folder_never_reaches_staging() {
+        // A package folder is user-controlled input: a link to `C:\Users` would
+        // otherwise copy the profile into the plugin directory, and a link to a
+        // file would smuggle in content that no size or name check ever saw.
+        let source = package_with_entry();
+        let outside = scratch_dir().join("outside");
+        write_file(&outside.join("secret.txt"), b"TOP-SECRET-PAYLOAD");
+        write_file(&outside.join("nested/deeper.txt"), b"TOP-SECRET-PAYLOAD");
+
+        let linked_dir = link_directory(&outside, &source.join("escape"));
+        let linked_file = link_file(&outside.join("secret.txt"), &source.join("secret.txt"));
+        assert!(
+            linked_dir || linked_file,
+            "no link could be created, so this test would prove nothing"
+        );
+
+        let staged = scratch_dir().join("out");
+        copy_package_directory(&source, &staged).expect("a link does not break the copy");
+        assert!(check_staged_package(&staged).is_ok(), "the package still installs");
+        assert!(!staged.join("escape").exists(), "a linked directory was copied");
+        assert!(!staged.join("secret.txt").exists(), "a linked file was copied");
+        assert!(
+            !tree_contains(&staged, b"TOP-SECRET-PAYLOAD"),
+            "content behind a link reached staging under another name"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // QA: post-staging checks that only exist once a package is on disk
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_main_pointing_at_a_native_module_is_refused() {
+        // New format: `main` lands on a `.node` file.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            PACKAGE_JSON.replace("dist/extension.js", "dist/addon.node").as_bytes(),
+        );
+        write_file(&dir.join("dist/addon.node"), b"not really a native module");
+        let error = check_staged_package(&dir).expect_err("a native entry is refused");
+        assert!(error.starts_with("E_NATIVE_MODULE"), "{error}");
+
+        // Old format: the same rule, from `plugin.json`.
+        let dir = scratch_dir();
+        let legacy = String::from_utf8(manifest_bytes("1.0.0"))
+            .expect("utf8")
+            .replace("main.js", "main.dll");
+        write_file(&dir.join("plugin.json"), legacy.as_bytes());
+        write_file(&dir.join("main.dll"), b"not really a native module");
+        let error = check_staged_package(&dir).expect_err("a native entry is refused");
+        assert!(error.starts_with("E_NATIVE_MODULE"), "{error}");
+    }
+
+    #[test]
+    fn a_manifest_that_declares_an_unknown_permission_is_refused_at_stage_time() {
+        // The whitelist has to hold for the new format too: `permissions`
+        // becomes a grant, and a grant the host does not know is shown to the
+        // user and then does nothing.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("package.json"),
+            PACKAGE_JSON
+                .replace(r#""permissions": ["notes:read", "notify"]"#, r#""permissions": ["telnet"]"#)
+                .as_bytes(),
+        );
+        write_file(&dir.join("dist/extension.js"), b"qing.log('hi');");
+        let error = check_staged_package(&dir).expect_err("`telnet` is not a host permission");
+        assert!(error.starts_with("E_PERMISSION_UNKNOWN"), "{error}");
+    }
+
+    #[test]
+    fn a_windows_style_or_dot_segment_main_resolves_to_the_staged_file() {
+        // The manifest may spell the entry with backslashes or an inner `.`;
+        // the staged file check has to resolve all of them to the one file the
+        // package actually contains, and the *stored* form has to be the one the
+        // runtime can walk. P0 close-out: `dist/./extension.js` used to be
+        // stored verbatim, which installed and then failed to start because
+        // `headless.ts::readMainSource` refuses `.` segments.
+        for (main, stored) in [
+            ("dist\\\\extension.js", "dist/extension.js"),
+            ("dist/./extension.js", "dist/extension.js"),
+            ("./dist/extension.js", "dist/extension.js"),
+            ("./dist/./extension.js", "dist/extension.js"),
+        ] {
+            let dir = scratch_dir();
+            let document = PACKAGE_JSON
+                .replace(r#""main": "./dist/extension.js""#, &format!(r#""main": "{main}""#));
+            write_file(&dir.join("package.json"), document.as_bytes());
+            write_file(&dir.join("dist/extension.js"), b"qing.log('hi');");
+            let manifest = check_staged_package(&dir)
+                .unwrap_or_else(|error| panic!("main `{main}`: {error}"));
+            assert_eq!(manifest.main, stored, "main `{main}`");
+            // The stored form is what the worker reads, so it is what gets
+            // asserted against the runtime's own path walk.
+            let walked = safe_entry_path(&manifest.main).expect("the runtime accepts it");
+            assert_eq!(walked, PathBuf::from("dist").join("extension.js"));
+        }
+    }
+
+    #[test]
+    fn a_main_that_points_outside_the_staged_folder_is_refused() {
+        // `validate` catches `../` already; this asserts the staging check does
+        // not lose that when it rebuilds the path a second time.
+        let dir = scratch_dir();
+        write_file(
+            &dir.join("plugin.json"),
+            String::from_utf8(manifest_bytes("1.0.0"))
+                .expect("utf8")
+                .replace(r#""main":"main.js""#, r#""main":"../main.js""#)
+                .as_bytes(),
+        );
+        write_file(&dir.join("main.js"), b"qing.log('hi');");
+        let error = check_staged_package(&dir).expect_err("`..` is not a package path");
+        assert!(error.starts_with("E_MANIFEST_INVALID"), "{error}");
+    }
+
+    #[test]
+    fn an_entry_name_containing_a_colon_is_refused() {
+        // Windows: `evil.js:hidden` is not a file name, it is the stream
+        // `hidden` on `evil.js`. Before the P0 close-out `safe_entry_path` only
+        // refused a colon at position 1 (the drive prefix), so the entry was
+        // accepted and landed as a zero-byte `evil.js` plus content that no
+        // `fs::read` of the visible file ever shows — invisible to
+        // `is_native_module`, to a content scan, and to the user browsing the
+        // plugin folder. A package has no legitimate use for a stream.
+        for entry in ["addon.node:payload", "evil.js:hidden", "dist/main.js:$DATA"] {
+            let error = extract(&[
+                ("plugin.json", manifest_bytes("1.0.0")),
+                ("main.js", b"qing.log('hi');".to_vec()),
+                (entry, b"ADS-CONTENT".to_vec()),
+            ])
+            .expect_err("a stream name must not extract");
+            assert!(error.starts_with("E_ZIP_SLIP"), "{entry}: {error}");
+            assert!(error.contains("colon"), "{entry}: {error}");
+        }
+
+        // Nothing was written, so there is no zero-byte decoy left behind and
+        // no stream holding the payload.
+        let dir = std::env::temp_dir().join(format!("qing-plugin-ads-{}", unique_token()));
+        fs::create_dir_all(&dir).expect("scratch directory");
+        let archive = dir.join("package.qnp");
+        fs::write(
+            &archive,
+            build_zip(&[
+                ("plugin.json", manifest_bytes("1.0.0")),
+                ("main.js", b"qing.log('hi');".to_vec()),
+                ("evil.js:hidden", b"ADS-CONTENT".to_vec()),
+            ]),
+        )
+        .expect("write archive");
+        let target = dir.join("out");
+        assert!(extract_archive(&archive, &target).is_err());
+        assert!(
+            !target.join("evil.js").exists(),
+            "the extractor wrote a visible empty file for a rejected entry"
+        );
+        assert!(!tree_contains(&target, b"ADS-CONTENT"), "the payload landed");
     }
 }

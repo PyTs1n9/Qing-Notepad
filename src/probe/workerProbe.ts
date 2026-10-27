@@ -1,5 +1,5 @@
 /**
- * Phase 0 probe for the plugin runtime (see `docs/plan-plugin-system.md` §4).
+ * Phase 0 probe for the plugin runtime (see `docs/analysis-extension-host.md` §5).
  *
  * Every assumption the Worker-based isolation rests on is checked here, in the
  * real webview with the real CSP — a browser tab cannot answer these, because

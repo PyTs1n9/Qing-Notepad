@@ -234,10 +234,22 @@ function lang() {
   return useSettingsStore.getState().lang;
 }
 
-/** Turn a Rust error code into the sentence the user actually sees. */
+/**
+ * Turn a Rust error code into the sentence the user actually sees.
+ *
+ * Every code Rust can produce while *reading a package* is listed here, because
+ * the alternative is a mixed-language error list: before this, a 21 MB package
+ * said "安装包超过 20 MB 上限" and a 2001-file package said
+ * `E_TOO_MANY_FILES: package has more than 2000 files` in the same dialog.
+ * Codes that carry a detail (`{detail}` in the copy) keep it — it is where
+ * "main `dist/x.js` is not in the package" actually says which file.
+ */
 export function describeInstallError(error: unknown): string {
   const pluginError = toPluginError(error);
   const current = lang();
+  // Rust writes `CODE: detail`; `toPluginError` already split the code off, and
+  // a message-less failure falls back to the code so nothing is ever blanked.
+  const detail = pluginError.message || pluginError.code;
   switch (pluginError.code) {
     case "E_HOST_VERSION":
       return t(current, "pluginHostIncompatible");
@@ -249,8 +261,22 @@ export function describeInstallError(error: unknown): string {
       return t(current, "pluginNativeModule");
     case "E_TOO_LARGE":
       return t(current, "pluginPackageTooLarge");
+    case "E_TOO_MANY_FILES":
+      return t(current, "pluginTooManyFiles");
+    case "E_MANIFEST_MISSING":
+      // The detail here is a sentence about the two file names; the copy says
+      // the same thing in one line, so it is not repeated.
+      return t(current, "pluginManifestMissing");
+    case "E_MANIFEST_INVALID":
+      return tWithParams(current, "pluginManifestInvalid", { detail });
+    case "E_MISSING_MAIN":
+      return tWithParams(current, "pluginMissingMain", { detail });
+    case "E_PERMISSION_UNKNOWN":
+      return tWithParams(current, "pluginPermissionUnknown", { detail });
+    case "E_ZIP_SLIP":
+      return t(current, "pluginEntryNameInvalid");
     default:
-      return pluginError.message || pluginError.code;
+      return detail;
   }
 }
 

@@ -845,6 +845,12 @@ export type TranslationKeys = {
   pluginCommandConflict: string;
   pluginNativeModule: string;
   pluginPackageTooLarge: string;
+  pluginManifestMissing: string;
+  pluginManifestInvalid: string;
+  pluginMissingMain: string;
+  pluginTooManyFiles: string;
+  pluginPermissionUnknown: string;
+  pluginEntryNameInvalid: string;
   commandPaletteTitle: string;
   commandPalettePlaceholder: string;
   commandPaletteEmpty: string;
@@ -1710,6 +1716,12 @@ const zh: TranslationKeys = {
   pluginCommandConflict: "命令 ID 已被占用：{ids}",
   pluginNativeModule: "包内有原生模块，不能安装",
   pluginPackageTooLarge: "安装包超过 20 MB 上限",
+  pluginManifestMissing: "包里没有清单：根目录需要 package.json（带 main）或 plugin.json",
+  pluginManifestInvalid: "扩展清单有误：{detail}",
+  pluginMissingMain: "清单里的入口文件不在包里：{detail}",
+  pluginTooManyFiles: "包内文件数超过 2000 个上限",
+  pluginPermissionUnknown: "清单声明了未知权限：{detail}",
+  pluginEntryNameInvalid: "包内有非法的文件名，可能是伪装过的压缩包",
   commandPaletteTitle: "命令面板",
   commandPalettePlaceholder: "输入命令名称…",
   commandPaletteEmpty: "没有匹配的命令",
@@ -2578,6 +2590,12 @@ const en: TranslationKeys = {
   pluginCommandConflict: "Command IDs already taken: {ids}",
   pluginNativeModule: "The package contains a native module and cannot be installed",
   pluginPackageTooLarge: "The package exceeds the 20 MB limit",
+  pluginManifestMissing: "No manifest in the package: the root needs package.json (with a main entry) or plugin.json",
+  pluginManifestInvalid: "The extension manifest is invalid: {detail}",
+  pluginMissingMain: "The entry point named by the manifest is not in the package: {detail}",
+  pluginTooManyFiles: "The package has more than 2000 files",
+  pluginPermissionUnknown: "The manifest declares a permission this app does not know: {detail}",
+  pluginEntryNameInvalid: "The package contains an invalid file name; it may be a disguised archive",
   commandPaletteTitle: "Command palette",
   commandPalettePlaceholder: "Type a command…",
   commandPaletteEmpty: "No matching commands",

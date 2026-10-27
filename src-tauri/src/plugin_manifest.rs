@@ -138,24 +138,29 @@ impl ManifestError {
     }
 }
 
-/// `^[a-z0-9]+(\.[a-z0-9-]+)+$`, at most 64 characters.
+/// `^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`, at most
+/// 64 characters **after composition** (`validate` runs this on the final id,
+/// not on `publisher` and `name` separately).
 ///
 /// Hand-rolled because the crate would only be used here, and the pattern has
 /// no features (no alternation, no quantifier nesting) that a parser would buy.
+///
+/// The first segment accepts `-` as of P0 of the extension-host work. It was
+/// `[a-z0-9]+` until `publisher` entered the format, at which point the
+/// asymmetry became a compatibility cliff: the most widely used VS Code
+/// publishers are `ms-python`, `ms-vscode`, `ms-azuretools`, `ms-toolsai`, and
+/// `ms-python.python` is the canonical example in every document about the
+/// format. A publisher and a name are the same kind of token here, so they get
+/// the same pattern. Uppercase, `_` and a leading/trailing `-` stay refused in
+/// every segment: those are the shapes that produce two directory names on one
+/// case-insensitive filesystem, or an id that reads as a typo.
 pub fn is_valid_plugin_id(id: &str) -> bool {
     if id.is_empty() || id.len() > MAX_ID_LEN {
         return false;
     }
     let mut segments = id.split('.');
-    let first = match segments.next() {
-        Some(first) => first,
-        None => return false,
-    };
-    if first.is_empty() || !first.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) {
-        return false;
-    }
-    let mut count = 1;
-    for segment in segments {
+    let mut count = 0;
+    for segment in segments.by_ref() {
         count += 1;
         if segment.is_empty() {
             return false;
@@ -175,6 +180,7 @@ pub fn is_valid_plugin_id(id: &str) -> bool {
             return false;
         }
     }
+    // At least `publisher.name` — or, without a publisher, a dotted name.
     count >= 2
 }
 
@@ -313,15 +319,25 @@ struct PackageCommand {
     category: Option<String>,
 }
 
-/// `./dist/extension.js` and `dist/extension.js` mean the same thing; the
-/// stored form is always the second one, because that is what every consumer
-/// (`is_safe_relative_path`, `staging_dir.join`, the worker's path walk) expects.
+/// `./dist/extension.js` and `dist/extension.js` mean the same thing, and so do
+/// `a/./b` and `a/b`; the stored form is always the shortest one, because that
+/// is what every consumer expects. A surviving `.` segment is the subtle bug
+/// this exists for: `is_safe_relative_path` tolerates it, `check_staged_package`
+/// resolves it, and then `headless.ts::readMainSource` refuses `.` outright — a
+/// package that installs and can never start.
+///
+/// Only `.` is dropped. Empty segments and `..` are left for
+/// `is_safe_relative_path` to refuse: collapsing them would turn `/etc/passwd`
+/// or `a/../b` into a path that looks fine, and an escape attempt is exactly
+/// what `validate` has to see. This function normalises shape, it never repairs
+/// intent.
 pub fn normalize_relative_entry(raw: &str) -> String {
-    let mut path = raw.trim().replace('\\', "/");
-    while let Some(rest) = path.strip_prefix("./") {
-        path = rest.to_string();
-    }
-    path
+    raw.trim()
+        .replace('\\', "/")
+        .split('/')
+        .filter(|segment| *segment != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// `author` is a string, `{name, url}` or `{name, email}` in the wild. A shape
@@ -605,11 +621,18 @@ mod tests {
     fn ids_follow_the_documented_pattern() {
         assert!(is_valid_plugin_id("qing.hello-headless"));
         assert!(is_valid_plugin_id("com.example.a1"));
+        // P0 widened the first segment to allow `-`, so a VS Code publisher
+        // works; the rest of the pattern is unchanged.
+        assert!(is_valid_plugin_id("ms-python.python"));
+        assert!(is_valid_plugin_id("ms-vscode.cpptools"));
         assert!(!is_valid_plugin_id("qing"));
         assert!(!is_valid_plugin_id("Qing.hello"));
+        assert!(!is_valid_plugin_id("-qing.hello"));
+        assert!(!is_valid_plugin_id("qing-.hello"));
         assert!(!is_valid_plugin_id("qing..hello"));
         assert!(!is_valid_plugin_id("qing.-x"));
         assert!(!is_valid_plugin_id("qing.x-"));
+        assert!(!is_valid_plugin_id("qing.x_y"));
         assert!(!is_valid_plugin_id(".qing.x"));
     }
 
@@ -865,6 +888,309 @@ mod tests {
         assert_eq!(
             validate(&loose).expect_err("1.0 is not strict semver").code,
             "E_MANIFEST_INVALID"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Adversarial cases for the `package.json` format (QA)
+    //
+    // The mapping is deliberately tolerant and `validate` is the only gate, so
+    // every case below is written as "the mapping accepts it, `validate` must
+    // not". That split is the contract: a package must never be coerced into
+    // something installable, and the id becomes a directory name.
+    // -----------------------------------------------------------------------
+
+    use serde_json::json;
+
+    /// Build a `package.json` document from fields, so a case only states what
+    /// it is about instead of fighting the defaults of the shared fixture.
+    fn doc(value: serde_json::Value) -> String {
+        value.to_string()
+    }
+
+    /// Smallest document `map_package_json` accepts, with `name`/`publisher`
+    /// decided by the caller (`publisher: None` omits the key entirely).
+    fn package(name: &str, publisher: Option<&str>) -> serde_json::Value {
+        let mut value = json!({
+            "name": name,
+            "version": "1.0.0",
+            "engines": { "qing": ">=0.7.3 <1.0.0" },
+            "main": "dist/extension.js",
+        });
+        if let Some(publisher) = publisher {
+            value["publisher"] = json!(publisher);
+        }
+        value
+    }
+
+    #[test]
+    fn an_id_that_is_not_a_directory_name_never_reaches_the_installer() {
+        // `publisher + "." + name` is concatenated without sanitising either
+        // half, so the id pattern has to carry the whole burden.
+        for (publisher, name) in [
+            ("Qing Studio", "wordcount"), // space and capitals
+            ("Qing", "wordcount"),        // capital publisher
+            ("qing", "WordCount"),        // capital name
+            ("qing", "a..b"),             // empty segment
+            ("qing", "a b"),              // space inside a segment
+            ("qing.", "wordcount"),       // trailing dot on the publisher
+            ("qing", "x/../evil"),        // traversal attempt through the id
+            ("qing", "x\\evil"),          // backslash
+            ("qing", "-leading"),         // leading hyphen in a segment
+            ("qing", "trailing-"),        // trailing hyphen in a segment
+        ] {
+            let raw = doc(package(name, Some(publisher)));
+            let manifest = match from_package_json(&raw) {
+                Ok(manifest) => manifest,
+                Err(error) => {
+                    assert_eq!(
+                        error.code, "E_MANIFEST_INVALID",
+                        "{publisher}/{name}: a rejected package must carry the documented code"
+                    );
+                    continue;
+                }
+            };
+            let error = match validate(&manifest) {
+                Ok(()) => panic!(
+                    "`{publisher}` + `{name}` produced an installable id `{}`",
+                    manifest.id
+                ),
+                Err(error) => error,
+            };
+            assert_eq!(
+                error.code, "E_MANIFEST_INVALID",
+                "{publisher}/{name}: {}",
+                error.message()
+            );
+        }
+    }
+
+    #[test]
+    fn the_id_length_limit_is_applied_to_the_composed_id() {
+        // 64 bytes is the documented cap and it applies after composition:
+        // "qing." (5) + name, so 59 characters fit and 60 do not.
+        let fits = "a".repeat(59);
+        let manifest = from_package_json(&doc(package(&fits, Some("qing"))))
+            .expect("a long but bounded name maps");
+        assert_eq!(manifest.id.len(), 64);
+        assert!(validate(&manifest).is_ok(), "64 bytes is allowed");
+
+        let too_long = "a".repeat(60);
+        let manifest = from_package_json(&doc(package(&too_long, Some("qing"))))
+            .expect("the mapping itself does not police the length");
+        assert_eq!(
+            validate(&manifest).expect_err("65 bytes is not an id").code,
+            "E_MANIFEST_INVALID"
+        );
+    }
+
+    #[test]
+    fn valid_ids_at_the_edge_of_the_pattern_still_install() {
+        // Guards against over-tightening the pattern while fixing the cases
+        // above: every id here is a real shape and must keep working.
+        for (publisher, name, expected) in [
+            ("qing", "a", "qing.a"),
+            ("qing", "a1", "qing.a1"),
+            ("com.example", "plugin", "com.example.plugin"),
+            ("qing", "a-b", "qing.a-b"),
+            ("qing", "a.b", "qing.a.b"),
+            ("q", "x", "q.x"),
+        ] {
+            let manifest = from_package_json(&doc(package(name, Some(publisher))))
+                .expect("a valid package maps");
+            assert_eq!(manifest.id, expected);
+            assert!(validate(&manifest).is_ok(), "{expected} must install");
+        }
+    }
+
+    #[test]
+    fn a_hyphenated_publisher_is_accepted_after_the_p0_widening() {
+        // Flipped from "refused" as part of the P0 close-out: the first segment
+        // used to be `[a-z0-9]+`, which refused every `ms-*` publisher — the
+        // most common publishers in the VS Code ecosystem this format is copied
+        // from. `publisher` and `name` are the same kind of token here, so both
+        // now accept `-`, and `is_valid_plugin_id` no longer treats the first
+        // segment specially.
+        for publisher in ["ms-python", "ms-vscode", "ms-azuretools", "ms-toolsai"] {
+            let manifest = from_package_json(&doc(package("python", Some(publisher))))
+                .expect("the mapping itself succeeds");
+            assert_eq!(manifest.id, format!("{publisher}.python"));
+            assert!(
+                validate(&manifest).is_ok(),
+                "{publisher}.python must install: {:?}",
+                validate(&manifest)
+            );
+        }
+        // A name may be hyphenated too, and the two together still compose.
+        let manifest = from_package_json(&doc(package("jupyter-notebook", Some("ms-toolsai"))))
+            .expect("maps");
+        assert_eq!(manifest.id, "ms-toolsai.jupyter-notebook");
+        assert!(validate(&manifest).is_ok());
+        // What the widening did *not* allow: a hyphen at either end, uppercase,
+        // or `_`.
+        for (publisher, name) in [("-ms", "python"), ("ms-", "python"), ("MS", "python"), ("ms_x", "python")] {
+            let manifest = from_package_json(&doc(package(name, Some(publisher))))
+                .expect("the mapping itself succeeds");
+            assert_eq!(
+                validate(&manifest).expect_err("still not an id").code,
+                "E_MANIFEST_INVALID",
+                "{publisher}.{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_main_that_escapes_the_package_is_refused_not_repaired() {
+        for evil in [
+            "../evil.js",
+            "./../evil.js",
+            "..\\evil.js",
+            ".//../evil.js",
+            "dist/../../evil.js",
+            "/etc/passwd",
+            "\\Windows\\evil.js",
+            "C:\\Windows\\evil.js",
+            "dist//evil.js",
+            "./",
+        ] {
+            let mut value = package("wordcount", Some("qing"));
+            value["main"] = json!(evil);
+            let manifest = match from_package_json(&doc(value)) {
+                Ok(manifest) => manifest,
+                Err(error) => {
+                    // `"./"` normalises to nothing and is refused at the
+                    // mapping, which is also a refusal — never a silent pass.
+                    assert_eq!(error.code, "E_MANIFEST_INVALID", "{evil}");
+                    continue;
+                }
+            };
+            let error = match validate(&manifest) {
+                Ok(()) => panic!("main `{evil}` was accepted as `{}`", manifest.main),
+                Err(error) => error,
+            };
+            assert_eq!(error.code, "E_MANIFEST_INVALID", "{evil}: {}", error.message());
+        }
+    }
+
+    #[test]
+    fn a_dot_slash_main_is_normalised_and_a_backslash_main_is_forward_slashed() {
+        for raw in [
+            "./dist/extension.js",
+            "dist/extension.js",
+            ".\\dist\\extension.js",
+            // A `.` *inside* the path is the case that used to install and then
+            // fail to start: `is_safe_relative_path` accepts it, the runtime
+            // path walk in `headless.ts` refuses `.` segments outright.
+            "dist/./extension.js",
+            "./dist/./extension.js",
+        ] {
+            let mut value = package("wordcount", Some("qing"));
+            value["main"] = json!(raw);
+            let manifest =
+                from_package_json(&doc(value)).unwrap_or_else(|error| panic!("{raw}: {}", error.message()));
+            assert_eq!(manifest.main, "dist/extension.js", "{raw}");
+            assert!(validate(&manifest).is_ok(), "{raw} must install");
+        }
+
+        // `..` is not `..`'s equivalent: it is resolved by nothing and stays in
+        // the stored path so `validate` can refuse it.
+        let mut value = package("wordcount", Some("qing"));
+        value["main"] = json!("dist/./../evil.js");
+        let manifest = from_package_json(&doc(value)).expect("the `.` is dropped, the `..` is not");
+        assert_eq!(manifest.main, "dist/../evil.js");
+        assert_eq!(
+            validate(&manifest).expect_err("the escape survives").code,
+            "E_MANIFEST_INVALID"
+        );
+    }
+
+    #[test]
+    fn a_blank_or_non_string_main_is_a_manifest_error() {
+        // A blank `main` is refused by name, so the author sees which field is
+        // missing rather than a generic parse failure.
+        for main in [json!(""), json!("   "), json!(null)] {
+            let mut value = package("wordcount", Some("qing"));
+            value["main"] = main.clone();
+            let error = from_package_json(&doc(value))
+                .expect_err(&format!("main {main} must not be a manifest"));
+            assert_eq!(error.code, "E_MANIFEST_INVALID");
+            assert!(error.detail.contains("main"), "{main}: {}", error.detail);
+        }
+        // A `main` of the wrong *type* never reaches the mapping.
+        for main in [json!(42), json!(["./a.js"]), json!({ "path": "a.js" })] {
+            let mut value = package("wordcount", Some("qing"));
+            value["main"] = main.clone();
+            let error = from_package_json(&doc(value))
+                .expect_err(&format!("main {main} must not be a manifest"));
+            assert_eq!(error.code, "E_MANIFEST_INVALID", "{main}");
+        }
+    }
+
+    #[test]
+    fn api_version_and_permission_whitelist_still_apply_to_a_package_json() {
+        // Regression: the new format must not become a way past the two checks
+        // that already existed for plugin.json.
+        let mut value = package("wordcount", Some("qing"));
+        value["apiVersion"] = json!(2);
+        let manifest = from_package_json(&doc(value)).expect("apiVersion maps");
+        assert_eq!(
+            validate(&manifest).expect_err("this build implements api 1 only").code,
+            "E_API_VERSION"
+        );
+
+        let mut value = package("wordcount", Some("qing"));
+        value["permissions"] = json!(["notes:read", "telnet"]);
+        let manifest = from_package_json(&doc(value)).expect("permissions map");
+        let error = validate(&manifest).expect_err("`telnet` is not a host permission");
+        assert_eq!(error.code, "E_PERMISSION_UNKNOWN");
+        assert!(error.detail.contains("telnet"), "{}", error.detail);
+
+        let mut value = package("wordcount", Some("qing"));
+        value["permissions"] = json!(["storage", "notes:write", "notify"]);
+        assert!(validate(&from_package_json(&doc(value)).expect("maps")).is_ok());
+    }
+
+    #[test]
+    fn the_display_name_limit_counts_bytes_not_characters() {
+        // MAX_NAME_LEN is applied to `String::len`, which is bytes: a Chinese
+        // display name is capped at 32 characters. Asserted so the limit is a
+        // known number rather than a surprise for an author writing a long one.
+        let mut value = package("wordcount", Some("qing"));
+        value["displayName"] = json!("字".repeat(32)); // 96 bytes
+        assert!(
+            validate(&from_package_json(&doc(value)).expect("maps")).is_ok(),
+            "96 bytes fits"
+        );
+
+        let mut value = package("wordcount", Some("qing"));
+        value["displayName"] = json!("字".repeat(33)); // 99 bytes
+        let manifest = from_package_json(&doc(value)).expect("the mapping is tolerant");
+        assert_eq!(
+            validate(&manifest).expect_err("99 bytes does not fit").code,
+            "E_MANIFEST_INVALID"
+        );
+    }
+
+    #[test]
+    fn a_vscode_manifest_renamed_to_plugin_json_is_not_silently_accepted() {
+        // The fallback path reads `plugin.json` straight into `PluginManifest`,
+        // so a package whose only manifest is a VS Code shaped one *named*
+        // `plugin.json` fails at deserialisation instead of being mapped. This
+        // is the shape a human produces by renaming the file, and the error is
+        // a serde message rather than one of this module's codes.
+        let raw = doc(json!({
+            "name": "wordcount",
+            "publisher": "qing",
+            "version": "1.0.0",
+            "engines": { "qing": ">=0.7.3" },
+            "main": "dist/extension.js",
+        }));
+        let error = serde_json::from_str::<PluginManifest>(&raw)
+            .expect_err("a VS Code manifest is not a plugin.json");
+        let text = error.to_string();
+        assert!(
+            text.contains("missing field"),
+            "expected a missing-field error, got `{text}`"
         );
     }
 }
