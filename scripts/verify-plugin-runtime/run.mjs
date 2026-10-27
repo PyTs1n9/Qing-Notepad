@@ -584,6 +584,33 @@ section("Declarative views (P1a-2): providers answer getChildren, unknown views 
 }
 
 {
+  // A tree row's click hands the row's id to the command handler, so one
+  // command serves a whole tree; the palette hands it nothing. This is the
+  // contract `qing-outline` relies on to move the caret to the clicked heading.
+  const { dispatch, posted } = makeWorker(`
+    qing.commands.register("qing.probe.focus", function (itemId) {
+      qing.log("focus:" + String(itemId));
+    });
+  `);
+  await dispatch(INIT);
+  await settle();
+  await dispatch({ t: "call", ns: "commands", method: "execute", args: ["qing.probe.focus", "h3"], rid: 14 });
+  await settle();
+  check(
+    "a tree row's id reaches the command handler",
+    posted.some((message) => message.t === "log" && String(message.args[0]) === "focus:h3"),
+    posted,
+  );
+  await dispatch({ t: "call", ns: "commands", method: "execute", args: ["qing.probe.focus"], rid: 15 });
+  await settle();
+  check(
+    "a palette invocation calls the handler with no argument",
+    posted.some((message) => message.t === "log" && String(message.args[0]) === "focus:undefined"),
+    posted,
+  );
+}
+
+{
   // The permission split the install prompt promises: moving the caret is not
   // rewriting the note, and contributing a panel is neither.
   const bridgeSource = fs.readFileSync(path.join(root, "src", "plugin", "bridge.ts"), "utf8");

@@ -328,10 +328,16 @@ async function ensureRunner(plugin: InstalledPlugin): Promise<Runner> {
  * handler map), but a plugin-contributed tree item names a command as a string,
  * and that string is the plugin's to choose — so a `command` pointing at
  * somebody else is refused here, once, for every path that ends up executing.
+ *
+ * `args` is what a tree item's click hands the handler — the item id, so one
+ * command can serve a whole tree ("jump to *this* row") without the manifest
+ * listing one command per row. The palette passes nothing and the handler
+ * receives `undefined`, which is what a command with no arguments wants.
  */
 export async function executePluginCommand(
   plugin: InstalledPlugin,
   commandId: string,
+  args: readonly unknown[] = [],
 ): Promise<CommandResult> {
   try {
     if (!ownCommandIds(plugin).includes(commandId)) {
@@ -341,7 +347,7 @@ export async function executePluginCommand(
       );
     }
     const runner = await ensureRunner(plugin);
-    await sendCall(runner, "commands", "execute", [commandId]);
+    await sendCall(runner, "commands", "execute", [commandId, ...args]);
     return { ok: true };
   } catch (error) {
     const pluginError = toPluginError(error);

@@ -293,6 +293,10 @@
     /**
      * Register the handler for one contributed command. `commands.execute` is
      * deliberately absent: plugins cannot call each other (decisions D6).
+     *
+     * The handler is called with one optional argument: the tree item's id when
+     * the command came from a row in a plugin-contributed panel, `undefined`
+     * when it came from the command palette.
      */
     commands: {
       register: function (id, handler) {
@@ -426,7 +430,11 @@
         return;
       }
       try {
-        var value = await handler();
+        // Anything after the command id is the caller's argument: a tree item's
+        // click passes the item id so one command can serve a whole tree. The
+        // palette passes nothing, and a handler that ignores its parameter is
+        // free to declare none.
+        var value = await handler.apply(null, callArgs.slice(1));
         var plain = value === undefined ? null : value;
         try {
           plain = JSON.parse(JSON.stringify(plain));

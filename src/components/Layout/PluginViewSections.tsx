@@ -14,6 +14,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { useNoteStore } from "@/stores/noteStore";
 import { usePluginStore } from "@/plugin/store";
 import { useSettingsStore, type LangType } from "@/stores/settingsStore";
 import { toast } from "@/stores/toastStore";
@@ -41,6 +42,7 @@ interface SectionProps {
 /** One panel: header, then the rows its provider returned. */
 const PluginViewSection: React.FC<SectionProps> = ({ plugin, view, lang }) => {
   const [open, setOpen] = useState(true);
+  const activeNoteId = useNoteStore((state) => state.activeNoteId);
   const snapshot = useSyncExternalStore(
     subscribeViews,
     () => getViewSnapshot(plugin.id, view.id),
@@ -71,12 +73,20 @@ const PluginViewSection: React.FC<SectionProps> = ({ plugin, view, lang }) => {
     return onViewRefresh((viewId) => {
       if (viewId === view.id) void loadRoot();
     });
-  }, [loadRoot, view.id]);
+    // `activeNoteId` is in the list on purpose: a panel lives in the note
+    // column and most panels describe the open note (an outline, a word count),
+    // so switching notes re-fetches the root. A plugin whose data is global
+    // simply returns the same rows. `views.refresh` is still the API for a
+    // plugin that knows its own data changed for its own reasons.
+  }, [loadRoot, view.id, activeNoteId]);
 
   const runCommand = useCallback(
     async (item: PluginTreeItem) => {
       if (!item.command) return;
-      const result = await executePluginCommand(plugin, item.command);
+      // The item id is the one thing the handler needs to know *which* row was
+      // clicked: one command serves the whole tree, and the palette — which
+      // passes no argument — still runs the same command with `undefined`.
+      const result = await executePluginCommand(plugin, item.command, [item.id]);
       if (!result.ok) {
         toast(
           tWithParams(lang, "pluginCommandFailed", { code: result.code ?? "E_INTERNAL" }),
