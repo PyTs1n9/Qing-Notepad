@@ -15,6 +15,9 @@
     "verify:batch3:probe": "node scripts/verify-batch3/wasm-eval-probe.mjs",
     "verify:batch4": "node scripts/verify-batch4/run.mjs",
     "verify:plugin-runtime": "node scripts/verify-plugin-runtime/run.mjs",
+    "verify:plugin-e2e": "node scripts/verify-plugin-e2e/run.mjs",
+    "verify:plugin-snippet": "node scripts/verify-plugin-snippet.mjs",
+    "verify:plugin-note-tree": "node scripts/verify-plugin-note-tree.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
   },
   "dependencies": {

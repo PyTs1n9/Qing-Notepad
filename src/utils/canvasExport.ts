@@ -3,10 +3,11 @@ import type {
   CanvasDoodleItem,
   CanvasItem,
   CanvasNodeItem,
+  CanvasRefItem,
   CanvasRichTextItem,
   CanvasShapeItem,
 } from "@/types";
-import { getCanvasItemBounds, resolveCanvasConnector, type CanvasBounds } from "@/utils/canvasGeometry";
+import { getCanvasItemBounds, resolveCanvasConnector, visibleCanvasItems, type CanvasBounds } from "@/utils/canvasGeometry";
 import { canvasHtmlToXhtml, getCanvasRichTextHtml } from "@/utils/canvasRichText";
 import {
   canvasDoodleEraserMarkup,
@@ -69,6 +70,7 @@ function rotatedNodeBounds(item: CanvasNodeItem): CanvasBounds {
 
 function getContentBounds(items: CanvasItem[]): CanvasBounds | null {
   return items.reduce<CanvasBounds | null>((bounds, item) => {
+    if (item.hidden) return bounds;
     const current = item.type === "connector"
       ? getCanvasItemBounds(item, items)
       : item.type === "doodle"
@@ -121,10 +123,13 @@ function shapeMarkup(item: CanvasShapeItem): string {
 
 function arrowMarkup(item: CanvasConnectorItem, items: CanvasItem[]): string {
   if (!item.endArrow) return "";
-  const { start, end } = resolveCanvasConnector(item, items);
+  const { start, end, path } = resolveCanvasConnector(item, items);
+  if (!path) return "";
   let dx = end.x - start.x;
   let dy = end.y - start.y;
-  if (item.style === "orthogonal") {
+  // Both orthogonal and curve connectors leave the node edge axis-aligned, so
+  // the arrowhead has to follow that axis rather than the chord.
+  if (item.style === "orthogonal" || item.style === "curve") {
     if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
     else dx = 0;
   }
@@ -153,6 +158,30 @@ function doodleMarkup(item: CanvasDoodleItem): string {
   return `<g><defs>${mask}</defs>${stroke}</g>`;
 }
 
+function refMarkup(item: CanvasRefItem): string {
+  const backdrop = escapeXml(resolveCssColor("var(--color-bg-secondary)"));
+  const border = escapeXml(resolveCssColor("var(--color-border)"));
+  const accent = escapeXml(resolveCssColor("var(--color-accent)"));
+  const titleColor = escapeXml(resolveCssColor("var(--color-text-primary)"));
+  const mutedColor = escapeXml(resolveCssColor("var(--color-text-secondary)"));
+  const inset = 12;
+  const body = item.summary || item.excerpt || "";
+  const kindOpacity = item.ref.kind === "note" ? 0.35 : 1;
+  const text = [
+    `<div style="font-size:13px;font-weight:600;line-height:1.3;color:${titleColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeXml(item.title)}</div>`,
+    body
+      ? `<div style="margin-top:4px;font-size:11.5px;line-height:1.45;color:${mutedColor};max-height:${Math.max(1, item.height - inset * 2 - 20)}px;overflow:hidden">${escapeXml(body)}</div>`
+      : "",
+  ].join("");
+  return [
+    `<rect width="${item.width}" height="${item.height}" rx="10" fill="${backdrop}" stroke="${border}" stroke-width="1" />`,
+    `<rect width="3" height="${Math.max(1, item.height - 8)}" y="4" rx="1.5" fill="${accent}" opacity="${kindOpacity}" />`,
+    `<foreignObject x="${inset}" y="${inset}" width="${Math.max(1, item.width - inset * 2)}" height="${Math.max(1, item.height - inset * 2)}">`,
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;overflow:hidden;font-family:system-ui,sans-serif">${text}</div>`,
+    "</foreignObject>",
+  ].join("");
+}
+
 function itemMarkup(item: CanvasItem, items: CanvasItem[], assets: Record<string, string>): string {
   if (item.type === "doodle") return doodleMarkup(item);
   if (item.type === "connector") {
@@ -170,18 +199,22 @@ function itemMarkup(item: CanvasItem, items: CanvasItem[], assets: Record<string
   if (item.type === "shape") {
     return `<g transform="${transform}">${shapeMarkup(item)}${richTextMarkup(item, true)}</g>`;
   }
+  if (item.type === "ref") {
+    return `<g transform="${transform}">${refMarkup(item)}</g>`;
+  }
   return `<g transform="${transform}">${richTextMarkup(item, false)}</g>`;
 }
 
 function buildSvg({ items, assets }: CanvasExportOptions, pixelScale = 1): { svg: string; width: number; height: number } {
-  const bounds = getContentBounds(items);
+  const visible = visibleCanvasItems(items);
+  const bounds = getContentBounds(visible);
   if (!bounds) throw new Error("Canvas has no visible content");
   const width = Math.max(1, bounds.maxX - bounds.minX);
   const height = Math.max(1, bounds.maxY - bounds.minY);
   const background = escapeXml(resolveCssColor("var(--canvas-background, var(--color-bg-primary))"));
-  const content = [...items]
+  const content = visible
     .sort((a, b) => a.zIndex - b.zIndex)
-    .map((item) => itemMarkup(item, items, assets))
+    .map((item) => itemMarkup(item, visible, assets))
     .join("");
   const svg = [
     '<?xml version="1.0" encoding="UTF-8"?>',

@@ -75,6 +75,8 @@ export type {
   CanvasImageItem,
   CanvasItem,
   CanvasNodeItem,
+  CanvasRefItem,
+  CanvasRefTarget,
   CanvasRichTextFields,
   CanvasRichTextItem,
   CanvasShapeItem,

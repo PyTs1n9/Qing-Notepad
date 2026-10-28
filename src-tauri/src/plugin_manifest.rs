@@ -60,6 +60,13 @@ pub const KNOWN_PERMISSIONS: &[&str] = &[
     // all three separately in the install prompt.
     "views",
     "editor:selection",
+    // Canvas access. `read` exposes reference node keys only — enough to tell
+    // "the user deleted this node" from "this note is new"; `write` adds and
+    // refreshes the nodes a plugin describes. Neither touches the board file.
+    "canvas:read",
+    "canvas:write",
+    // Summarising spends the user's own API credit — separate code on purpose.
+    "ai:summarize",
 ];
 
 const MAX_ID_LEN: usize = 64;
@@ -1293,8 +1300,9 @@ mod tests {
         let before = sorted.len();
         sorted.dedup();
         assert_eq!(sorted.len(), before, "duplicate permission code");
-        // 8 L1 + 3 editor (P1a) + 2 (P1a-2: `views`, `editor:selection`) = 13.
-        assert_eq!(KNOWN_PERMISSIONS.len(), 13);
+        // 8 L1 + 3 editor (P1a) + 2 (P1a-2: `views`, `editor:selection`)
+        // + 3 canvas (P1c: `canvas:read`, `canvas:write`, `ai:summarize`) = 16.
+        assert_eq!(KNOWN_PERMISSIONS.len(), 16);
     }
 
     #[test]

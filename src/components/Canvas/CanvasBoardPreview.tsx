@@ -1,5 +1,5 @@
-import type { CanvasBoard, CanvasDoodleItem, CanvasItem, CanvasRichTextItem, CanvasShapeItem, CanvasViewport } from "@/types";
-import { resolveCanvasConnector } from "@/utils/canvasGeometry";
+import type { CanvasBoard, CanvasDoodleItem, CanvasItem, CanvasRefItem, CanvasRichTextItem, CanvasShapeItem, CanvasViewport } from "@/types";
+import { resolveCanvasConnector, visibleCanvasItems } from "@/utils/canvasGeometry";
 import { getCanvasRichTextHtml } from "@/utils/canvasRichText";
 import { CanvasDoodleDefinitions, CanvasDoodleStroke } from "@/components/Canvas/CanvasDoodleLayer";
 
@@ -31,6 +31,17 @@ function RichText({ item, centered = false }: { item: CanvasRichTextItem; center
   );
 }
 
+function RefCard({ item }: { item: CanvasRefItem }) {
+  const title = item.title.length > 18 ? `${item.title.slice(0, 18)}…` : item.title;
+  return (
+    <>
+      <rect width={item.width} height={item.height} rx={10} fill="var(--color-bg-secondary)" stroke="var(--color-border)" strokeWidth={1} />
+      <rect width={3} height={Math.max(1, item.height - 8)} y={4} rx={1.5} fill="var(--color-accent)" opacity={item.ref.kind === "note" ? 0.35 : 1} />
+      <text x={12} y={24} fill="var(--color-text-primary)" fontSize={13} fontWeight={600} fontFamily="var(--font-sans)">{title}</text>
+    </>
+  );
+}
+
 function renderItem(item: CanvasItem, items: CanvasItem[], assets: Record<string, string>) {
   if (item.type === "doodle") {
     return <CanvasDoodleStroke key={item.id} item={item} maskPrefix="canvas-preview-doodle-mask" />;
@@ -48,6 +59,13 @@ function renderItem(item: CanvasItem, items: CanvasItem[], assets: Record<string
       </g>
     );
   }
+  if (item.type === "ref") {
+    return (
+      <g key={item.id} transform={transform}>
+        <RefCard item={item} />
+      </g>
+    );
+  }
   return (
     <g key={item.id} transform={transform}>
       {item.type === "shape" && <Shape item={item} />}
@@ -57,7 +75,7 @@ function renderItem(item: CanvasItem, items: CanvasItem[], assets: Record<string
 }
 
 export default function CanvasBoardPreview({ board, assets, viewport }: CanvasBoardPreviewProps) {
-  const items = [...board.items].sort((a, b) => a.zIndex - b.zIndex);
+  const items = visibleCanvasItems(board.items).sort((a, b) => a.zIndex - b.zIndex);
   return (
     <>
       <defs>

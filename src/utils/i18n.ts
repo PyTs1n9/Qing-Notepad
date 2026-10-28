@@ -60,6 +60,7 @@ export type TranslationKeys = {
   canvasShapeDiamond: string;
   canvasConnectorStraight: string;
   canvasConnectorOrthogonal: string;
+  canvasConnectorCurve: string;
   canvasDuplicate: string;
   canvasAlignHorizontal: string;
   canvasAlignVertical: string;
@@ -837,6 +838,9 @@ export type TranslationKeys = {
   pluginPermEditorDecorate: string;
   pluginPermViews: string;
   pluginPermEditorSelection: string;
+  pluginPermCanvasRead: string;
+  pluginPermCanvasWrite: string;
+  pluginPermAiSummarize: string;
   pluginCrashedDisabled: string;
   pluginPermissionDenied: string;
   pluginInstalled: string;
@@ -845,6 +849,9 @@ export type TranslationKeys = {
   pluginRolledBack: string;
   pluginCommandFailed: string;
   pluginInstallFailed: string;
+  pluginInstallNetwork: string;
+  pluginInstallPackageGone: string;
+  pluginInstallIo: string;
   pluginHostIncompatible: string;
   pluginApiIncompatible: string;
   pluginCommandConflict: string;
@@ -937,6 +944,7 @@ const zh: TranslationKeys = {
   canvasShapeDiamond: "判断节点",
   canvasConnectorStraight: "直线箭头",
   canvasConnectorOrthogonal: "折线箭头",
+  canvasConnectorCurve: "曲线箭头",
   canvasDuplicate: "复制所选对象",
   canvasAlignHorizontal: "水平居中对齐",
   canvasAlignVertical: "垂直居中对齐",
@@ -1717,6 +1725,9 @@ const zh: TranslationKeys = {
   pluginPermEditorDecorate: "在正文上做标记",
   pluginPermViews: "贡献侧边栏视图",
   pluginPermEditorSelection: "移动你的光标与滚动位置",
+  pluginPermCanvasRead: "读取画布上引用节点的标识（不含你画的其它内容）",
+  pluginPermCanvasWrite: "在你指定的画布上添加与更新引用节点",
+  pluginPermAiSummarize: "调用你自己的 AI 接口概括笔记（消耗你的额度）",
   pluginCrashedDisabled: "{name} 连续崩溃，已自动停用",
   pluginPermissionDenied: "扩展缺少权限：{permission}",
   pluginInstalled: "已安装 {name}",
@@ -1725,6 +1736,9 @@ const zh: TranslationKeys = {
   pluginRolledBack: "已回滚到 {version}",
   pluginCommandFailed: "命令执行失败：{code}",
   pluginInstallFailed: "安装失败：{message}",
+  pluginInstallNetwork: "下载失败（网络）：已按 cdn → fastly → gcore 依次尝试，均未连通。{detail}",
+  pluginInstallPackageGone: "安装包不存在：索引指向的文件已被删除或地址失效，重试无用。请刷新索引或联系插件作者。{detail}",
+  pluginInstallIo: "本地文件读写失败：{detail}",
   pluginHostIncompatible: "该扩展不支持当前应用版本",
   pluginApiIncompatible: "该扩展的接口版本不受支持",
   pluginCommandConflict: "命令 ID 已被占用：{ids}",
@@ -1817,6 +1831,7 @@ const en: TranslationKeys = {
   canvasShapeDiamond: "Decision node",
   canvasConnectorStraight: "Straight arrow",
   canvasConnectorOrthogonal: "Orthogonal arrow",
+  canvasConnectorCurve: "Curved arrow",
   canvasDuplicate: "Duplicate selection",
   canvasAlignHorizontal: "Align horizontal centers",
   canvasAlignVertical: "Align vertical centers",
@@ -2600,6 +2615,9 @@ const en: TranslationKeys = {
   pluginPermEditorDecorate: "Mark up the note you have open",
   pluginPermViews: "Add a panel to the sidebar",
   pluginPermEditorSelection: "Move your cursor and scroll position",
+  pluginPermCanvasRead: "Read the ids of reference nodes on a canvas (nothing else you drew)",
+  pluginPermCanvasWrite: "Add and refresh reference nodes on a canvas you pick",
+  pluginPermAiSummarize: "Summarise notes through your own AI endpoint (uses your credit)",
   pluginCrashedDisabled: "{name} crashed repeatedly and was disabled",
   pluginPermissionDenied: "The extension lacks permission: {permission}",
   pluginInstalled: "Installed {name}",
@@ -2608,6 +2626,9 @@ const en: TranslationKeys = {
   pluginRolledBack: "Rolled back to {version}",
   pluginCommandFailed: "Command failed: {code}",
   pluginInstallFailed: "Install failed: {message}",
+  pluginInstallNetwork: "Download failed (network): cdn, fastly and gcore were all tried and none answered. {detail}",
+  pluginInstallPackageGone: "Package is gone: the file the index points at no longer exists. Retrying will not help — refresh the index or contact the author. {detail}",
+  pluginInstallIo: "Local file access failed: {detail}",
   pluginHostIncompatible: "This extension does not support the current app version",
   pluginApiIncompatible: "This extension's API version is not supported",
   pluginCommandConflict: "Command IDs already taken: {ids}",

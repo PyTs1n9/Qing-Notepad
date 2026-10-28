@@ -56,12 +56,14 @@
 | `decisions-recycle-bin.md` | 笔记回收站的删除/恢复语义 | 动删除逻辑 | 5.8 KB |
 | `decisions-export-docx-pdf.md` | 导出 Word/PDF 的选型与前置结论 | 动导出格式 | 5.0 KB |
 | `decisions-plugin-system.md` | 插件机制 D1–D7：双轨运行、A 档贡献点、中央索引、手动更新、`apiVersion` | 动插件机制的任何决策 | 6.2 KB |
+| `decisions-canvas-note-tree.md` | 笔记文件树 → 画布结构图：`ref` 引用节点、曲线连线、`hidden`、`canvas:write` 四个方法、幂等语义 | 动画布条目类型 / 连线样式 / 画布插件 API | 13.4 KB |
+| `decisions-plugin-snippet.md` | 片段库插件 D1–D8：只插入不做模板、四个占位符、**无输入 UI 时的交互设计**、权限压到 5 条、删除快照 | 写第二个插件 / 需要"最小权限面"范例 / 改 `examples/qing-snippet` | 5.5 KB |
 
 ## 3. 专题（分析与评审）
 
 | 文档 | 摘要 | 什么时候读它 | 大小 |
 | --- | --- | --- | --- |
-| `plugin-guide.md` | **插件入门**：加了什么功能、怎么维护、怎么装插件、怎么开发插件（含 API 速查与最小示例） | 想写插件 / 想知道插件能干什么 | 8.5 KB |
+| `plugin-guide.md` | **插件入门**：提供了什么能力、怎么维护、怎么装插件、怎么开发插件（权限表、API 速查、错误码与限额、最小示例），以及端到端验收判据（`npm run verify:plugin-e2e` / `verify:plugin-snippet`） | 想写插件 / 想知道插件能干什么 / 发版前验收 | 25.0 KB |
 | `verification-plugin-l1.md` | L1 插件**实测**做了什么：Worker 隔离、两阶段安装、权限闸门、CSP 只在 release 生效、14 项验收 | 动 `src/plugin/`、`src-tauri/plugin*.rs` | 13.9 KB |
 | `analysis-extension-host.md` | 把 Worker 插件扩成 VS Code 式扩展宿主的取舍：不自带 Node、P0–P2 分期、CM6 七条硬约束 | 读插件 P1a 取舍（编辑器 API 已交付、独立宿主 P1b 未做） | 27.8 KB |
 | `analysis-vscode-extension-ecosystem.md` | VS Code 扩展生态五维分析：规模、蠕虫事件、安装量陷阱、命名空间抢注 | 评审插件分发/更新策略时 | 21.2 KB |
@@ -104,6 +106,7 @@
 | 工作台 / 概览 / 弹窗 | `decisions-workspace-dashboard.md` | `decisions-layout-unification.md` |
 | 想开发插件 / 装插件 | `plugin-guide.md` | `examples/*/src/qing.d.ts` |
 | 插件机制 / 权限 / 安装 | `verification-plugin-l1.md` | `decisions-plugin-system.md` + `topics/plugin-system.md` |
+| 画布条目 / 连线 / 笔记树 | `decisions-canvas-note-tree.md` | `src/types/canvas.ts` + `src/utils/canvasGeometry.ts` |
 | 插件 API / 编辑器 / CM6 | `analysis-extension-host.md`（P1a）——编辑器 API 是 **CodeMirror 6** 映射：`getText(range?)` / `getSelection()` / `replace()` / `setDecorations()`，权限 `editor:read\|write\|decorate`（`setSelection` 不在交付物，新码 `editor:selection` 排 P1a-2） | `analysis-vscode-extension-ecosystem.md` |
 | 数据目录 / 迁移 / 图片 | `review-performance-security.md` | `topics/env.md` |
 | CSP / capability / `fs:scope` | `verify-batch3.md` | `review-performance-security.md` |

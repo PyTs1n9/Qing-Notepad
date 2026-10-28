@@ -35,6 +35,15 @@ export const PLUGIN_PERMISSIONS = [
   // not "rewrite my note" — the user decides each one separately.
   "views",
   "editor:selection",
+  // Canvas writes go through the host, never through a board file. `read` is
+  // deliberately narrow: it exposes the *keys* of reference nodes only, never
+  // the rest of the board, which is all a re-sync needs to tell "the user
+  // deleted this node" from "this note is new".
+  "canvas:read",
+  "canvas:write",
+  // Summarising a note spends the user's own API credit, which is why it is a
+  // separate code rather than something `notes:read` quietly unlocks.
+  "ai:summarize",
 ] as const;
 
 export type PluginPermission = (typeof PLUGIN_PERMISSIONS)[number];
@@ -54,6 +63,9 @@ export const PERMISSION_LABEL_KEYS: Record<PluginPermission, keyof TranslationKe
   "editor:decorate": "pluginPermEditorDecorate",
   views: "pluginPermViews",
   "editor:selection": "pluginPermEditorSelection",
+  "canvas:read": "pluginPermCanvasRead",
+  "canvas:write": "pluginPermCanvasWrite",
+  "ai:summarize": "pluginPermAiSummarize",
 };
 
 export function isPluginPermission(value: string): value is PluginPermission {
@@ -198,6 +210,12 @@ export type PluginErrorCode =
   | "E_NO_EDITOR"
   /** P1a: a document range that is not inside the current text. */
   | "E_RANGE_INVALID"
+  /** P1c: a canvas call omitted `boardId` and no canvas is open. */
+  | "E_NO_CANVAS"
+  /** P1c: a reference node, edge or board id the host refuses to write. */
+  | "E_INVALID_ARGUMENT"
+  /** P1c: `ai.summarize` with no usable endpoint/model configured. */
+  | "E_NO_PROVIDER"
   /** P1a-1.5: the index advertises a different permission set than the package. */
   | "E_INDEX_PERMISSION_MISMATCH"
   /**

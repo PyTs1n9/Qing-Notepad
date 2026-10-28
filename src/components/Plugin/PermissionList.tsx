@@ -7,8 +7,10 @@ import {
   Eye,
   FileText,
   Highlighter,
+  LayoutDashboard,
   PanelLeft,
   PenLine,
+  Sparkles,
   TextCursorInput,
 } from "lucide-react";
 import type { LangType } from "@/stores/settingsStore";
@@ -53,6 +55,9 @@ const ICONS: Record<PluginPermission, React.ComponentType<{ size?: number; class
   "editor:decorate": Highlighter,
   views: PanelLeft,
   "editor:selection": TextCursorInput,
+  "canvas:read": LayoutDashboard,
+  "canvas:write": LayoutDashboard,
+  "ai:summarize": Sparkles,
 };
 
 /**

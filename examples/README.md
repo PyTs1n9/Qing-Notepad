@@ -1,6 +1,7 @@
 # 示例插件
 
-六个用来验收 L1 插件机制的最小插件。**都不入索引**，只能「从文件安装」或「从文件夹安装」。
+八个插件示例。**只有 `qing.snippet` 已上架市场**（条目在 `Qing-Notepad-Plugins` 的
+`index.json`，应用里能直接看到「安装」按钮）；其余七个不入索引，只能「从文件安装」或「从文件夹安装」。
 
 | 目录 | 插件 id | 清单格式 | 用到的权限 |
 | --- | --- | --- | --- |
@@ -10,6 +11,8 @@
 | `qing-wordcount-ts/` | `qing.wordcount-ts` | `package.json` | `notes:read`、`notify` |
 | `qing-editor-demo/` | `qing.editor-demo` | `package.json` | `editor:read`、`notify` |
 | `qing-outline/` | `qing.outline` | `package.json` | `editor:read`、`editor:selection`、`views`、`notify` |
+| `qing-snippet/` | `qing.snippet` | `package.json` | `storage`、`views`、`editor:read`、`editor:write`、`editor:selection` |
+| `qing-note-tree/` | `qing.note-tree` | `package.json` | `notes:read`、`canvas:read`、`canvas:write`、`ai:summarize`、`storage`、`notify` |
 
 `qing-wordcount-ts` 与 `qing-note-wordcount` 功能完全相同，区别只在清单格式和源语言：
 前者是「`package.json` + TypeScript」，后者是「`plugin.json` + JavaScript」。
@@ -21,6 +24,17 @@
 `qing-outline` 是 P1a-2 两个新能力的样例：`qing.views` 侧边栏树 + `qing.editor.setSelection`，
 把当前笔记的标题列在侧栏底部、点标题移光标。`README.md` 里有树的构造规则与点击语义。
 
+`qing-snippet` 是第一个**同时用满四个权限面**的样例：`storage` 存片段、`views` 出面板、
+`editor:write` 插入、`editor:selection` 把光标放到 `${cursor}` 的位置。
+它也是「没有输入 UI 时怎么设计交互」的样本——片段靠选区首行命名、分组靠点分组行传递。
+`docs/decisions-plugin-snippet.md` 记了八条取舍，`npm run verify:plugin-snippet` 是它的逻辑门禁
+（43 条断言，把 `dist/extension.js` 装进 mock 宿主里跑）。
+
+`qing-note-tree` 是第一个**写画布**的样例：`notes.tree()` 拿目录结构、插件自己算右向树布局、
+`canvas.upsertRefNodes` / `upsertRefConnectors` 交给宿主落盘。它证明了「插件给逻辑、宿主给能力」
+这条分层能走通——插件全程不知道任何画布条目 id，也不需要碰 board 文件。
+`npm run verify:plugin-note-tree` 是它的逻辑门禁（30 条断言，mock 画布按引用键幂等 upsert）。
+
 已经构建并打包好，可以直接在「扩展」页 → 「从文件安装」里选：
 
 ```
@@ -30,6 +44,8 @@ examples/qing.isolation-probe-1.0.0.qnp
 examples/qing.wordcount-ts-1.0.0.qnp
 examples/qing.editor-demo-1.0.0.qnp
 examples/qing.outline-1.0.0.qnp
+examples/qing.snippet-1.0.0.qnp
+examples/qing.note-tree-1.0.0.qnp
 ```
 
 「从文件夹安装」直接选上表的目录即可（`qing-note-wordcount/` 里同时有 `package.json`

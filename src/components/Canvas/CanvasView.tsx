@@ -27,6 +27,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Waves,
   Waypoints,
   X,
   ZoomIn,
@@ -38,6 +39,9 @@ import { emit } from "@tauri-apps/api/event";
 import type { Editor } from "@tiptap/react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useCanvasStore } from "@/stores/canvasStore";
+import { useNoteStore } from "@/stores/noteStore";
+import { useTabStore } from "@/stores/tabStore";
+import { requestOpenNoteFromCanvas } from "@/utils/canvasRefs";
 import type {
   CanvasConnectorItem,
   CanvasConnectorStyle,
@@ -48,6 +52,7 @@ import type {
   CanvasImageItem,
   CanvasItem,
   CanvasNodeItem,
+  CanvasRefItem,
   CanvasRichTextItem,
   CanvasShapeItem,
   CanvasShapeType,
@@ -69,6 +74,7 @@ import {
   getCanvasAnchorPoint,
   getCanvasItemBounds,
   resolveCanvasConnector,
+  visibleCanvasItems,
 } from "@/utils/canvasGeometry";
 import { t, tWithParams } from "@/utils/i18n";
 import { getCanvasRichTextHtml, plainTextToCanvasHtml } from "@/utils/canvasRichText";
@@ -294,7 +300,7 @@ function isCanvasClipboardItem(value: unknown): value is CanvasClipboardItem {
       && isFiniteNumber(item.strokeWidth);
   }
   if (item.type === "connector") {
-    return (item.style === "straight" || item.style === "orthogonal")
+    return (item.style === "straight" || item.style === "orthogonal" || item.style === "curve")
       && typeof item.stroke === "string"
       && isFiniteNumber(item.strokeWidth)
       && typeof item.endArrow === "boolean"
@@ -331,12 +337,14 @@ export default function CanvasView() {
   const lang = useSettingsStore((state) => state.lang);
   const {
     board,
+    activeCanvasId,
     selectedId,
     selectedIds,
     loaded,
     history,
     future,
     loadBoard,
+    setActiveCanvasId,
     setSelectedId,
     setSelectedIds,
     toggleSelectedId,
@@ -383,7 +391,6 @@ export default function CanvasView() {
   const [lastPointer, setLastPointer] = useState<Point | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [canvases, setCanvases] = useState<CanvasDocument[]>([]);
-  const [activeCanvasId, setActiveCanvasId] = useState<string | null>(null);
   const [canvasListLoaded, setCanvasListLoaded] = useState(false);
   const [switchingCanvas, setSwitchingCanvas] = useState(false);
   const [canvasMenuOpen, setCanvasMenuOpen] = useState(false);
@@ -1645,8 +1652,21 @@ export default function CanvasView() {
     );
   };
 
+  /**
+   * Reference nodes are read-only: double-clicking hands the note id back to
+   * the shell, which owns view routing. A folder or root node has nothing to
+   * open, so it stays inert.
+   */
+  const openRefNode = (item: CanvasRefItem) => {
+    if (item.ref.kind !== "note") return;
+    useNoteStore.getState().setActiveNoteId(item.ref.id);
+    useTabStore.getState().openTab(item.ref.id, { preview: false });
+    requestOpenNoteFromCanvas(item.ref.id);
+  };
+
   const renderItem = (rawItem: CanvasItem) => {
     const item = getDisplayItem(rawItem);
+    if (item.hidden) return null;
     if (item.type === "doodle") {
       return <CanvasDoodleStroke key={item.id} item={item} maskPrefix="canvas-doodle-mask" />;
     }
@@ -1710,6 +1730,29 @@ export default function CanvasView() {
         </g>
       );
     }
+    if (item.type === "ref") {
+      const body = item.summary || item.excerpt || "";
+      const isNote = item.ref.kind === "note";
+      return (
+        <g key={item.id} transform={transform} onPointerDown={(event) => startItemDrag(event, item)} onDoubleClick={() => openRefNode(item)}>
+          <rect width={item.width} height={item.height} rx={10} fill="var(--color-bg-secondary)" stroke="var(--color-border)" strokeWidth={1} />
+          <rect width={3} height={Math.max(1, item.height - 8)} y={4} rx={1.5} fill="var(--color-accent)" opacity={isNote ? 0.35 : 1} />
+          <foreignObject x={12} y={10} width={Math.max(1, item.width - 24)} height={Math.max(1, item.height - 20)} pointerEvents="none">
+            <div style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "var(--font-sans)" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3, color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {item.title}
+              </div>
+              {body && (
+                <div style={{ marginTop: 4, fontSize: 11.5, lineHeight: 1.45, color: "var(--color-text-secondary)", maxHeight: Math.max(1, item.height - 44), overflow: "hidden" }}>
+                  {body}
+                </div>
+              )}
+            </div>
+          </foreignObject>
+          {renderSelection(item)}
+        </g>
+      );
+    }
     return (
       <g key={item.id} transform={transform} onPointerDown={(event) => startItemDrag(event, item)}>
         <rect width={item.width} height={item.height} fill="transparent" />
@@ -1752,7 +1795,9 @@ export default function CanvasView() {
               ? <Spline size={15} />
               : tool === "connector-orthogonal"
                 ? <Waypoints size={15} />
-                : <ImagePlus size={15} />;
+                : tool === "connector-curve"
+                  ? <Waves size={15} />
+                  : <ImagePlus size={15} />;
 
   return (
     <section className="canvas-surface flex min-h-0 flex-1 flex-col bg-bg-primary">
@@ -1785,6 +1830,7 @@ export default function CanvasView() {
             <CanvasToolbarMenuItem label={t(lang, "canvasShapeDiamond")} icon={<Diamond size={15} />} onSelect={() => { setTool("shape-diamond"); setConnectorStartId(null); }} active={tool === "shape-diamond"} />
             <CanvasToolbarMenuItem label={t(lang, "canvasConnectorStraight")} icon={<Spline size={15} />} onSelect={() => { setTool("connector-straight"); setConnectorStartId(null); }} active={tool === "connector-straight"} />
             <CanvasToolbarMenuItem label={t(lang, "canvasConnectorOrthogonal")} icon={<Waypoints size={15} />} onSelect={() => { setTool("connector-orthogonal"); setConnectorStartId(null); }} active={tool === "connector-orthogonal"} />
+            <CanvasToolbarMenuItem label={t(lang, "canvasConnectorCurve")} icon={<Waves size={15} />} onSelect={() => { setTool("connector-curve"); setConnectorStartId(null); }} active={tool === "connector-curve"} />
           </div>
         </CanvasToolbarMenu>
         <CanvasToolbarMenu
@@ -2114,7 +2160,7 @@ export default function CanvasView() {
             </defs>
             <rect x={minimap.viewBox.x} y={minimap.viewBox.y} width={minimap.viewBox.width} height={minimap.viewBox.height} fill="var(--color-bg-primary)" />
             <rect x={minimap.viewBox.x} y={minimap.viewBox.y} width={minimap.viewBox.width} height={minimap.viewBox.height} fill="url(#canvas-minimap-grid)" />
-            {minimap.items.map((item) => {
+            {visibleCanvasItems(minimap.items).map((item) => {
               const strokeWidth = Math.max(0.5, minimap.viewBox.width / 420);
               if (item.type === "connector") {
                 const connector = resolveCanvasConnector(item, minimap.items);

@@ -78,9 +78,11 @@ import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
 import type { LatestRelease } from "@/utils/updateChecker";
 import { renderStoredNoteContentForExport } from "@/utils/markdown";
+import { storedContentToMarkdown } from "@/utils/htmlToMarkdown";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
 import { flushActiveNote } from "@/utils/noteFlush";
+import { CANVAS_OPEN_NOTE_EVENT } from "@/utils/canvasRefs";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -88,7 +90,6 @@ import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Todo, Note, ViewType } from "@/types";
-import TurndownService from "turndown";
 
 const COLLAPSED_WIDTH = 0;
 const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
@@ -105,33 +106,6 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function isStoredEditorHtml(content: string): boolean {
-  return /<\/?(p|h[1-6]|ul|ol|li|blockquote|pre|div|img|hr|br)\b[\s\S]*>/i.test(content);
-}
-
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  codeBlockStyle: "fenced",
-  emDelimiter: "*",
-  bulletListMarker: "-",
-  hr: "---",
-});
-
-turndownService.addRule("img", {
-  filter: "img",
-  replacement: (_content, node) => {
-    const el = node as HTMLImageElement;
-    const source = el.dataset.attachmentSrc || el.src;
-    return `![${el.alt || "image"}](${source})`;
-  },
-});
-
-function htmlToMarkdown(html: string): string {
-  return turndownService
-    .turndown(html)
-    .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1");
 }
 
 /**
@@ -646,6 +620,18 @@ export default function App() {
     if (initialized) saveTodos(todos);
   }, [todos, initialized]);
 
+  // A canvas reference node cannot switch views on its own: it announces the
+  // note it points at and the shell owns the routing.
+  useEffect(() => {
+    const handleOpenNoteFromCanvas = (event: Event) => {
+      const noteId = (event as CustomEvent<string>).detail;
+      if (!noteId) return;
+      setCurrentView("note");
+    };
+    window.addEventListener(CANVAS_OPEN_NOTE_EVENT, handleOpenNoteFromCanvas);
+    return () => window.removeEventListener(CANVAS_OPEN_NOTE_EVENT, handleOpenNoteFromCanvas);
+  }, []);
+
   useEffect(() => {
     if (initialized) saveTodoLists({ lists: todoLists, activeListId: activeTodoListId });
   }, [todoLists, activeTodoListId, initialized]);
@@ -1083,10 +1069,7 @@ export default function App() {
         return;
       }
 
-      const exportContent = isStoredEditorHtml(storedContent)
-        ? htmlToMarkdown(storedContent)
-        : storedContent;
-      await writeTextFile(exportPath, exportContent);
+      await writeTextFile(exportPath, storedContentToMarkdown(storedContent));
     } catch (e) {
       console.error("Export file failed:", e);
       const detail = e instanceof Error ? e.message : String(e);
