@@ -21,6 +21,44 @@ import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..");
 const bundle = readFileSync(join(root, "examples", "qing-snippet", "dist", "extension.js"), "utf8");
+const manifest = JSON.parse(
+  readFileSync(join(root, "examples", "qing-snippet", "package.json"), "utf8"),
+);
+
+/**
+ * The permission gate.
+ *
+ * Without this the mock says yes to everything, and a manifest that is missing a
+ * code still passes every assertion — which is exactly how 1.0.0 shipped without
+ * `notify` while calling `ui.toast` on every command: the panel rendered fine,
+ * and every command ended in `E_PERMISSION_DENIED` that the user saw as "nothing
+ * happened". The table mirrors `src/plugin/bridge.ts::REQUIREMENTS`.
+ */
+const GRANTED = new Set(manifest.permissions);
+const REQUIREMENTS = {
+  "storage.get": "storage",
+  "storage.set": "storage",
+  "storage.delete": "storage",
+  "storage.keys": "storage",
+  "ui.toast": "notify",
+  "editor.getText": "editor:read",
+  "editor.getSelection": "editor:read",
+  "editor.replace": "editor:write",
+  "editor.setSelection": "editor:selection",
+  "views.refresh": "views",
+};
+
+let denied = [];
+
+function need(method) {
+  const permission = REQUIREMENTS[method];
+  if (permission && !GRANTED.has(permission)) {
+    denied.push(`${method} 需要 ${permission}，清单里没有`);
+    throw Object.assign(new Error(`E_PERMISSION_DENIED: ${permission}`), {
+      code: "E_PERMISSION_DENIED",
+    });
+  }
+}
 
 let failures = 0;
 let checks = 0;
@@ -71,20 +109,25 @@ function createHost(initialDoc = "") {
     log() {},
     storage: {
       async get(key) {
+        need("storage.get");
         return storage.get(key);
       },
       async set(key, value) {
+        need("storage.set");
         storage.set(key, value);
       },
       async delete(key) {
+        need("storage.delete");
         storage.delete(key);
       },
       async keys() {
+        need("storage.keys");
         return [...storage.keys()];
       },
     },
     ui: {
       toast(message) {
+        need("ui.toast");
         host.toasts.push(message);
       },
     },
@@ -95,20 +138,24 @@ function createHost(initialDoc = "") {
     },
     editor: {
       async getText(range) {
+        need("editor.getText");
         if (!range) return host.doc;
         return host.doc.slice(range.from, range.to);
       },
       async getSelection() {
+        need("editor.getSelection");
         const { from, to } = host.selection;
         return { from, to, anchor: from, head: to, text: host.doc.slice(from, to) };
       },
       async replace(range, text) {
+        need("editor.replace");
         if (range.from < 0 || range.to > host.doc.length || range.from > range.to) {
           throw Object.assign(new Error("range out of bounds"), { code: "E_RANGE_INVALID" });
         }
         host.doc = host.doc.slice(0, range.from) + text + host.doc.slice(range.to);
       },
       async setSelection(spec) {
+        need("editor.setSelection");
         const anchor = "from" in spec ? spec.from : spec.anchor;
         const head = "to" in spec ? spec.to : spec.head;
         host.selection = { from: Math.min(anchor, head), to: Math.max(anchor, head) };
@@ -117,10 +164,12 @@ function createHost(initialDoc = "") {
     },
     views: {
       registerTreeDataProvider(viewId, provider) {
+        // Local registration: the host requires no permission for this.
         host.provider = provider;
         host.viewId = viewId;
       },
       async refresh() {
+        need("views.refresh");
         host.refreshCount += 1;
       },
     },
@@ -140,7 +189,16 @@ function createHost(initialDoc = "") {
 async function run(host, id, itemId) {
   const handler = host.commands.get(id);
   if (!handler) throw new Error(`command ${id} was never registered`);
-  await handler(itemId);
+  try {
+    await handler(itemId);
+  } catch (error) {
+    // A command that throws is a failure even when the assertions after it
+    // happen to hold: the user-visible behaviour is "the button did nothing".
+    checks += 1;
+    failures += 1;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`  FAIL ${id} 抛异常：${message}`);
+  }
 }
 
 function groupRowId(group) {
@@ -366,6 +424,8 @@ console.log("11. 坏输入不会写坏数据");
 // ---------------------------------------------------------------------------
 
 console.log("");
+check("全程没有权限拒绝", denied, []);
+
 if (failures > 0) {
   console.error(`${failures} / ${checks} checks failed`);
   process.exit(1);

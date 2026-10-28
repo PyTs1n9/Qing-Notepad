@@ -45,14 +45,18 @@
 **理由**：自由创建分组需要输入分组名，同样卡在「没有输入 UI」。
 这是本轮发现的**第三个宿主能力缺口**，记为待定的 `ui.input` 提案。
 
-### D5 权限固定 5 条，备份改走编辑器文本而不是剪贴板
+### D5 权限 6 条，备份改走编辑器文本而不是剪贴板
 
-**结论**：`permissions = ["storage", "views", "editor:read", "editor:write", "editor:selection"]`。
+**结论**：`permissions = ["storage", "views", "notify", "editor:read", "editor:write", "editor:selection"]`。
 导出 = 把 JSON（含 ```` ```json ```` 围栏）插入光标处；导入 = 读当前选区、剥围栏后解析。
-**理由**：grill 中「备份走剪贴板 JSON」与「权限停在 5 条」互相冲突（剪贴板方案要
-`clipboard:read` + `clipboard:write`，变 7 条）。二者取其一，选**权限更小**的那条：
+**理由**：grill 中「备份走剪贴板 JSON」与「少要权限」互相冲突（剪贴板方案要
+`clipboard:read` + `clipboard:write`）。二者取其一，选**权限更小**的那条：
 导出走 `editor:write`、导入走 `editor:read`，两条都是已授权的路径，零新增权限。
 代价是导出的 JSON 落在笔记里需要用户自己保存或复制——对"逃生舱"级别的备份够用。
+
+> **1.0.0 在这里错过了 `notify`。** 当时把清单压成 5 条，漏了每条命令末尾都要调的
+> `ui.toast`——见下面的「1.0.0 事故」。定权限时必须以代码里实际调用的方法为准，
+> 逐条对照 `bridge.ts::REQUIREMENTS`，不能凭"我需要哪些能力"凭记忆列。
 
 ### D6 首装播种三条示例片段
 
@@ -74,6 +78,30 @@
 | 片段条目数 | 500 | 树的可枚举性 + 序列化体积 |
 | 一次导出 | 200,000 字符 | `replace` 硬限是 1,000,000，但 1MB 文本塞进编辑器会明显卡顿 |
 | 序列化后总量 | 900,000 字符 | `storage` 配额 1 MB，留 10% 余量后主动拒绝并提示，好过让宿主抛 `E_QUOTA_EXCEEDED` |
+
+## 1.0.0 事故：少一条 `notify`，所有命令静默失败
+
+**现象**（真机，2026-10-28 23:13）：插件装得上、授权对话框只列 5 条、侧栏面板三组正常、
+种子数据也写进了 `storage.json`——但点任何命令都没反应。插件详情页错误日志里 7 条
+`E_PERMISSION_DENIED`，间隔 1–3 秒，正好对应点击次数。
+
+**根因**：清单漏了 `notify`，而每条命令的最后一步都是 `ui.toast(...)`。
+`bridge.ts::REQUIREMENTS` 里 `ui: { toast: "notify" }`，未授权即拒绝。
+面板渲染和种子写入只走 `views` / `storage`，所以"看起来一切正常"——
+这是最坏的失败形态：**功能全对，用户只看到"没反应"**。
+
+**为什么门禁没抓住**：`verify-plugin-snippet.mjs` 的 mock `qing` 对任何调用都点头，
+清单缺权限也照样 43 条全绿。它验证的是逻辑，不是权限面。
+
+**修复**：
+1. 清单补 `notify`，版本升 **1.0.1**（1.0.0 已发布，按规则不复用版本号）
+2. 门禁加**权限闸门**：mock 按清单的 `permissions` 逐方法校验，表来自 `bridge.ts::REQUIREMENTS`；
+   任何未授权调用直接抛 `E_PERMISSION_DENIED`，并在结尾断言"全程没有权限拒绝"
+3. 反证：把 `notify` 从清单临时移掉后，9 条断言立刻红在
+   `FAIL qing.snippet.insert 抛异常：E_PERMISSION_DENIED: notify`；恢复后 44 条全绿
+
+**教训**：`apiVersion: 1` 里 `toast` 不是免费能力。写清单时逐条过 REQUIREMENTS 表，
+比"我要读笔记、要写编辑器"这种按意图列法可靠。
 
 ## 待定问题
 

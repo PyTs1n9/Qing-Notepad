@@ -3,7 +3,7 @@
   "publisher": "qing",
   "displayName": "片段库",
   "description": "把常用段落存成片段，一条命令插到光标处；支持日期/时间/光标/选区四个占位符。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "author": {
     "name": "Qing Notepad",
@@ -28,6 +28,7 @@
   "permissions": [
     "storage",
     "views",
+    "notify",
     "editor:read",
     "editor:write",
     "editor:selection"
