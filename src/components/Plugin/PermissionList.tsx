@@ -14,7 +14,7 @@ import {
   TextCursorInput,
 } from "lucide-react";
 import type { LangType } from "@/stores/settingsStore";
-import { t } from "@/utils/i18n";
+import { t, tWithParams } from "@/utils/i18n";
 import {
   PERMISSION_LABEL_KEYS,
   isPluginPermission,
@@ -37,6 +37,14 @@ interface PermissionListProps {
   onGrant?: (permission: PluginPermission) => void;
   /** Shown instead of the list when nothing was declared. */
   emptyLabel?: string;
+  /** The row whose grant/revoke request is in flight; its action is disabled. */
+  busyPermission?: string | null;
+  /**
+   * Extra permissions a revoke would also take away (a write grant carries its
+   * read). Returns their labels; when non-empty the button explains itself in
+   * `title`/`aria-description` instead of silently doing more than it says.
+   */
+  onRevokeAlso?: (permission: PluginPermission) => string[];
 }
 
 const ICONS: Record<PluginPermission, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -61,11 +69,30 @@ const ICONS: Record<PluginPermission, React.ComponentType<{ size?: number; class
 };
 
 /**
+ * A read grant that only exists because its write grant does. The store expands
+ * the pair on write, so revoking the write takes the read with it - which is why
+ * the row cannot be revoked on its own.
+ */
+const IMPLIED_BY: Partial<Record<PluginPermission, PluginPermission>> = {
+  "notes:read": "notes:write",
+  "todo:read": "todo:write",
+};
+
+// The colour is not in the base: `text-*` utilities have equal specificity, so
+// appending an override would resolve by stylesheet order, not by class order.
+// Revoke and grant pick their own.
+const ACTION_BUTTON =
+  "flex h-5 flex-shrink-0 items-center rounded px-1 text-[11px] font-medium underline-offset-2 transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-50";
+
+/**
  * One row per permission, in plain language.
  *
  * The wording lives in `i18n` rather than here because this list is the main
  * thing a user reads before trusting a package — it has to be translatable and
  * it has to be identical in the install prompt and the detail pane.
+ *
+ * The row is borderless by default: the caller's card supplies the frame, and
+ * doubling it here put a 1px box inside every card in the product.
  */
 const PermissionList: React.FC<PermissionListProps> = ({
   permissions,
@@ -76,6 +103,8 @@ const PermissionList: React.FC<PermissionListProps> = ({
   missing = [],
   onGrant,
   emptyLabel,
+  busyPermission = null,
+  onRevokeAlso,
 }) => {
   const granted = permissions.filter(isPluginPermission);
   const absent = missing
@@ -84,62 +113,86 @@ const PermissionList: React.FC<PermissionListProps> = ({
 
   if (granted.length === 0 && absent.length === 0) {
     return (
-      <p className="text-xs text-text-muted">
+      <p className="p-1.5 text-xs text-text-muted">
         {emptyLabel ?? t(lang, "pluginPermissionsNone")}
       </p>
     );
   }
 
   return (
-    <ul className="space-y-1">
+    <ul className="space-y-0.5 p-1.5">
       {granted.map((permission) => {
         const Icon = ICONS[permission];
         const added = emphasize.includes(permission);
+        const revocable = !canRevoke || canRevoke(permission);
+        const impliedBy = IMPLIED_BY[permission];
+        const alsoRevoked = onRevoke && revocable && !added ? onRevokeAlso?.(permission) ?? [] : [];
+        const busy = busyPermission === permission;
         return (
           <li
             key={permission}
-            className="flex items-center gap-2.5 rounded-lg border border-border bg-bg-secondary/40 px-2.5 py-1.5"
+            className={`plugin-detail-row flex min-h-[34px] items-center gap-2.5 rounded-lg px-2 py-2 ${
+              onRevoke && revocable && !added ? "transition-colors hover:bg-bg-hover/40" : ""
+            }`}
           >
-            <Icon size={13} className="flex-shrink-0 text-text-muted" />
-            <span className="min-w-0 flex-1 text-xs text-text-primary">
+            <Icon size={14} className="flex-shrink-0 text-text-muted" />
+            <span className="plugin-detail-label min-w-0 flex-1 text-[13px] leading-[18px] text-text-primary">
               {t(lang, PERMISSION_LABEL_KEYS[permission])}
             </span>
             {added && (
-              <span className="flex-shrink-0 rounded bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
+              <span className="inline-flex h-4 flex-shrink-0 items-center rounded border border-border bg-accent-light px-1 text-[10px] font-medium leading-none text-accent-text">
                 {t(lang, "pluginPermissionNew")}
               </span>
             )}
-            <code className="flex-shrink-0 text-[10px] text-text-muted">{permission}</code>
-            {onRevoke && !added && (!canRevoke || canRevoke(permission)) && (
-              <button
-                type="button"
-                onClick={() => onRevoke(permission)}
-                className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-danger"
-              >
-                {t(lang, "pluginPermissionRevoke")}
-              </button>
-            )}
+            <code className="plugin-perm-code flex-shrink-0 font-mono text-[11px] text-text-muted">
+              {permission}
+            </code>
+            {onRevoke && !added &&
+              (revocable ? (
+                <button
+                  type="button"
+                  onClick={() => onRevoke(permission)}
+                  disabled={busy}
+                  title={alsoRevoked.length > 0 ? tWithParams(lang, "pluginPermRevokeAlso", { list: alsoRevoked.join("、") }) : undefined}
+                  aria-description={alsoRevoked.length > 0 ? tWithParams(lang, "pluginPermRevokeAlso", { list: alsoRevoked.join("、") }) : undefined}
+                  className={`${ACTION_BUTTON} text-text-secondary hover:text-text-primary`}
+                >
+                  {t(lang, "pluginPermissionRevoke")}
+                </button>
+              ) : impliedBy ? (
+                // Not a dead end any more: the row says why it cannot be taken
+                // away on its own instead of dropping the action silently.
+                <span className="flex-shrink-0 text-[10px] leading-3 text-text-muted">
+                  {tWithParams(lang, "pluginPermImplied", {
+                    permission: t(lang, PERMISSION_LABEL_KEYS[impliedBy]),
+                  })}
+                </span>
+              ) : null)}
           </li>
         );
       })}
 
       {absent.map((permission) => {
         const Icon = ICONS[permission];
+        const busy = busyPermission === permission;
         return (
           <li
             key={permission}
-            className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-2.5 py-1.5"
+            className="plugin-detail-row flex min-h-[34px] items-center gap-2.5 rounded-lg border border-dashed border-border px-2 py-2"
           >
-            <Icon size={13} className="flex-shrink-0 text-text-muted/60" />
-            <span className="min-w-0 flex-1 text-xs text-text-muted">
+            <Icon size={14} className="flex-shrink-0 text-text-muted/70" />
+            <span className="plugin-detail-label min-w-0 flex-1 text-[13px] leading-[18px] text-text-secondary">
               {t(lang, PERMISSION_LABEL_KEYS[permission])}
             </span>
-            <code className="flex-shrink-0 text-[10px] text-text-muted/70">{permission}</code>
+            <code className="plugin-perm-code flex-shrink-0 font-mono text-[11px] text-text-muted">
+              {permission}
+            </code>
             {onGrant && (
               <button
                 type="button"
                 onClick={() => onGrant(permission)}
-                className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-accent-text"
+                disabled={busy}
+                className={`${ACTION_BUTTON} text-accent-text hover:text-text-primary`}
               >
                 {t(lang, "pluginPermissionGrant")}
               </button>

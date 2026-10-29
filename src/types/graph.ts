@@ -204,7 +204,6 @@ export type Resolution = ResolvedLink | AmbiguousLink | MissingLink;
 
 /** 画布取色缓存。所有值都来自 `--color-*` / `--text-*` 等 CSS 变量。 */
 export interface GraphPalette {
-  bg: string;
   nodeNative: string;
   nodeVault: string;
   nodeIsolatedFill: string;

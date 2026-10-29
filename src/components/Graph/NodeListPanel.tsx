@@ -14,8 +14,18 @@ import type { GraphNode } from "@/types/graph";
 import type { LangType } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 
-/** Fixed, so `scrollTop` maps to an index without measuring anything. */
-const ROW_HEIGHT = 28;
+/**
+ * Fixed, so `scrollTop` maps to an index without measuring anything.
+ *
+ * `ROW_HEIGHT` is the *slot*, not the row: the row itself is
+ * `ROW_HEIGHT - ROW_GAP` (28px) and is inset by half the gap, so consecutive
+ * pills have air between them and a hover block never touches its neighbour.
+ * The slot height is the one number the virtual window depends on — it, the
+ * inline `top`/`height`, and the container's `maxHeight` (8 slots) move
+ * together. Do not raise the row back to the slot height: the pills would fuse.
+ */
+const ROW_HEIGHT = 32;
+const ROW_GAP = 4;
 const OVERSCAN = 6;
 
 export interface NodeListPanelProps {
@@ -79,6 +89,40 @@ const NodeListPanel: React.FC<NodeListPanelProps> = ({
     setScrollTop(element.scrollTop);
   }, [selectedIndex]);
 
+  /*
+   * Hand focus back when the list empties itself.
+   *
+   * The container drops `role="listbox"` and `tabIndex` at zero results (an
+   * empty listbox is a trap: Tab lands on it, the screen reader announces
+   * "list, 0 items" and there is no way out). But removing `tabIndex` does not
+   * blur, it only strands focus on what is now a plain div — invisible to the
+   * keyboard and silent to the reader. So the migration is explicit.
+   *
+   * Deliberately conditional on `document.activeElement`: the common way to
+   * reach zero results is to keep clicking the filter switches, and grabbing
+   * focus on every one of those clicks would be worse than the trap. On first
+   * mount focus is never inside the list, so this is a no-op there.
+   *
+   * The destination is the component's own search input when it has one, else
+   * the toolbar's: this page passes `showSearch={false}`, so `#graph-node-search`
+   * does not exist here and the chain falls through to `#graph-search`. Written
+   * as a chain rather than a single id so the component does not bake one page's
+   * assumption into a reusable panel.
+   *
+   * Both guards are load-bearing, and the order matters.
+   * `nodes.length > 0` is not redundant with the `activeElement` check: the
+   * snapshot on this page is push-based, so a background vault sync can change
+   * the node count while the user is sitting in the list. Without it, that push
+   * re-runs this effect and yanks focus to the search box with no user action —
+   * the kind of bug that is nearly impossible to reproduce. Only when the list
+   * is genuinely empty is there no valid focus target inside it.
+   */
+  useEffect(() => {
+    if (nodes.length > 0) return;
+    if (scrollRef.current !== document.activeElement) return;
+    (document.getElementById("graph-node-search") ?? document.getElementById("graph-search"))?.focus();
+  }, [nodes.length]);
+
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2;
   const last = Math.min(nodes.length, first + visibleCount);
@@ -114,7 +158,7 @@ const NodeListPanel: React.FC<NodeListPanelProps> = ({
   };
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {showSearch && (
         <>
           <label className="sr-only" htmlFor="graph-node-search">
@@ -128,28 +172,63 @@ const NodeListPanel: React.FC<NodeListPanelProps> = ({
             placeholder={t(lang, "graphSearchPlaceholder")}
             autoComplete="off"
             spellCheck={false}
-            className="mb-1 w-full rounded-md border border-border bg-bg-primary px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="mb-1 w-full rounded-md bg-bg-primary/50 px-2 py-1 text-[11px] text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           />
         </>
       )}
+      {/*
+        Sibling of the scroll container, not a child — three reasons: the scroll
+        area keeps `option`-only children at any count, the block can never be
+        clipped or scrolled by `overflow-y-auto`, and the container stays mounted
+        so the effect above can still read `scrollRef.current`. ARIA validity is
+        *not* a reason: `role` is conditional, so a `role="status"` child was
+        legal anyway.
+        `min-h-32` + a centred shell, not padding: 128px of empty state reads as
+        "the list is empty", not "one line with no siblings".
+      */}
+      {nodes.length === 0 && (
+        <div className="flex min-h-32 items-center justify-center px-3">
+          <p role="status" className="py-6 text-center text-[11px] leading-4 text-text-muted">
+            {t(lang, "graphSearchNoResult")}
+          </p>
+        </div>
+      )}
+      {/*
+        The container stays mounted even when empty — the focus-migration effect
+        above compares `scrollRef.current` with `document.activeElement`, and
+        unmounting it would make that comparison permanently false.
+
+        `role` / `tabIndex` / `aria-activedescendant` are conditional: at zero
+        results this is not a listbox, and pretending it is produces a tab stop
+        that announces "list, 0 items" with nothing inside and no way forward.
+        Three ternaries rather than a spread because `role` is a literal union in
+        TS and a spread object widens it to `string`.
+      */}
       <div
         ref={scrollRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         onKeyDown={handleKeyDown}
-        tabIndex={0}
-        role="listbox"
+        tabIndex={nodes.length > 0 ? 0 : undefined}
+        role={nodes.length > 0 ? "listbox" : undefined}
         aria-label={t(lang, "graphNodeList")}
-        aria-activedescendant={selectedId ? `graph-node-${selectedId}` : undefined}
-        className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-bg-primary/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        style={{ maxHeight: 240 }}
+        aria-activedescendant={
+          nodes.length > 0 && selectedId ? `graph-node-${selectedId}` : undefined
+        }
+        className="-mx-1 min-h-0 flex-1 overflow-y-auto focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        style={{ maxHeight: 256 }}
       >
-        {nodes.length === 0 ? (
-          <p className="px-2 py-3 text-xs text-text-muted">{t(lang, "graphSearchNoResult")}</p>
-        ) : (
+        {nodes.length > 0 && (
           <div className="relative" style={{ height: nodes.length * ROW_HEIGHT }}>
             {slice.map((node, offset) => {
               const index = first + offset;
               const selected = node.id === selectedId;
+              /*
+               * One element per row: `role="option"` and the click handlers sit
+               * on the element whose geometry is the row, so the hit area and
+               * the a11y node can never drift apart. The pill look comes from
+               * `inset-x-1` + the slot height minus the gap — not from a nested
+               * box, and not from `px-1` on a full-bleed wrapper.
+               */
               return (
                 <div
                   key={node.id}
@@ -159,11 +238,11 @@ const NodeListPanel: React.FC<NodeListPanelProps> = ({
                   data-index={index}
                   onClick={() => onSelect(node.id)}
                   onDoubleClick={() => onActivate(node.id)}
-                  style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
-                  className={`absolute inset-x-0 flex cursor-pointer items-center gap-1.5 truncate px-2 text-xs ${
+                  style={{ top: index * ROW_HEIGHT + ROW_GAP / 2, height: ROW_HEIGHT - ROW_GAP }}
+                  className={`absolute inset-x-1 flex cursor-pointer items-center gap-2.5 rounded-md px-1.5 text-xs transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
                     selected
-                      ? "bg-bg-hover text-accent-text"
-                      : "text-text-primary hover:bg-bg-hover"
+                      ? "bg-bg-active text-text-primary"
+                      : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
                   }`}
                 >
                   <span
@@ -176,9 +255,13 @@ const NodeListPanel: React.FC<NodeListPanelProps> = ({
                           : "bg-text-secondary"
                     }`}
                   />
-                  <span className="truncate">{node.title}</span>
+                  <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium" : ""}`}>
+                    {node.title}
+                  </span>
                   {node.path && node.path !== node.title ? (
-                    <span className="truncate text-text-muted">{node.path}</span>
+                    <span className="ml-auto max-w-[45%] flex-shrink-0 truncate text-right text-[11px] text-text-muted">
+                      {node.path}
+                    </span>
                   ) : null}
                 </div>
               );

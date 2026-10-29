@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -13,10 +13,13 @@ import {
   Hand,
   ImagePlus,
   Layers3,
+  Loader2,
   Maximize2,
+  MoreHorizontal,
   MousePointer2,
   Palette,
   PanelRight,
+  Pencil,
   PenLine,
   Pin,
   Plus,
@@ -94,7 +97,7 @@ type CanvasTool =
   | `shape-${CanvasShapeType}`
   | `connector-${CanvasConnectorStyle}`;
 type SaveState = "saved" | "saving";
-type ToolbarMenu = "insert" | "draw" | "arrange" | "view" | "style";
+type ToolbarMenu = "insert" | "draw" | "arrange" | "view" | "style" | "more";
 type CanvasClipboardItem = CanvasImageItem | CanvasTextItem | CanvasShapeItem | CanvasConnectorItem;
 
 interface Point {
@@ -331,9 +334,31 @@ function readCanvasClipboard(clipboardData: DataTransfer | null): { raw: string;
   }
 }
 
-/* `shrink-0` because the row clips instead of scrolling: a squeezed icon button
+/* 28px square, 12px text, 7px radius: one control language for the pill.
+   `shrink-0` because the row clips instead of scrolling: a squeezed icon button
    would collapse to its padding and lose the glyph entirely. */
-const toolbarButton = "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
+/* `--rail-wash`, not `bg-hover`: `utils/theme.ts` assigns `--color-bg-hover` the
+   value of `--color-bg-secondary`, and the pill is filled with that same colour
+   — on a custom palette the two are identical and hover measures 1.00. The wash
+   is mixed from the text colour, so it moves with every theme. */
+const toolbarButton = "inline-flex h-7 min-w-7 shrink-0 items-center justify-center whitespace-nowrap rounded-[7px] px-1.5 text-xs text-text-secondary transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[color:var(--rail-wash)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
+
+/* The shell has exactly one selection language: an accent block with the
+   on-accent foreground. No track, no extra indicator, no second treatment. */
+const toolbarButtonActive = "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent";
+
+/* The rail's resting state is 44px wide and a row inside it is 31px, so the
+   only thing that can identify a canvas there is its first glyph(s). One CJK
+   character or two Latin ones fit the 32px slot; anything longer would either
+   be clipped or push the row. Two canvases sharing a first character are
+   indistinguishable at rest — that is what `title` and the open panel are for. */
+function canvasMonogram(name: string): string {
+  const chars = Array.from(name.trim());
+  if (chars.length === 0) return "?";
+  const first = chars[0];
+  if (/[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(first)) return first;
+  return chars.slice(0, 2).join("");
+}
 
 export default function CanvasView() {
   const lang = useSettingsStore((state) => state.lang);
@@ -402,7 +427,24 @@ export default function CanvasView() {
   const [renamingCanvasName, setRenamingCanvasName] = useState("");
   const [deletingCanvasId, setDeletingCanvasId] = useState<string | null>(null);
   const newCanvasInputRef = useRef<HTMLInputElement>(null);
+  const newCanvasRowRef = useRef<HTMLButtonElement>(null);
   const renameCanvasInputRef = useRef<HTMLInputElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const canvasRailRef = useRef<HTMLDivElement>(null);
+  const canvasFooterRef = useRef<HTMLButtonElement>(null);
+  const canvasRowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const canvasListRef = useRef<HTMLDivElement>(null);
+  /* Windows draws an overlay scrollbar that is invisible until it moves, so the
+     gradient above the footer is the only thing saying "there are more rows".
+     It starts assumed-at-the-end (nothing to hint before the first measurement)
+     and is corrected by `syncRailFade` on mount, on open, and on every scroll. */
+  const [railAtEnd, setRailAtEnd] = useState(true);
+  /* Where focus goes once a deleted row has left the DOM. The `✓` button that
+     owned it is gone in the same commit, so without this the keystroke drops
+     focus on `body` and the next Tab restarts from the top of the app. `id`
+     null means "the list is empty" → the footer, which is the panel's own
+     button. A ref, not state: it must not cause a second render. */
+  const focusAfterDeleteRef = useRef<{ id: string | null } | null>(null);
 
   const hasUndo = history.length > 0;
   const hasRedo = future.length > 0;
@@ -639,6 +681,19 @@ export default function CanvasView() {
     });
   }, [board.items, centerViewportOnPoint, getDisplayItem, setSelectedId]);
 
+  /* Focus must not be dropped on `body` when the panel closes under it: the row
+     that owned it is about to become a 30px monogram. The footer is the
+     disclosure button, so it is where a collapsed panel's focus belongs. This
+     only steals focus when focus was already inside the rail — closing while
+     clicking the canvas must not move it. Declared before `switchCanvas`
+     because that callback has to close the panel through it. */
+  const returnFocusToRail = useCallback(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && canvasRailRef.current?.contains(active)) {
+      canvasFooterRef.current?.focus();
+    }
+  }, []);
+
   const switchCanvas = useCallback(async (canvasId: string) => {
     if (!canvasId || canvasId === activeCanvasId || switchingCanvas || !loaded) return;
     if (editingTextId) finishEditingText();
@@ -658,11 +713,15 @@ export default function CanvasView() {
       setRenamingCanvasName("");
       setDeletingCanvasId(null);
       loadBoard(storedBoard ?? createEmptyCanvasBoard());
+      /* The row that started this is about to become an unlabelled monogram and
+         the panel is closing under it, so focus moves to the rail's own button
+         instead of being left on a 30px target (or dropped on `body`). */
+      returnFocusToRail();
       setCanvasMenuOpen(false);
     } finally {
       setSwitchingCanvas(false);
     }
-  }, [activeCanvasId, editingTextId, finishEditingText, loadBoard, loaded, switchingCanvas]);
+  }, [activeCanvasId, editingTextId, finishEditingText, loadBoard, loaded, returnFocusToRail, switchingCanvas]);
 
   const createCanvas = useCallback(async () => {
     const name = newCanvasName.trim();
@@ -712,9 +771,30 @@ export default function CanvasView() {
     setCanvasMenuOpen(true);
   }, [loaded, switchingCanvas]);
 
-  const cancelRenameCanvas = useCallback(() => {
+  /* "Switching" is a state the rail reports, never a dead control: rows and
+     their buttons stay enabled and dim nothing. A 40%-opacity row takes
+     `--rail-ring` to 1.57-1.72 against the panel, i.e. the current canvas
+     visibly loses its ring exactly while the user is watching which one is
+     being left. `aria-disabled` + an early return in every handler carries the
+     same meaning without the contrast bill. */
+  const railLocked = switchingCanvas || !canvasListLoaded || !loaded;
+
+  const cancelRenameCanvas = useCallback((canvasId?: string) => {
     setRenamingCanvasId(null);
     setRenamingCanvasName("");
+    /* The input that owned focus is being unmounted; the row's main button is
+       remounted in the same commit, hence the deferred target. */
+    if (canvasId) pendingRailFocusRef.current = canvasId;
+  }, []);
+
+  /* Leaving the delete confirmation is not the same as confirming it: the row
+     goes back to its two hover actions and focus returns to the button that
+     opened the pair, because the pair's own `✓` took focus on mount and is
+     about to unmount. Without this, cancelling with the keyboard drops focus on
+     `body` and Escape has nothing local to do. */
+  const dismissDeleteConfirm = useCallback((canvasId: string) => {
+    setDeletingCanvasId(null);
+    canvasRowRefs.current[canvasId]?.focus();
   }, []);
 
   const renameCanvas = useCallback(async () => {
@@ -724,7 +804,7 @@ export default function CanvasView() {
     const current = canvases.find((canvas) => canvas.id === renamingCanvasId);
     if (!current) return;
     if (current.name === name) {
-      cancelRenameCanvas();
+      cancelRenameCanvas(renamingCanvasId);
       return;
     }
     const nextCanvases = canvases.map((canvas) => (
@@ -734,7 +814,7 @@ export default function CanvasView() {
     ));
     await saveCanvasList(nextCanvases);
     setCanvases(nextCanvases);
-    cancelRenameCanvas();
+    cancelRenameCanvas(renamingCanvasId);
   }, [canvases, cancelRenameCanvas, loaded, renamingCanvasId, renamingCanvasName, switchingCanvas]);
 
   const requestDeleteCanvas = useCallback((canvasId: string) => {
@@ -764,11 +844,126 @@ export default function CanvasView() {
     }
   }, [canvasMenuOpen, closeCanvasMenu]);
 
+  /* Focus that has to outlive the element that owned it. The rename form
+     *replaces* the row's main button and the create form *replaces* the "+"
+     row, so "put focus back on that row" cannot run in the same tick — the
+     target does not exist until the next commit. A ref, not state: this must
+     not cause a second render, and it has to survive the render that removes
+     the form. `"new"` is the create row; any other value is a canvas id. */
+  const pendingRailFocusRef = useRef<"new" | string | null>(null);
+
+  useLayoutEffect(() => {
+    const target = pendingRailFocusRef.current;
+    if (!target) return;
+    pendingRailFocusRef.current = null;
+    if (target === "new") newCanvasRowRef.current?.focus();
+    else canvasRowRefs.current[target]?.focus();
+  });
+
+  /* The open panel is a 248px strip of canvas you cannot draw on. Until now the
+     only way out of it was the footer button. */
+  useEffect(() => {
+    if (!canvasMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (canvasRailRef.current?.contains(target)) return;
+      returnFocusToRail();
+      closeCanvasMenu();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [canvasMenuOpen, closeCanvasMenu, returnFocusToRail]);
+
+  /* Twenty canvases open at the top of the list, which answers nothing: the
+     first question is "which one am I in". `block: "nearest"` keeps it to the
+     smallest possible scroll, and reduced motion gets an instant jump.
+
+     A long list needs a second look. The panel animates its width for
+     `--dur-slow`, and the labels that grow with it change the *height* of every
+     row that wraps nothing but shifts the scroll extent — so a row that was
+     already in view at 44px can end up clipped at 248px. One correction after
+     the width transition settles (`transitionend`, plus a timer for the reduced
+     motion / interrupted cases) is enough; a scroll per frame would fight the
+     smooth one. */
+  useLayoutEffect(() => {
+    if (!canvasMenuOpen || !activeCanvasId) return;
+    const row = canvasRowRefs.current[activeCanvasId];
+    if (!row) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+    if (canvases.length <= 8) return;
+
+    const panel = canvasRailRef.current?.querySelector<HTMLElement>(".canvas-switcher-panel");
+    let frame = 0;
+    let timer = 0;
+    const correct = () => {
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        canvasRowRefs.current[activeCanvasId]?.scrollIntoView({ block: "nearest", behavior: "auto" });
+      });
+    };
+    const onTransitionEnd = (event: TransitionEvent) => {
+      if (event.propertyName === "width") correct();
+    };
+    panel?.addEventListener("transitionend", onTransitionEnd);
+    /* 320ms is `--dur-slow` (280ms) plus a frame of slack. A JS timer, not a
+       CSS duration: this only fires when the transition never reported one
+       (reduced motion, a cancelled open). */
+    timer = window.setTimeout(correct, 320);
+    return () => {
+      panel?.removeEventListener("transitionend", onTransitionEnd);
+      window.clearTimeout(timer);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [canvasMenuOpen, activeCanvasId, canvases.length]);
+
+  /* "There is more below" is measured, never assumed: the gradient is dropped
+     the moment the last row is reached, or that row would rest inside the band
+     and read as washed out — the exact defect a `mask-image` cannot avoid. */
+  const syncRailFade = useCallback(() => {
+    const list = canvasListRef.current;
+    if (!list) return;
+    setRailAtEnd(list.scrollTop + list.clientHeight >= list.scrollHeight - 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    /* Opening grows the panel by the 20px group label and animates its width, so
+       the first measurement is repeated on the next frame: the row count is
+       fixed but `clientHeight` is not. It also runs while the rail is at rest —
+       twenty canvases overflow the 44px strip too, and the hint belongs there
+       as much as in the open panel. */
+    syncRailFade();
+    const frame = window.requestAnimationFrame(syncRailFade);
+    window.addEventListener("resize", syncRailFade);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", syncRailFade);
+    };
+  }, [canvasMenuOpen, canvases.length, syncRailFade]);
+
+  /* Editing text gives the top of the canvas to the format bar; the pill fades
+     out and goes `inert`. `inert` alone does not clear an existing focus in
+     every engine, so drop it first — a focused control inside an inert subtree
+     is how a keyboard user loses the caret. */
+  useLayoutEffect(() => {
+    if (!canvasTextEditor) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && pillRef.current?.contains(active)) active.blur();
+  }, [canvasTextEditor]);
+
   const removeCanvas = useCallback(async (canvasId: string) => {
     const canvas = canvases.find((candidate) => candidate.id === canvasId);
     if (!canvas) return;
 
+    const removedIndex = canvases.findIndex((candidate) => candidate.id === canvasId);
     const nextCanvases = canvases.filter((candidate) => candidate.id !== canvasId);
+    /* Finder's rule: focus lands on the row that took the deleted one's place,
+       or on the last row when the tail went. An empty list has no row left, so
+       it falls back to the footer — the panel's own button. */
+    const focusIndex = Math.max(0, Math.min(removedIndex, nextCanvases.length - 1));
+    const nextFocusId = nextCanvases[focusIndex]?.id ?? null;
     setSwitchingCanvas(true);
     try {
       if (canvasId === activeCanvasId && activeCanvasId) {
@@ -797,11 +992,28 @@ export default function CanvasView() {
           loadBoard(createEmptyCanvasBoard());
         }
       }
-      setCanvasMenuOpen(false);
+      /* Deleting a row is a list operation, so the list stays put — the inline
+         confirmation already told the user they are inside one. Only an empty
+         list has nothing left to stay for. */
+      setCanvasMenuOpen(nextCanvases.length > 0);
+      focusAfterDeleteRef.current = { id: nextFocusId };
     } finally {
       setSwitchingCanvas(false);
     }
   }, [activeCanvasId, canvases, editingTextId, finishEditingText, loadBoard]);
+
+  /* Restore focus after the row that owned it unmounted. Runs after commit, so
+     `canvasRowRefs` already points at the new rows; the `switchingCanvas` guard
+     matters because every row is disabled while a board reloads, and a disabled
+     button silently ignores `focus()` — the effect re-runs when it clears. */
+  useLayoutEffect(() => {
+    if (switchingCanvas) return;
+    const pending = focusAfterDeleteRef.current;
+    if (!pending) return;
+    focusAfterDeleteRef.current = null;
+    const target = pending.id ? canvasRowRefs.current[pending.id] : canvasFooterRef.current;
+    target?.focus();
+  }, [canvases, switchingCanvas]);
 
   const updateViewportAt = useCallback((clientX: number, clientY: number, zoom: number) => {
     const svg = svgRef.current;
@@ -1258,6 +1470,17 @@ export default function CanvasView() {
         event.preventDefault();
         removeItems(selectedIds);
       } else if (event.key === "Escape") {
+        /* One decision point, in priority order: an already-consumed Escape (a
+           toolbar menu closed itself on the capture phase) must not also clear
+           the selection, and an open canvas rail is the next most local thing
+           to dismiss. Rename/new-canvas inputs return earlier via
+           `isTextInput`, which is what makes Escape two-level there. */
+        if (event.defaultPrevented) return;
+        if (canvasMenuOpen) {
+          returnFocusToRail();
+          closeCanvasMenu();
+          return;
+        }
         setSelectedId(null);
         setConnectorStartId(null);
         setTool("select");
@@ -1278,7 +1501,7 @@ export default function CanvasView() {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [handleCanvasClipboardWrite, handlePaste, redo, removeItems, selectedIds, setSelectedId, undo]);
+  }, [canvasMenuOpen, closeCanvasMenu, handleCanvasClipboardWrite, handlePaste, redo, removeItems, returnFocusToRail, selectedIds, setSelectedId, undo]);
 
   const startPan = (event: React.PointerEvent<SVGElement>) => {
     interactionRef.current = {
@@ -1814,198 +2037,277 @@ export default function CanvasView() {
                   ? <Waves size={15} />
                   : <ImagePlus size={15} />;
 
+  /* The four viewport commands appear twice — as the View menu above 396px and
+     inside the overflow menu below it — so they are built once. Same items,
+     same handlers: the narrow layout loses no commands, it only loses labels. */
+  const viewMenuItems = (
+    <div className="grid grid-cols-2 gap-1">
+      <CanvasToolbarMenuItem label={t(lang, "canvasZoomOut")} icon={<ZoomOut size={15} />} onSelect={() => zoomBy(0.8)} />
+      <CanvasToolbarMenuItem label={t(lang, "canvasZoomIn")} icon={<ZoomIn size={15} />} onSelect={() => zoomBy(1.25)} />
+      <CanvasToolbarMenuItem label={t(lang, "canvasResetZoom")} icon={<span className="font-semibold">1:1</span>} onSelect={resetZoom} />
+      <CanvasToolbarMenuItem label={t(lang, "canvasFit")} icon={<Maximize2 size={15} />} onSelect={fitCanvas} />
+    </div>
+  );
+
   return (
     <section className="canvas-surface flex min-h-0 flex-1 flex-col bg-bg-primary">
-      <div className="canvas-toolbar flex h-11 flex-shrink-0 items-center gap-1 overflow-hidden border-b border-border bg-bg-secondary px-3" data-lang={lang}>
-        <div className="mr-1.5 flex min-w-0 shrink items-center gap-2 text-sm font-semibold text-text-primary">
-          <ImagePlus size={16} className="shrink-0 text-accent-text" />
-          <span className="canvas-toolbar-title-label truncate">{activeCanvas?.name || t(lang, "canvas")}</span>
-        </div>
-        <div className="h-5 w-px shrink-0 bg-border" />
-        <button type="button" className={`${toolbarButton} ${tool === "select" ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent" : ""}`} onClick={() => setTool("select")} title={toolTitle(t(lang, "canvasSelect"))} aria-label={t(lang, "canvasSelect")}>
-          <MousePointer2 size={15} />
-        </button>
-        <button type="button" className={`${toolbarButton} ${tool === "pan" ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent" : ""}`} onClick={() => setTool("pan")} title={toolTitle(t(lang, "canvasPan"))} aria-label={t(lang, "canvasPan")}>
-          <Hand size={15} />
-        </button>
-        <CanvasToolbarMenu
-          label={t(lang, "canvasInsert")}
-          icon={insertMenuIcon}
-          open={openToolbarMenu === "insert"}
-          onOpenChange={(open) => setOpenToolbarMenu(open ? "insert" : null)}
-          active={insertToolActive}
-          panelClassName="w-72"
-        >
-          <div className="grid grid-cols-2 gap-1">
-            <CanvasToolbarMenuItem label={t(lang, "canvasAddImage")} icon={<ImagePlus size={15} />} onSelect={() => void handleChooseImage()} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasAddText")} icon={<Type size={15} />} onSelect={() => setTool("text")} active={tool === "text"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasShapeRectangle")} icon={<RectangleHorizontal size={15} />} onSelect={() => { setTool("shape-rectangle"); setConnectorStartId(null); }} active={tool === "shape-rectangle"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasShapeRounded")} icon={<SquareRoundCorner size={15} />} onSelect={() => { setTool("shape-rounded"); setConnectorStartId(null); }} active={tool === "shape-rounded"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasShapeEllipse")} icon={<Circle size={15} />} onSelect={() => { setTool("shape-ellipse"); setConnectorStartId(null); }} active={tool === "shape-ellipse"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasShapeDiamond")} icon={<Diamond size={15} />} onSelect={() => { setTool("shape-diamond"); setConnectorStartId(null); }} active={tool === "shape-diamond"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasConnectorStraight")} icon={<Spline size={15} />} onSelect={() => { setTool("connector-straight"); setConnectorStartId(null); }} active={tool === "connector-straight"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasConnectorOrthogonal")} icon={<Waypoints size={15} />} onSelect={() => { setTool("connector-orthogonal"); setConnectorStartId(null); }} active={tool === "connector-orthogonal"} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasConnectorCurve")} icon={<Waves size={15} />} onSelect={() => { setTool("connector-curve"); setConnectorStartId(null); }} active={tool === "connector-curve"} />
-          </div>
-        </CanvasToolbarMenu>
-        <CanvasToolbarMenu
-          label={t(lang, "canvasDraw")}
-          icon={tool === "doodle-eraser" ? <Eraser size={15} /> : <PenLine size={15} />}
-          open={openToolbarMenu === "draw"}
-          onOpenChange={(open) => setOpenToolbarMenu(open ? "draw" : null)}
-          active={drawToolActive}
-          panelClassName="w-72"
-        >
-          <div className="grid grid-cols-2 gap-1">
-            <CanvasToolbarMenuItem label={t(lang, "canvasDoodlePen")} icon={<PenLine size={15} />} onSelect={() => selectDoodleTool("pen")} active={tool === "doodle-pen"} closeOnSelect={false} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasDoodleEraser")} icon={<Eraser size={15} />} onSelect={() => selectDoodleTool("eraser")} active={tool === "doodle-eraser"} closeOnSelect={false} />
-          </div>
-          <div className="my-2 h-px bg-border" />
-          {tool === "doodle-eraser" ? (
-            <div className="space-y-3 px-1 pb-1">
-              <div className="font-semibold">{t(lang, "canvasDoodleEraser")}</div>
-              <div>
-                <div className="mb-1.5 text-text-secondary">{t(lang, "canvasEraserShape")}</div>
-                <div className="grid grid-cols-2 gap-1 rounded-lg bg-bg-secondary p-1">
-                  {(["circle", "square"] as const).map((shape) => (
-                    <button
-                      key={shape}
-                      type="button"
-                      onClick={() => setEraserShape(shape)}
-                      className={`h-7 rounded-md transition-colors ${
-                        eraserShape === shape
-                          ? "bg-accent text-on-accent"
-                          : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-                      }`}
-                    >
-                      {t(lang, shape === "circle" ? "canvasEraserCircle" : "canvasEraserSquare")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="block text-text-secondary">
-                <span className="mb-1.5 flex items-center justify-between">
-                  <span>{t(lang, "canvasEraserSize")}</span>
-                  <span className="tabular-nums text-text-primary">{eraserSize}px</span>
-                </span>
-                <input type="range" min="8" max="96" step="2" value={eraserSize} onChange={(event) => setEraserSize(Number(event.target.value))} className="w-full accent-accent" />
-              </label>
-              <label className="block text-text-secondary">
-                <span className="mb-1.5 flex items-center justify-between">
-                  <span>{t(lang, "canvasEraserOpacity")}</span>
-                  <span className="tabular-nums text-text-primary">{Math.round(eraserOpacity * 100)}%</span>
-                </span>
-                <input type="range" min="0.1" max="1" step="0.1" value={eraserOpacity} onChange={(event) => setEraserOpacity(Number(event.target.value))} className="w-full accent-accent" />
-              </label>
-            </div>
-          ) : (
-            <div className="space-y-3 px-1 pb-1">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold">{t(lang, "canvasDoodlePen")}</span>
-                <span className="h-5 w-10 rounded-full border border-border" style={{ backgroundColor: doodleColor }} />
-              </div>
-              <label className="flex items-center justify-between gap-3 text-text-secondary">
-                <span>{t(lang, "canvasDoodleColor")}</span>
-                <input type="color" value={doodleColor} onChange={(event) => setDoodleColor(event.target.value)} className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0" />
-              </label>
-              <label className="block text-text-secondary">
-                <span className="mb-1.5 flex items-center justify-between">
-                  <span>{t(lang, "canvasDoodleWidth")}</span>
-                  <span className="tabular-nums text-text-primary">{doodleWidth}px</span>
-                </span>
-                <input type="range" min="1" max="24" step="1" value={doodleWidth} onChange={(event) => setDoodleWidth(Number(event.target.value))} className="w-full accent-accent" />
-              </label>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={clearPageDoodles}
-            disabled={doodleItems.length === 0}
-            className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-danger/30 text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Trash2 size={14} />
-            <span>{t(lang, "canvasClearDoodles")}</span>
-          </button>
-        </CanvasToolbarMenu>
-        <CanvasToolbarMenu
-          label={t(lang, "canvasArrange")}
-          icon={<Layers3 size={15} />}
-          open={openToolbarMenu === "arrange"}
-          onOpenChange={(open) => setOpenToolbarMenu(open ? "arrange" : null)}
-          panelClassName="w-60"
-        >
-          <div className="space-y-1">
-            <CanvasToolbarMenuItem label={t(lang, "canvasDuplicate")} icon={<Copy size={15} />} onSelect={duplicateSelection} disabled={selectedIds.length === 0} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasAlignHorizontal")} icon={<AlignCenterVertical size={15} />} onSelect={() => alignSelection("horizontal")} disabled={selectedIds.length < 2} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasAlignVertical")} icon={<AlignCenterHorizontal size={15} />} onSelect={() => alignSelection("vertical")} disabled={selectedIds.length < 2} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasMoveLayerUp")} icon={<ArrowUp size={15} />} onSelect={() => selectedId && moveLayer(selectedId, "up")} disabled={!canMoveLayerUp} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasMoveLayerDown")} icon={<ArrowDown size={15} />} onSelect={() => selectedId && moveLayer(selectedId, "down")} disabled={!canMoveLayerDown} />
-            <div className="my-1 h-px bg-border" />
-            <CanvasToolbarMenuItem label={t(lang, "canvasDelete")} icon={<Trash2 size={15} />} onSelect={() => removeItems(selectedIds)} disabled={selectedIds.length === 0} className="text-danger hover:bg-danger/10 hover:text-danger" />
-          </div>
-        </CanvasToolbarMenu>
-        <CanvasToolbarMenu
-          label={t(lang, "canvasView")}
-          icon={<Maximize2 size={15} />}
-          open={openToolbarMenu === "view"}
-          onOpenChange={(open) => setOpenToolbarMenu(open ? "view" : null)}
-          panelClassName="w-56"
-        >
-          <div className="grid grid-cols-2 gap-1">
-            <CanvasToolbarMenuItem label={t(lang, "canvasZoomOut")} icon={<ZoomOut size={15} />} onSelect={() => zoomBy(0.8)} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasZoomIn")} icon={<ZoomIn size={15} />} onSelect={() => zoomBy(1.25)} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasResetZoom")} icon={<span className="font-semibold">1:1</span>} onSelect={resetZoom} />
-            <CanvasToolbarMenuItem label={t(lang, "canvasFit")} icon={<Maximize2 size={15} />} onSelect={fitCanvas} />
-          </div>
-        </CanvasToolbarMenu>
-        {(selectedShape || selectedConnector) && (
-          <CanvasToolbarMenu
-            label={t(lang, "canvasStyle")}
-            icon={<Palette size={15} />}
-            open={openToolbarMenu === "style"}
-            onOpenChange={(open) => setOpenToolbarMenu(open ? "style" : null)}
-            active
-            align="end"
-            panelClassName="w-56"
-          >
-            <div className="space-y-2 p-1">
-              {selectedShape && (
-                <label className="flex h-9 items-center justify-between gap-3 rounded-lg px-2 text-text-secondary" title={t(lang, "canvasShapeFill")}>
-                  <span>{t(lang, "canvasFill")}</span>
-                  <input type="color" value={selectedShape.fill.startsWith("#") ? selectedShape.fill : "#f4f7fb"} onChange={(event) => updateItem(selectedShape.id, { fill: event.target.value })} className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0" />
-                </label>
-              )}
-              <label className="flex h-9 items-center justify-between gap-3 rounded-lg px-2 text-text-secondary" title={t(lang, "canvasShapeStroke")}>
-                <span>{t(lang, "canvasStroke")}</span>
-                <input
-                  type="color"
-                  value={(selectedShape?.stroke ?? selectedConnector?.stroke ?? "#3b82f6").startsWith("#") ? (selectedShape?.stroke ?? selectedConnector?.stroke ?? "#3b82f6") : "#3b82f6"}
-                  onChange={(event) => {
-                    if (selectedShape) updateItem(selectedShape.id, { stroke: event.target.value });
-                    if (selectedConnector) updateItem(selectedConnector.id, { stroke: event.target.value });
-                  }}
-                  className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0"
-                />
-              </label>
-            </div>
-          </CanvasToolbarMenu>
-        )}
-        <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
-        <button type="button" className={toolbarButton} onClick={undo} disabled={!hasUndo} title={t(lang, "undo")}><Undo2 size={15} /></button>
-        <button type="button" className={toolbarButton} onClick={redo} disabled={!hasRedo} title={t(lang, "redo")}><Redo2 size={15} /></button>
-        <span className="canvas-toolbar-zoom inline-flex h-8 min-w-10 items-center justify-center rounded-md px-1.5 text-xs tabular-nums text-text-secondary" title={zoomLabel}>{zoomLabel}</span>
-        <div className="flex-1" />
-        <span className="canvas-toolbar-status mr-1 flex items-center whitespace-nowrap text-xs text-text-muted">{saveState === "saving" ? t(lang, "canvasSaving") : <><Check size={12} className="mr-1 inline shrink-0 text-success" />{t(lang, "canvasSaved")}</>}</span>
-        <button type="button" className={toolbarButton} onClick={() => void handleOpenCanvasTile()} disabled={!activeCanvasId} title={t(lang, "canvasOpenTile")}>
-          <Pin size={15} />
-          <span className="canvas-toolbar-action-label">{t(lang, "canvasOpenTile")}</span>
-        </button>
-        <button type="button" className={toolbarButton} onClick={() => void handleExport()} disabled={board.items.length === 0 || exporting} title={t(lang, "canvasExport")} aria-busy={exporting}>
-          <Download size={15} />
-          <span className="canvas-toolbar-action-label">{exporting ? t(lang, "canvasExporting") : t(lang, "canvasExport")}</span>
-        </button>
-      </div>
+      {/* No toolbar row any more: the stage starts at the top edge of the card
+          and the pill floats over it. `section` stays `flex flex-col` so the
+          stage's `flex-1` still fills it — adding `relative` or `justify-*`
+          here would turn the 44px that came back into a gap. */}
       <div className="app-work-area-overlay relative min-h-0 flex-1 overflow-hidden">
+        <div className="canvas-pill-layer">
+          <div
+            ref={pillRef}
+            className={`canvas-pill${canvasTextEditor ? " canvas-pill--hidden" : ""}`}
+            data-lang={lang}
+            inert={canvasTextEditor != null ? true : undefined}
+          >
+            {/* A — identity: which canvas this is, and whether it is saved.
+                Saving is a state, not an action, so it sits next to the name
+                instead of beside Export; and it carries no words, because it
+                would spend 36px of every width on the same value 99% of the
+                time. 6px inside the cluster: 8px is the *segment* beat. */}
+            <div className="canvas-seg canvas-seg--identity">
+              <ImagePlus size={16} className="shrink-0 text-accent-text" aria-hidden />
+              <span className="canvas-toolbar-title-label truncate text-[13px] font-semibold text-text-primary">
+                {activeCanvas?.name || t(lang, "canvas")}
+              </span>
+              <span
+                className={`canvas-toolbar-status${saveState === "saving" ? " canvas-toolbar-status--saving" : ""}`}
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                title={saveState === "saving" ? t(lang, "canvasSaving") : t(lang, "canvasSaved")}
+              >
+                {saveState === "saving"
+                  ? <><Loader2 size={12} className="animate-spin" aria-hidden /><span className="sr-only">{t(lang, "canvasSaving")}</span></>
+                  : <Check size={12} aria-hidden />}
+              </span>
+            </div>
+            <span className="canvas-seg-rule" aria-hidden />
+            {/* B — tools. Two clusters 6px apart: the pointer pair, then the
+                four menus that put something on the canvas. */}
+            <div className="canvas-seg canvas-seg--cluster">
+              <div className="canvas-seg">
+                <button type="button" className={`${toolbarButton} ${tool === "select" ? toolbarButtonActive : ""}`} onClick={() => setTool("select")} title={toolTitle(t(lang, "canvasSelect"))} aria-label={t(lang, "canvasSelect")} aria-pressed={tool === "select"}>
+                  <MousePointer2 size={15} />
+                </button>
+                <button type="button" className={`${toolbarButton} ${tool === "pan" ? toolbarButtonActive : ""}`} onClick={() => setTool("pan")} title={toolTitle(t(lang, "canvasPan"))} aria-label={t(lang, "canvasPan")} aria-pressed={tool === "pan"}>
+                  <Hand size={15} />
+                </button>
+              </div>
+              <div className="canvas-seg">
+                <CanvasToolbarMenu
+                  label={t(lang, "canvasInsert")}
+                  icon={insertMenuIcon}
+                  open={openToolbarMenu === "insert"}
+                  onOpenChange={(open) => setOpenToolbarMenu(open ? "insert" : null)}
+                  active={insertToolActive}
+                  panelClassName="w-72"
+                >
+                  <div className="grid grid-cols-2 gap-1">
+                    <CanvasToolbarMenuItem label={t(lang, "canvasAddImage")} icon={<ImagePlus size={15} />} onSelect={() => void handleChooseImage()} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasAddText")} icon={<Type size={15} />} onSelect={() => setTool("text")} active={tool === "text"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasShapeRectangle")} icon={<RectangleHorizontal size={15} />} onSelect={() => { setTool("shape-rectangle"); setConnectorStartId(null); }} active={tool === "shape-rectangle"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasShapeRounded")} icon={<SquareRoundCorner size={15} />} onSelect={() => { setTool("shape-rounded"); setConnectorStartId(null); }} active={tool === "shape-rounded"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasShapeEllipse")} icon={<Circle size={15} />} onSelect={() => { setTool("shape-ellipse"); setConnectorStartId(null); }} active={tool === "shape-ellipse"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasShapeDiamond")} icon={<Diamond size={15} />} onSelect={() => { setTool("shape-diamond"); setConnectorStartId(null); }} active={tool === "shape-diamond"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasConnectorStraight")} icon={<Spline size={15} />} onSelect={() => { setTool("connector-straight"); setConnectorStartId(null); }} active={tool === "connector-straight"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasConnectorOrthogonal")} icon={<Waypoints size={15} />} onSelect={() => { setTool("connector-orthogonal"); setConnectorStartId(null); }} active={tool === "connector-orthogonal"} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasConnectorCurve")} icon={<Waves size={15} />} onSelect={() => { setTool("connector-curve"); setConnectorStartId(null); }} active={tool === "connector-curve"} />
+                  </div>
+                </CanvasToolbarMenu>
+                <CanvasToolbarMenu
+                  label={t(lang, "canvasDraw")}
+                  icon={tool === "doodle-eraser" ? <Eraser size={15} /> : <PenLine size={15} />}
+                  open={openToolbarMenu === "draw"}
+                  onOpenChange={(open) => setOpenToolbarMenu(open ? "draw" : null)}
+                  active={drawToolActive}
+                  panelClassName="w-72"
+                >
+                  <div className="grid grid-cols-2 gap-1">
+                    <CanvasToolbarMenuItem label={t(lang, "canvasDoodlePen")} icon={<PenLine size={15} />} onSelect={() => selectDoodleTool("pen")} active={tool === "doodle-pen"} closeOnSelect={false} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasDoodleEraser")} icon={<Eraser size={15} />} onSelect={() => selectDoodleTool("eraser")} active={tool === "doodle-eraser"} closeOnSelect={false} />
+                  </div>
+                  <div className="my-2 h-px bg-border" />
+                  {tool === "doodle-eraser" ? (
+                    <div className="space-y-3 px-1 pb-1">
+                      <div className="font-semibold">{t(lang, "canvasDoodleEraser")}</div>
+                      <div>
+                        <div className="mb-1.5 text-text-secondary">{t(lang, "canvasEraserShape")}</div>
+                        <div className="grid grid-cols-2 gap-1 rounded-lg bg-bg-secondary p-1">
+                          {(["circle", "square"] as const).map((shape) => (
+                            <button
+                              key={shape}
+                              type="button"
+                              onClick={() => setEraserShape(shape)}
+                              className={`h-7 rounded-md transition-colors ${
+                                eraserShape === shape
+                                  ? "bg-accent text-on-accent"
+                                  : "text-text-secondary hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
+                              }`}
+                            >
+                              {t(lang, shape === "circle" ? "canvasEraserCircle" : "canvasEraserSquare")}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="block text-text-secondary">
+                        <span className="mb-1.5 flex items-center justify-between">
+                          <span>{t(lang, "canvasEraserSize")}</span>
+                          <span className="tabular-nums text-text-primary">{eraserSize}px</span>
+                        </span>
+                        <input type="range" min="8" max="96" step="2" value={eraserSize} onChange={(event) => setEraserSize(Number(event.target.value))} className="w-full accent-accent" />
+                      </label>
+                      <label className="block text-text-secondary">
+                        <span className="mb-1.5 flex items-center justify-between">
+                          <span>{t(lang, "canvasEraserOpacity")}</span>
+                          <span className="tabular-nums text-text-primary">{Math.round(eraserOpacity * 100)}%</span>
+                        </span>
+                        <input type="range" min="0.1" max="1" step="0.1" value={eraserOpacity} onChange={(event) => setEraserOpacity(Number(event.target.value))} className="w-full accent-accent" />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 px-1 pb-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold">{t(lang, "canvasDoodlePen")}</span>
+                        <span className="h-5 w-10 rounded-full border border-border" style={{ backgroundColor: doodleColor }} />
+                      </div>
+                      <label className="flex items-center justify-between gap-3 text-text-secondary">
+                        <span>{t(lang, "canvasDoodleColor")}</span>
+                        <input type="color" value={doodleColor} onChange={(event) => setDoodleColor(event.target.value)} className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0" />
+                      </label>
+                      <label className="block text-text-secondary">
+                        <span className="mb-1.5 flex items-center justify-between">
+                          <span>{t(lang, "canvasDoodleWidth")}</span>
+                          <span className="tabular-nums text-text-primary">{doodleWidth}px</span>
+                        </span>
+                        <input type="range" min="1" max="24" step="1" value={doodleWidth} onChange={(event) => setDoodleWidth(Number(event.target.value))} className="w-full accent-accent" />
+                      </label>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={clearPageDoodles}
+                    disabled={doodleItems.length === 0}
+                    className="mt-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-danger/30 text-danger transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Trash2 size={14} />
+                    <span>{t(lang, "canvasClearDoodles")}</span>
+                  </button>
+                </CanvasToolbarMenu>
+                <CanvasToolbarMenu
+                  label={t(lang, "canvasArrange")}
+                  icon={<Layers3 size={15} />}
+                  open={openToolbarMenu === "arrange"}
+                  onOpenChange={(open) => setOpenToolbarMenu(open ? "arrange" : null)}
+                  panelClassName="w-60"
+                >
+                  <div className="space-y-1">
+                    <CanvasToolbarMenuItem label={t(lang, "canvasDuplicate")} icon={<Copy size={15} />} onSelect={duplicateSelection} disabled={selectedIds.length === 0} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasAlignHorizontal")} icon={<AlignCenterVertical size={15} />} onSelect={() => alignSelection("horizontal")} disabled={selectedIds.length < 2} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasAlignVertical")} icon={<AlignCenterHorizontal size={15} />} onSelect={() => alignSelection("vertical")} disabled={selectedIds.length < 2} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasMoveLayerUp")} icon={<ArrowUp size={15} />} onSelect={() => selectedId && moveLayer(selectedId, "up")} disabled={!canMoveLayerUp} />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasMoveLayerDown")} icon={<ArrowDown size={15} />} onSelect={() => selectedId && moveLayer(selectedId, "down")} disabled={!canMoveLayerDown} />
+                    <div className="my-1 h-px bg-border" />
+                    <CanvasToolbarMenuItem label={t(lang, "canvasDelete")} icon={<Trash2 size={15} />} onSelect={() => removeItems(selectedIds)} disabled={selectedIds.length === 0} className="text-danger hover:bg-danger/10 hover:text-danger" />
+                  </div>
+                </CanvasToolbarMenu>
+                {(selectedShape || selectedConnector) && (
+                  <CanvasToolbarMenu
+                    label={t(lang, "canvasStyle")}
+                    icon={<Palette size={15} />}
+                    open={openToolbarMenu === "style"}
+                    onOpenChange={(open) => setOpenToolbarMenu(open ? "style" : null)}
+                    active
+                    align="end"
+                    panelClassName="w-56"
+                  >
+                    <div className="space-y-2 p-1">
+                      {selectedShape && (
+                        <label className="flex h-9 items-center justify-between gap-3 rounded-lg px-2 text-text-secondary" title={t(lang, "canvasShapeFill")}>
+                          <span>{t(lang, "canvasFill")}</span>
+                          <input type="color" value={selectedShape.fill.startsWith("#") ? selectedShape.fill : "#f4f7fb"} onChange={(event) => updateItem(selectedShape.id, { fill: event.target.value })} className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0" />
+                        </label>
+                      )}
+                      <label className="flex h-9 items-center justify-between gap-3 rounded-lg px-2 text-text-secondary" title={t(lang, "canvasShapeStroke")}>
+                        <span>{t(lang, "canvasStroke")}</span>
+                        <input
+                          type="color"
+                          value={(selectedShape?.stroke ?? selectedConnector?.stroke ?? "#3b82f6").startsWith("#") ? (selectedShape?.stroke ?? selectedConnector?.stroke ?? "#3b82f6") : "#3b82f6"}
+                          onChange={(event) => {
+                            if (selectedShape) updateItem(selectedShape.id, { stroke: event.target.value });
+                            if (selectedConnector) updateItem(selectedConnector.id, { stroke: event.target.value });
+                          }}
+                          className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent p-0"
+                        />
+                      </label>
+                    </div>
+                  </CanvasToolbarMenu>
+                )}
+              </div>
+            </div>
+            <span className="canvas-seg-rule" aria-hidden />
+            {/* C — actions. Undo/redo keep a cluster of their own: they are the
+                only muscle-memory pair here and the ⑤ breakpoint never folds
+                them away. */}
+            <div className="canvas-seg canvas-seg--cluster">
+              <div className="canvas-seg">
+                <button type="button" className={toolbarButton} onClick={undo} disabled={!hasUndo} title={t(lang, "undo")} aria-label={t(lang, "undo")}><Undo2 size={15} /></button>
+                <button type="button" className={toolbarButton} onClick={redo} disabled={!hasRedo} title={t(lang, "redo")} aria-label={t(lang, "redo")}><Redo2 size={15} /></button>
+              </div>
+              {/* How to look at the board: the menu and the figure answer the
+                  same question, which is why View moved here from behind
+                  Arrange. */}
+              <div className="canvas-seg canvas-seg--viewport">
+                <CanvasToolbarMenu
+                  label={t(lang, "canvasView")}
+                  icon={<Maximize2 size={15} />}
+                  open={openToolbarMenu === "view"}
+                  onOpenChange={(open) => setOpenToolbarMenu(open ? "view" : null)}
+                  panelClassName="w-56"
+                >
+                  {viewMenuItems}
+                </CanvasToolbarMenu>
+                <span className="canvas-toolbar-zoom inline-flex h-7 min-w-10 items-center justify-center rounded-[7px] px-1.5 text-xs tabular-nums text-text-secondary" title={zoomLabel}>{zoomLabel}</span>
+              </div>
+              {/* Open-tile and Export each have exactly one entry point in the
+                  whole app, so below 426px they move into the overflow menu
+                  rather than dropping out — dropping out would silently delete
+                  two features. */}
+              <div className="canvas-seg canvas-seg--output">
+                <button type="button" className={toolbarButton} onClick={() => void handleOpenCanvasTile()} disabled={!activeCanvasId} title={t(lang, "canvasOpenTile")} aria-label={t(lang, "canvasOpenTile")}>
+                  <Pin size={15} />
+                  <span className="canvas-toolbar-action-label">{t(lang, "canvasOpenTile")}</span>
+                </button>
+                <button type="button" className={toolbarButton} onClick={() => void handleExport()} disabled={board.items.length === 0 || exporting} title={t(lang, "canvasExport")} aria-label={t(lang, "canvasExport")} aria-busy={exporting}>
+                  <Download size={15} />
+                  <span className="canvas-toolbar-action-label">{exporting ? t(lang, "canvasExporting") : t(lang, "canvasExport")}</span>
+                </button>
+              </div>
+              {/* Overflow. One menu serves both breakpoints: below 426px it
+                  absorbs C3, below 396px it absorbs the view menu as well, so
+                  no control ever leaves the pill without a home. */}
+              <div className="canvas-seg canvas-seg--more">
+                <CanvasToolbarMenu
+                  label={t(lang, "documentActions")}
+                  icon={<MoreHorizontal size={15} />}
+                  iconOnly
+                  open={openToolbarMenu === "more"}
+                  onOpenChange={(open) => setOpenToolbarMenu(open ? "more" : null)}
+                  align="end"
+                  panelClassName="w-56"
+                >
+                  {viewMenuItems}
+                  <div className="my-1 h-px bg-border" />
+                  <CanvasToolbarMenuItem label={t(lang, "canvasOpenTile")} icon={<Pin size={15} />} onSelect={() => void handleOpenCanvasTile()} disabled={!activeCanvasId} />
+                  <CanvasToolbarMenuItem label={t(lang, "canvasExport")} icon={<Download size={15} />} onSelect={() => void handleExport()} disabled={board.items.length === 0 || exporting} />
+                </CanvasToolbarMenu>
+              </div>
+            </div>
+          </div>
+        </div>
         {canvasTextEditor && (
           <div className="absolute inset-x-0 top-0 z-50 shadow-md">
             <CanvasTextToolbar editor={canvasTextEditor} lang={lang} onDone={() => finishEditingText()} />
@@ -2122,7 +2424,7 @@ export default function CanvasView() {
             onEditorChange={setCanvasTextEditor}
             onSubmit={() => finishEditingText()}
             onCancel={() => finishEditingText(true)}
-            className="absolute z-40 overflow-hidden"
+            className="absolute z-[45] overflow-hidden"
             style={{
               boxSizing: "border-box",
               left: board.viewport.x + editingTextItem.x * board.viewport.zoom,
@@ -2147,7 +2449,7 @@ export default function CanvasView() {
         )}
         {!loaded && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-bg-primary/80 text-sm text-text-muted">{t(lang, "canvasLoading")}</div>}
         {loaded && board.items.length === 0 && <div className="pointer-events-none absolute inset-0 flex items-center justify-center"><div className="rounded-xl border border-border bg-bg-secondary/90 px-5 py-4 text-center shadow-sm"><ImagePlus size={24} className="mx-auto mb-2 text-accent-text" /><p className="text-sm font-medium text-text-primary">{t(lang, "canvasEmpty")}</p><p className="mt-1 text-xs text-text-muted">{t(lang, "canvasPasteHint")}</p></div></div>}
-        <div className="pointer-events-auto absolute bottom-4 right-4 z-20 w-[220px] overflow-hidden rounded-xl border border-border bg-bg-secondary/90 shadow-xl ring-1 ring-black/5 backdrop-blur-sm">
+        <div className="pointer-events-auto absolute bottom-4 right-4 z-20 w-[220px] overflow-hidden rounded-xl border border-border bg-bg-secondary/90 shadow-xl ring-1 ring-black/5">
           <div className="flex h-8 items-center justify-between border-b border-border px-3 text-[11px] font-semibold text-text-secondary">
             <span>{t(lang, "canvasOverview")}</span>
             <span className="rounded-full bg-bg-hover px-1.5 py-0.5 text-[10px] font-medium text-text-muted">{minimap.items.length}</span>
@@ -2239,22 +2541,34 @@ export default function CanvasView() {
             />
           </svg>
         </div>
-        <div className="canvas-switcher absolute right-0 top-1/2 z-30 -mt-[30px] -translate-y-1/2">
+        {/* Vertical band between the pill and the bottom of the stage; the panel
+            is centred inside it, so the two floating layers can never collide
+            whatever the window width. */}
+        <div className="canvas-rail-layer" ref={canvasRailRef}>
           <div
-            className={`canvas-switcher-panel flex flex-col ${canvasMenuOpen ? "canvas-switcher-panel--open" : ""}`}
+            id="canvas-switcher-panel"
+            className={`canvas-switcher-panel${canvasMenuOpen ? " canvas-switcher-panel--open" : ""}`}
             role="region"
             aria-label={t(lang, "canvas")}
-            aria-expanded={canvasMenuOpen}
+            aria-busy={switchingCanvas}
           >
             {creatingCanvas ? (
               <form
-                className="canvas-switcher-create flex h-10 w-full flex-shrink-0 items-center gap-1 border-b border-border px-2"
+                /* A row like any other: no `w-full`, no `gap`, no inline
+                   padding — the 6px ruler comes from the stylesheet, and the
+                   "+" is the same pressed mark every canvas row carries. */
+                className="canvas-switcher-create flex items-center"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void createCanvas();
                 }}
               >
-                <Plus size={16} className="flex-shrink-0 text-accent-text" />
+                <span className="canvas-row__mark">
+                  {/* 13px, not 15: a 15px cross in a 20px well leaves 2.5px
+                      all round and reads a weight heavier than the 12px/600
+                      letters next to it. */}
+                  <Plus size={13} className="text-accent-text" aria-hidden />
+                </span>
                 <input
                   ref={newCanvasInputRef}
                   value={newCanvasName}
@@ -2262,20 +2576,29 @@ export default function CanvasView() {
                   onKeyDown={(event) => {
                     if (event.key === "Escape") {
                       event.preventDefault();
+                      /* The form is about to be replaced by the "+" row, so the
+                         focus target does not exist yet. */
+                      pendingRailFocusRef.current = "new";
                       setCreatingCanvas(false);
                       setNewCanvasName("");
                     }
                   }}
-                  className="canvas-switcher-input min-w-0 flex-1 bg-transparent px-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
+                  className="canvas-switcher-input min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-muted"
                   placeholder={t(lang, "canvasNamePlaceholder")}
                   maxLength={80}
                   aria-label={t(lang, "canvasNamePlaceholder")}
-                  disabled={switchingCanvas || !canvasListLoaded || !loaded}
+                  /* `aria-disabled`, not `disabled`: disabling the focused
+                     field hands focus to `body` in the same commit that
+                     `switchCanvas` wants to return it to the rail. */
+                  aria-disabled={railLocked || undefined}
                 />
                 <button
                   type="submit"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent-text transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={switchingCanvas || !canvasListLoaded || !loaded || !newCanvasName.trim()}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-accent-text transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-accent-light aria-disabled:cursor-not-allowed"
+                  /* `aria-disabled`, never `disabled`, and no opacity for
+                     either reason: the rail must not dim while switching, and
+                     `createCanvas` already returns early on an empty name. */
+                  aria-disabled={railLocked || !newCanvasName.trim() || undefined}
                   title={t(lang, "add")}
                   aria-label={t(lang, "add")}
                 >
@@ -2283,8 +2606,9 @@ export default function CanvasView() {
                 </button>
                 <button
                   type="button"
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-hover hover:text-text-primary"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-muted transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
                   onClick={() => {
+                    pendingRailFocusRef.current = "new";
                     setCreatingCanvas(false);
                     setNewCanvasName("");
                   }}
@@ -2296,67 +2620,57 @@ export default function CanvasView() {
               </form>
             ) : (
               <button
+                ref={newCanvasRowRef}
                 type="button"
-                className="canvas-switcher-new flex h-10 w-full flex-shrink-0 items-center gap-2 border-b border-border px-3 text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                className="canvas-switcher-new flex items-center text-text-secondary transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[color:var(--rail-wash)] hover:text-text-primary aria-disabled:cursor-not-allowed"
                 onClick={() => {
+                  if (railLocked) return;
                   setCanvasMenuOpen(true);
                   setCreatingCanvas(true);
                   setNewCanvasName("");
                 }}
-                disabled={switchingCanvas || !canvasListLoaded || !loaded}
+                aria-disabled={railLocked || undefined}
                 title={t(lang, "canvasNew")}
+                aria-label={t(lang, "canvasNew")}
               >
-                <span className="canvas-switcher-plus flex h-6 w-6 flex-shrink-0 items-center justify-center">
-                  <Plus size={15} />
+                {/* Same 20px pressed mark as a canvas row: at rest the rail is
+                    a column of like objects, not one glyph with a shape and one
+                    without. */}
+                <span className="canvas-row__mark">
+                  <Plus size={13} className="text-accent-text" />
                 </span>
-                <span className={`overflow-hidden whitespace-nowrap text-xs font-medium transition-[max-width,opacity] duration-200 ${canvasMenuOpen ? "max-w-40 opacity-100" : "max-w-0 opacity-0"}`}>
-                  {t(lang, "canvasNew")}
-                </span>
+                {/* 13px/500 comes from CSS — the label is a row, not a caption. */}
+                <span className="canvas-switcher-new-label">{t(lang, "canvasNew")}</span>
               </button>
             )}
-            <div className="min-h-0 max-h-[116px] overflow-x-hidden overflow-y-auto py-1">
-              {canvases.map((canvas, index) => (
+            {/* 20px, expanded only: the one row that differs between the two
+                panel heights, animated with the width so nothing jumps. */}
+            <div className="canvas-group-label">{t(lang, "canvas")}</div>
+            {/* The fade overlay only mounts when the list can actually overflow:
+                with one canvas a permanent gradient would dim a third of the
+                only row and read as a rendering fault. It is an overlay and not
+                a mask, because a mask would fade the row that is scrolling out —
+                accent selection block included — which is the row the hint is
+                about. `.canvas-rail-fade` fades itself out at the end of the
+                list (see `railAtEnd`). */}
+            <div className="canvas-list" ref={canvasListRef} onScroll={syncRailFade}>
+              {switchingCanvas && (
+                <div className="canvas-list__status">{t(lang, "canvasSaving")}</div>
+              )}
+              {canvases.length === 0 && (
+                <div className="canvas-list__empty">{t(lang, "canvasEmpty")}</div>
+              )}
+              {canvases.map((canvas) => (
                 <div
                   key={canvas.id}
-                  className={`canvas-switcher-row mx-1 flex items-center rounded-md ${canvas.id === activeCanvasId ? "canvas-switcher-row--active bg-accent/15 text-accent-text" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"}`}
-                  style={{ animationDelay: `${Math.min(index * 35, 210)}ms` }}
+                  /* Layout only — no onClick, no role, no tabIndex. The row looks
+                     clickable because the main button is stretched, which also
+                     means no gesture needs `stopPropagation`. */
+                  className={`canvas-row${canvas.id === activeCanvasId ? " canvas-row--active" : ""}`}
                 >
-                  <button
-                    type="button"
-                    className="flex h-9 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-bg-active/70 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => void switchCanvas(canvas.id)}
-                    disabled={switchingCanvas || !canvasListLoaded || !loaded}
-                    title={canvas.name}
-                    aria-label={`${t(lang, "canvas")}: ${canvas.name}`}
-                  >
-                    <span className="canvas-switcher-index flex h-5 w-5 flex-shrink-0 items-center justify-center rounded bg-bg-hover text-[10px] font-semibold text-text-muted">{index + 1}</span>
-                  </button>
-                  {deletingCanvasId === canvas.id ? (
-                    <div className="canvas-switcher-confirm flex h-9 min-w-0 flex-1 items-center gap-1 pr-1">
-                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-danger">{tWithParams(lang, "canvasDeleteQuestion", { name: canvas.name })}</span>
-                      <button
-                        type="button"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded bg-danger text-on-danger transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={() => void removeCanvas(canvas.id)}
-                        disabled={switchingCanvas || !canvasListLoaded || !loaded}
-                        title={t(lang, "confirmYes")}
-                        aria-label={t(lang, "confirmYes")}
-                      >
-                        <Check size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-active hover:text-text-primary"
-                        onClick={() => setDeletingCanvasId(null)}
-                        title={t(lang, "confirmNo")}
-                        aria-label={t(lang, "confirmNo")}
-                      >
-                        <X size={13} />
-                      </button>
-                    </div>
-                  ) : renamingCanvasId === canvas.id ? (
+                  {renamingCanvasId === canvas.id ? (
                     <form
-                      className="canvas-switcher-rename flex h-9 min-w-0 flex-1 items-center gap-1 pr-1"
+                      className="canvas-switcher-rename flex h-full min-w-0 flex-1 items-center"
                       onSubmit={(event) => {
                         event.preventDefault();
                         void renameCanvas();
@@ -2369,69 +2683,223 @@ export default function CanvasView() {
                         onKeyDown={(event) => {
                           if (event.key === "Escape") {
                             event.preventDefault();
-                            cancelRenameCanvas();
+                            cancelRenameCanvas(canvas.id);
                           }
                         }}
-                        className="canvas-switcher-input h-7 min-w-0 flex-1 px-2 text-xs text-text-primary outline-none placeholder:text-text-muted"
+                        className="canvas-switcher-input h-7 min-w-0 flex-1 text-xs text-text-primary outline-none placeholder:text-text-muted"
                         placeholder={t(lang, "canvasNamePlaceholder")}
                         maxLength={80}
                         aria-label={t(lang, "canvasRename")}
-                        disabled={switchingCanvas || !canvasListLoaded || !loaded}
+                        aria-disabled={railLocked || undefined}
                       />
                       <button
                         type="submit"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-accent-text transition-colors hover:bg-accent-light disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={switchingCanvas || !canvasListLoaded || !loaded || !renamingCanvasName.trim()}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-accent-text transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-accent-light aria-disabled:cursor-not-allowed"
+                        aria-disabled={railLocked || !renamingCanvasName.trim() || undefined}
                         title={t(lang, "confirmYes")}
                         aria-label={t(lang, "confirmYes")}
                       >
-                        <Check size={13} />
+                        <Check size={14} />
                       </button>
                       <button
                         type="button"
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-active hover:text-text-primary"
-                        onClick={cancelRenameCanvas}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-text-muted transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
+                        onClick={() => cancelRenameCanvas(canvas.id)}
                         title={t(lang, "confirmNo")}
                         aria-label={t(lang, "confirmNo")}
                       >
-                        <X size={13} />
+                        <X size={14} />
                       </button>
                     </form>
                   ) : (
                     <>
                       <button
+                        ref={(node) => { canvasRowRefs.current[canvas.id] = node; }}
                         type="button"
-                        className={`h-9 min-w-0 flex-1 truncate whitespace-nowrap px-1 text-left text-xs transition-[max-width,opacity,color] duration-200 hover:underline disabled:cursor-not-allowed ${canvasMenuOpen ? "max-w-40 opacity-100" : "pointer-events-none max-w-0 opacity-0"}`}
-                        onClick={() => beginRenameCanvas(canvas)}
-                        disabled={switchingCanvas || !canvasListLoaded || !loaded}
-                        title={`${t(lang, "canvasRename")}: ${canvas.name}`}
+                        className="canvas-row__main text-xs aria-disabled:cursor-not-allowed"
+                        /* Resting state expands; open state collapses on the
+                           current row and switches on any other one — a switch
+                           reloads the whole board and closes the panel, so at
+                           44px, where the row is an unlabelled monogram, it
+                           stays behind one deliberate step. */
+                        onClick={() => {
+                          if (switchingCanvas || !canvasListLoaded || !loaded) return;
+                          /* A half-typed rename must not be thrown away because
+                             the pointer landed one row down, and an open create
+                             form must not be left behind. Both commit first,
+                             then the click acts. */
+                          if (renamingCanvasId && renamingCanvasId !== canvas.id) void renameCanvas();
+                          if (creatingCanvas) {
+                            setCreatingCanvas(false);
+                            setNewCanvasName("");
+                          }
+                          if (canvasMenuOpen && canvas.id === activeCanvasId) {
+                            closeCanvasMenu();
+                            return;
+                          }
+                          if (canvasMenuOpen) {
+                            void switchCanvas(canvas.id);
+                            return;
+                          }
+                          setCanvasMenuOpen(true);
+                        }}
+                        onKeyDown={(event) => {
+                          if (switchingCanvas || !canvasListLoaded || !loaded) return;
+                          if (event.key === "F2") {
+                            event.preventDefault();
+                            beginRenameCanvas(canvas);
+                          } else if (event.key === "Delete") {
+                            /* The canvas view has a window-level Delete handler
+                               that removes the selected items; one keystroke must
+                               not delete a canvas and its shapes together. Both
+                               calls happen before the repeat check, so a held key
+                               cannot fall through to that handler. */
+                            event.preventDefault();
+                            event.stopPropagation();
+                            /* ...and a held key must not walk down the list
+                               arming one confirmation after another. */
+                            if (event.repeat) return;
+                            requestDeleteCanvas(canvas.id);
+                          }
+                        }}
+                        /* `aria-disabled`, not `disabled`: a disabled button
+                           drops focus on the floor, so the row a keyboard user
+                           is standing on would disappear mid-switch. The
+                           handlers above guard instead. */
+                        aria-disabled={railLocked || undefined}
+                        /* The current row is identified, not offered as an
+                           action; every other row in the open panel switches. */
+                        title={canvasMenuOpen ? `${t(lang, "canvas")}: ${canvas.name}` : `${t(lang, "canvasOpenList")}: ${canvas.name}`}
+                        aria-current={canvas.id === activeCanvasId ? "true" : undefined}
+                        aria-label={canvasMenuOpen ? `${t(lang, "canvas")}: ${canvas.name}` : `${t(lang, "canvasOpenList")}: ${canvas.name}`}
                       >
-                        {canvas.name}
+                        <span className="canvas-row__mark">{canvasMonogram(canvas.name)}</span>
+                        {/* The collapse lives on this span, never on the button:
+                            shrinking the button would leave 32px of clickable row
+                            and the bug would be invisible in a screenshot. */}
+                        <span className="canvas-row__name">{canvas.name}</span>
                       </button>
-                      <button
-                        type="button"
-                        className={`canvas-switcher-delete flex h-7 w-7 flex-shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:cursor-not-allowed ${canvasMenuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
-                        onClick={() => requestDeleteCanvas(canvas.id)}
-                        disabled={switchingCanvas || !canvasListLoaded || !loaded}
-                        title={t(lang, "canvasDeleteCanvas")}
-                        aria-label={`${t(lang, "canvasDeleteCanvas")}: ${canvas.name}`}
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      {deletingCanvasId === canvas.id ? (
+                        /* Inline confirmation without a sentence: the row is
+                           235px wide, the question template alone is 88px, so a
+                           sentence left ~3.8 characters for the one thing it has
+                           to name. The name stays; the question moves to the
+                           accessible name of the button that performs it. */
+                        <>
+                          {/* The pair replaces the two hover actions in place,
+                              so it is reachable by pointer *and* keyboard: the
+                              confirm takes focus, Escape puts the row back and
+                              returns focus to the button that opened it. Without
+                              that, a keyboard user who confirmed by accident can
+                              only leave the row by deleting it.
+                              The `key`s are load-bearing: both branches render
+                              two `<button>`s in the same two slots, so without
+                              them React reuses the existing DOM nodes and
+                              `autoFocus` — a mount-time behaviour — never runs. */}
+                          <button
+                            key="confirm-yes"
+                            type="button"
+                            autoFocus
+                            className="canvas-row__action canvas-row__action--confirm canvas-row__action--yes"
+                            onClick={() => void removeCanvas(canvas.id)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Escape") return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              dismissDeleteConfirm(canvas.id);
+                            }}
+                            aria-disabled={railLocked || undefined}
+                            title={t(lang, "confirmYes")}
+                            aria-label={tWithParams(lang, "canvasDeleteQuestion", { name: canvas.name })}
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            key="confirm-no"
+                            type="button"
+                            className="canvas-row__action canvas-row__action--confirm"
+                            onClick={() => {
+                              if (switchingCanvas || !canvasListLoaded || !loaded) return;
+                              dismissDeleteConfirm(canvas.id);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Escape") return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              dismissDeleteConfirm(canvas.id);
+                            }}
+                            title={t(lang, "confirmNo")}
+                            aria-label={t(lang, "confirmNo")}
+                          >
+                            <X size={14} />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Not tab stops: twenty canvases would be sixty-one
+                              stops before the footer. F2 / Delete on the row is
+                              the keyboard path, as in Finder. */}
+                          <button
+                            key="action-rename"
+                            type="button"
+                            tabIndex={-1}
+                            className="canvas-row__action"
+                            onClick={() => {
+                              if (switchingCanvas || !canvasListLoaded || !loaded) return;
+                              beginRenameCanvas(canvas);
+                            }}
+                            aria-disabled={railLocked || undefined}
+                            title={`${t(lang, "canvasRename")}: ${canvas.name}`}
+                            aria-label={`${t(lang, "canvasRename")}: ${canvas.name}`}
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            key="action-delete"
+                            type="button"
+                            tabIndex={-1}
+                            className="canvas-row__action canvas-row__action--danger"
+                            onClick={() => {
+                              if (switchingCanvas || !canvasListLoaded || !loaded) return;
+                              requestDeleteCanvas(canvas.id);
+                            }}
+                            aria-disabled={railLocked || undefined}
+                            title={t(lang, "canvasDeleteCanvas")}
+                            aria-label={`${t(lang, "canvasDeleteCanvas")}: ${canvas.name}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
               ))}
             </div>
+            {/* Only worth mounting when the list can overflow (`> 5` is the cheap
+                predictor); whether it is *showing* is decided by the scroll
+                position, and the gradient is dropped once the last row is
+                reached so it never rests inside the band. */}
+            {canvases.length > 5 && (
+              <div className="canvas-rail-fade" data-at-end={railAtEnd ? "true" : "false"} aria-hidden />
+            )}
             <button
+              ref={canvasFooterRef}
               type="button"
-              className="canvas-switcher-footer flex h-8 w-full flex-shrink-0 cursor-pointer items-center justify-center border-t border-border transition-colors hover:bg-bg-hover hover:text-accent-text"
+              /* No `w-full`: with a 6px margin on each side, a 100% width
+                 overflows the panel by 12px. The stylesheet owns both the
+                 margin and the radius; this element is just another row. */
+              /* No well: it is a disclosure, not an entry. But it needs the
+                 same optical weight as the four wells above it, so the glyph is
+                 15px on `text-secondary` (hover `text-primary`). */
+              className="canvas-switcher-footer flex cursor-pointer items-center justify-center text-text-secondary transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
               onClick={toggleCanvasMenu}
               title={t(lang, canvasMenuOpen ? "canvasCloseList" : "canvasOpenList")}
               aria-label={t(lang, canvasMenuOpen ? "canvasCloseList" : "canvasOpenList")}
               aria-expanded={canvasMenuOpen}
+              aria-controls="canvas-switcher-panel"
             >
-              <PanelRight size={14} className={`transition-transform duration-300 ${canvasMenuOpen ? "rotate-180 text-accent-text" : ""}`} />
+              <PanelRight size={15} className={`transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] ${canvasMenuOpen ? "rotate-180" : ""}`} />
             </button>
           </div>
         </div>

@@ -143,26 +143,60 @@ const formatScanTime = (value: string | null): string | null => {
   return date.toLocaleString();
 };
 
-interface OverlaySectionProps {
-  /** Already translated; the section never reaches for `t()` itself. */
+interface OverlayGroupProps {
+  /**
+   * Stable, literal id for the `aria-labelledby` wiring — the heading takes
+   * `${id}-label`. Passed in rather than generated: three static groups do not
+   * justify a `useId` (which would also churn the id on every remount).
+   */
+  id: string;
+  /** Already translated; the group never reaches for `t()` itself. */
   title: string;
+  /** Optional right-aligned metadata in the heading row (counts). */
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }
 
 /**
- * One card of the overlay panel. Three sections share one rhythm (radius,
- * padding, 11px uppercase heading, 1px divider colour) — the old markup repeated
- * the same six classes three times and they had already drifted apart, so the
- * rhythm lives here now.
+ * One group of the overlay panel.
+ *
+ * Borderless on purpose: the panel is the single surface, and the three groups
+ * inside it are separated by a hairline instead of each drawing its own box.
+ * Nested frames (card → card → inner list) made the 256px column read as three
+ * stacked widgets; a heading, a rule and shared rhythm read as one list of
+ * lists, which is what this actually is.
+ *
+ * `role="group"` rather than a named `<section>`: these are clusters of related
+ * controls, not landmarks — three landmarks in a 256px panel would flood the
+ * landmark list and make region navigation useless.
+ *
+ * The name here repeats the node list's own `aria-label` (both come from
+ * `graphNodeList`), so a screen reader announces it twice: "节点列表, 分组" then
+ * "节点列表, 列表, 500 项". That duplication is intentional — a listbox does not
+ * inherit its name from an ancestor group, so removing the list's label to
+ * "de-duplicate" would leave it nameless. Do not remove either one.
  *
  * `pointer-events-auto` because the panel above is `pointer-events-none`: the
- * card is the thing a user actually clicks, so it is the thing that must be hit
- * testable.
+ * group is the thing a user actually clicks, so it is the thing that must be
+ * hit testable.
+ *
+ * The heading's `px-1` is 2px left of the rows' text axis (rows carry `px-1.5`
+ * once their own padding is counted). That offset is deliberate — an 11px label
+ * on the same axis as 12px body text reads as indented — but it is capped at
+ * 2px: if the heading ever moves to 12px, the offset must go to zero.
  */
-const OverlaySection: React.FC<OverlaySectionProps> = ({ title, children }) => (
-  <section className="pointer-events-auto rounded-md border border-border bg-bg-primary/25 p-2">
-    <h4 className="mb-1.5 truncate text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-      {title}
+const OverlayGroup: React.FC<OverlayGroupProps> = ({ id, title, aside, children }) => (
+  <section
+    role="group"
+    aria-labelledby={`${id}-label`}
+    className="pointer-events-auto flex flex-shrink-0 flex-col"
+  >
+    <h4
+      id={`${id}-label`}
+      className="mb-1.5 flex items-center gap-2 px-1 text-[11px] font-medium leading-4 text-text-muted"
+    >
+      <span className="min-w-0 truncate">{title}</span>
+      {aside}
     </h4>
     {children}
   </section>
@@ -241,6 +275,14 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
   const panelToggleRef = useRef<HTMLButtonElement | null>(null);
   const railButtonRef = useRef<HTMLButtonElement | null>(null);
   const pendingFocusRef = useRef<"panel" | "rail" | null>(null);
+  /**
+   * The first filter switch. "Clear filters" unmounts itself (it only renders
+   * while something is filtered), so the click that uses it also destroys the
+   * focused element and focus falls back to `<body>` — a keyboard user then has
+   * to re-walk the whole tab path. Handing focus to the first switch keeps the
+   * user where they were: still in the filter group, ready to filter again.
+   */
+  const filterFirstRef = useRef<HTMLButtonElement | null>(null);
 
   const setPanelOpenPersisted = useCallback((open: boolean, focusTarget: "panel" | "rail") => {
     pendingFocusRef.current = focusTarget;
@@ -746,7 +788,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
           placeholder={t(lang, "graphSearchPlaceholder")}
           autoComplete="off"
           spellCheck={false}
-          className="w-56 rounded-md border border-border bg-bg-primary px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="w-56 rounded-md border border-border bg-bg-primary/50 px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         />
         <span className="text-xs text-text-muted">
           {tWithParams(lang, "graphNodesCount", { count: nodeCount })}
@@ -811,7 +853,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
             onKeyDown={handleCanvasKeyDown}
           />
         ) : (
-          <div className="flex h-full items-center justify-center bg-bg-primary">
+          <div className="flex h-full items-center justify-center">
             {showEmptyState ? (
               <div className="max-w-sm rounded-lg border border-border bg-bg-secondary/60 p-5 text-center">
                 <h2 className="text-sm font-semibold text-text-primary">{t(lang, "graphEmptyTitle")}</h2>
@@ -879,19 +921,19 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
           <section
             id={GRAPH_PANEL_ID}
             aria-label={t(lang, "graphPanelTitle")}
-            className={`graph-panel-in pointer-events-none absolute left-3 top-3 flex max-h-[calc(100%-1.5rem)] w-[min(16rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-lg border border-border bg-bg-secondary/85 ${
+            className={`graph-panel-in pointer-events-none absolute left-3 top-3 flex max-h-[calc(100%-1.5rem)] w-[min(16rem,calc(100%-1.5rem))] flex-col overflow-hidden rounded-xl border border-border bg-bg-secondary/85 ${
               selectedNode ? "max-md:max-h-[calc(55%-2.25rem)]" : ""
             }`}
           >
-            <header className="flex flex-shrink-0 items-center gap-1.5 border-b border-border px-2 py-1.5">
-              <h3 className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            <header className="flex h-8 flex-shrink-0 items-center gap-1.5 border-b border-border/60 px-2.5">
+              <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium leading-4 text-text-muted">
                 {t(lang, "graphPanelTitle")}
               </h3>
               <span
                 // `auto` only because of its `title` tooltip: the panel around
                 // it is `pointer-events-none`, and a hover-only affordance
                 // still needs to be hit testable to work.
-                className="pointer-events-auto flex-shrink-0 rounded-full bg-bg-primary/60 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-text-muted"
+                className="pointer-events-auto flex-shrink-0 text-[11px] leading-4 tabular-nums text-text-muted"
                 title={tWithParams(lang, "graphNodesCount", { count: filteredNodes.length })}
               >
                 {filteredNodes.length}
@@ -911,27 +953,45 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
             </header>
 
             {/*
-              `min-h-0` + `overflow-y-auto`: on a short window the three cards
-              scroll inside the panel instead of running off the canvas. The
-              thin 6px scrollbar comes from the global rules in index.css, so no
+              `min-h-0` + `overflow-y-auto`: on a short window the three groups
+              scroll inside the panel instead of running off the canvas. No `gap`
+              here — the hairline rules between groups are the only spacing, so
+              the rhythm does not change when a group is empty. The thin 6px
+              scrollbar comes from the global rules in index.css, so no
               per-panel scrollbar styling is needed here.
 
               `pointer-events-auto` is what puts this box back on the hit path:
               the wheel/touch scroll is delivered to the scrollable element, so
               it has to be hit-testable even though the panel around it is not.
             */}
-            <div className="pointer-events-auto flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2">
-              <OverlaySection title={t(lang, "graphVaults")}>
+            <div className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 pb-2 pt-1">
+              <OverlayGroup id="graph-group-vaults" title={t(lang, "graphVaults")}>
                 {records.length === 0 ? (
-                  <p className="text-xs text-text-muted">{t(lang, "graphEmptyTitle")}</p>
+                  <>
+                    <p className="px-1 text-[11px] leading-4 text-text-muted">
+                      {t(lang, "graphEmptyTitle")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void handleAddFolder()}
+                      disabled={busy}
+                      className="mt-1 flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-accent-text hover:underline disabled:opacity-60"
+                    >
+                      <FolderPlus size={12} strokeWidth={1.8} aria-hidden="true" />
+                      {t(lang, "graphAddFolder")}
+                    </button>
+                  </>
                 ) : (
-                  <ul className="flex flex-col gap-1">
+                  <ul className="flex flex-col">
                     {records.map((record) => {
                       const scanTime = formatScanTime(record.lastScanAt);
                       const filtered = filter.vaultKeys.includes(record.key);
                       return (
-                        <li key={record.key} className="flex items-start gap-1">
-                          <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-1.5 text-xs">
+                        <li
+                          key={record.key}
+                          className="group flex items-start gap-1 rounded-md transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-hover"
+                        >
+                          <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 px-1.5 py-1.5 has-[:focus-visible]:rounded-md has-[:focus-visible]:ring-1 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-accent">
                             <input
                               type="checkbox"
                               checked={filtered}
@@ -942,12 +1002,14 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                                     : [...filter.vaultKeys, record.key],
                                 })
                               }
-                              className="mt-0.5 h-3 w-3 flex-shrink-0 accent-[var(--color-accent)]"
+                              className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-[var(--color-accent)]"
                             />
                             <span className="min-w-0">
-                              <span className="block truncate text-text-primary">{record.name}</span>
+                              <span className="block truncate text-xs leading-4 text-text-primary">
+                                {record.name}
+                              </span>
                               <span
-                                className="block truncate text-text-muted"
+                                className="block truncate text-[11px] leading-4 text-text-muted"
                                 title={scanTime ? tWithParams(lang, "graphLastScan", { time: scanTime }) : undefined}
                               >
                                 {record.fileCount}
@@ -961,7 +1023,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                             onClick={() => void handleRemoveVault(record)}
                             title={t(lang, "graphRemoveVault")}
                             aria-label={`${t(lang, "graphRemoveVault")} ${record.name}`}
-                            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-text-muted transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-hover hover:text-danger"
+                            className="mr-1 mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-text-muted opacity-0 transition-[opacity,color,background-color] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-active hover:text-danger focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           >
                             <Trash2 size={12} strokeWidth={1.8} aria-hidden="true" />
                           </button>
@@ -970,35 +1032,83 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                     })}
                   </ul>
                 )}
-                {vaultError ? <p className="mt-1 text-[11px] text-danger">{vaultError}</p> : null}
-              </OverlaySection>
+                {vaultError ? <p className="mt-1 px-1 text-[11px] text-danger">{vaultError}</p> : null}
+              </OverlayGroup>
 
-              <OverlaySection title={t(lang, "graphFilters")}>
-                <div className="flex flex-col gap-1 text-xs">
-                  <label className="flex items-center gap-1.5 text-text-primary">
-                    <input
-                      type="checkbox"
-                      checked={filter.orphansOnly}
-                      onChange={() => patchFilter({ orphansOnly: !filter.orphansOnly })}
-                      className="h-3 w-3 accent-[var(--color-accent)]"
-                    />
-                    {t(lang, "graphFilterOrphans")}
-                  </label>
-                  <label className="flex items-center gap-1.5 text-text-primary">
-                    <input
-                      type="checkbox"
-                      checked={filter.danglingOnly}
-                      onChange={() => patchFilter({ danglingOnly: !filter.danglingOnly })}
-                      className="h-3 w-3 accent-[var(--color-accent)]"
-                    />
-                    {t(lang, "graphFilterDangling")}
-                  </label>
-                  <div className="mt-1">
-                    <span className="text-[11px] uppercase tracking-wide text-text-muted">
+              {/* Full-bleed rule: `-mx-2.5` cancels the container's `px-2.5` so
+                  the line reaches both panel edges. The negative value is bound
+                  to that padding — change one, change the other, or the rule
+                  turns into an indented card edge. The asymmetry is deliberate:
+                  6px above (it belongs to the group that follows) and 12px
+                  below (the next heading's `mb-1.5` closes the gap), so the line
+                  reads as a divider above a heading, not below one. */}
+              <div className="-mx-2.5 mb-3 mt-1.5 h-px flex-shrink-0 bg-border/60" aria-hidden="true" />
+
+              <OverlayGroup id="graph-group-filters" title={t(lang, "graphFilters")}>
+                <div className="flex flex-col">
+                  <button
+                    ref={filterFirstRef}
+                    type="button"
+                    role="switch"
+                    aria-checked={filter.orphansOnly}
+                    onClick={() => patchFilter({ orphansOnly: !filter.orphansOnly })}
+                    className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs text-text-primary transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+                  >
+                    <span className="min-w-0 truncate">{t(lang, "graphFilterOrphans")}</span>
+                    {/*
+                      A switch instead of a checkbox: the whole row is the hit
+                      target, so the 20x36 track is decoration. Geometry is
+                      fixed — track 36px, knob 16px, 2px inset, so the checked
+                      state travels translate-x-4 (16px) and lands 2px off the
+                      right edge.
+                    */}
+                    <span
+                      aria-hidden="true"
+                      className={`relative ml-auto h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+                        filter.orphansOnly ? "bg-accent" : "bg-bg-active"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+                          filter.orphansOnly ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={filter.danglingOnly}
+                    onClick={() => patchFilter({ danglingOnly: !filter.danglingOnly })}
+                    className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs text-text-primary transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+                  >
+                    <span className="min-w-0 truncate">{t(lang, "graphFilterDangling")}</span>
+                    <span
+                      aria-hidden="true"
+                      className={`relative ml-auto h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+                        filter.danglingOnly ? "bg-accent" : "bg-bg-active"
+                      }`}
+                    >
+                      <span
+                        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+                          filter.danglingOnly ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </span>
+                  </button>
+                  <div
+                    role="group"
+                    aria-labelledby="graph-group-filters-tags-label"
+                    className="mt-1"
+                  >
+                    <span
+                      id="graph-group-filters-tags-label"
+                      className="mb-1 block px-1 text-[11px] leading-4 text-text-muted"
+                    >
                       {t(lang, "graphFilterTags")}
                     </span>
                     {availableTags.length === 0 ? (
-                      <p className="text-[11px] text-text-muted">{t(lang, "graphNoTags")}</p>
+                      <p className="px-1 text-[11px] leading-4 text-text-muted">{t(lang, "graphNoTags")}</p>
                     ) : (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {availableTags.map((tag) => {
@@ -1017,7 +1127,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                               }
                               className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
                                 active
-                                  ? "border-accent bg-accent text-on-accent"
+                                  ? "border-transparent bg-accent-light text-accent-text"
                                   : "border-border text-text-muted hover:bg-bg-hover hover:text-text-primary"
                               }`}
                             >
@@ -1028,17 +1138,46 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => useGraphStore.getState().setFilter(createEmptyGraphFilter())}
-                    className="mt-1 self-start text-[11px] text-accent-text hover:underline"
-                  >
-                    {t(lang, "graphClearFilters")}
-                  </button>
+                  {/*
+                    Only rendered when it can do something: a permanently
+                    visible "clear" on an unfiltered list is a dead control, and
+                    the panel is 256px wide — every dead row costs a node.
+                  */}
+                  {(filter.orphansOnly ||
+                    filter.danglingOnly ||
+                    filter.tags.length > 0 ||
+                    filter.vaultKeys.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        useGraphStore.getState().setFilter(createEmptyGraphFilter());
+                        // Focus before the re-render removes this button: the
+                        // switch is always mounted, so it can take focus now and
+                        // the subsequent unmount of an already-blurred button
+                        // cannot pull focus back to `<body>`.
+                        filterFirstRef.current?.focus();
+                      }}
+                      className="mt-1.5 flex items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-accent-text hover:underline"
+                    >
+                      <X size={12} strokeWidth={2} aria-hidden="true" />
+                      {t(lang, "graphClearFilters")}
+                    </button>
+                  )}
                 </div>
-              </OverlaySection>
+              </OverlayGroup>
 
-              <OverlaySection title={t(lang, "graphNodeList")}>
+              {/* Same full-bleed rule as above — see the note on the first one. */}
+              <div className="-mx-2.5 mb-3 mt-1.5 h-px flex-shrink-0 bg-border/60" aria-hidden="true" />
+
+              <OverlayGroup
+                id="graph-group-nodes"
+                title={t(lang, "graphNodeList")}
+                aside={
+                  <span className="ml-auto text-[11px] leading-4 tabular-nums text-text-muted">
+                    {filteredNodes.length}
+                  </span>
+                }
+              >
                 <NodeListPanel
                   nodes={filteredNodes}
                   selectedId={selection}
@@ -1049,7 +1188,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                   onSelect={handleSelect}
                   onActivate={activateNode}
                 />
-              </OverlaySection>
+              </OverlayGroup>
             </div>
           </section>
         ) : (
@@ -1084,12 +1223,12 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
         */}
         {selectedNode && (
           <aside
-            className="pointer-events-none absolute right-3 top-3 flex max-h-[calc(100%-1.5rem)] w-[380px] flex-col overflow-hidden rounded-lg border border-border bg-bg-secondary/90 max-md:inset-x-3 max-md:bottom-3 max-md:top-auto max-md:max-h-[45%] max-md:w-auto"
+            className="pointer-events-none absolute right-3 top-3 flex max-h-[calc(100%-1.5rem)] w-[380px] flex-col overflow-hidden rounded-xl border border-border bg-bg-secondary/90 max-md:inset-x-3 max-md:bottom-3 max-md:top-auto max-md:max-h-[45%] max-md:w-auto"
             aria-label={selectedNode.title}
           >
-            <header className="pointer-events-auto flex items-start gap-2 border-b border-border px-3 py-2">
+            <header className="pointer-events-auto flex flex-shrink-0 items-start gap-2 border-b border-border/60 px-2.5 py-2">
               <div className="min-w-0 flex-1">
-                <h2 className="truncate text-sm font-semibold text-text-primary">{selectedNode.title}</h2>
+                <h2 className="truncate text-sm font-semibold leading-5 text-text-primary">{selectedNode.title}</h2>
                 <p className="truncate text-[11px] text-text-muted">
                   {selectedNode.kind === "dangling"
                     ? t(lang, "graphDanglingNode")
@@ -1102,7 +1241,14 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                 <button
                   type="button"
                   onClick={() => activateNode(selectedNode.id)}
-                  className="flex-shrink-0 rounded-md border border-border px-2 py-1 text-[11px] text-text-primary hover:bg-bg-hover"
+                  /*
+                   * The only way a touch user can open a native note from here
+                   * (the row's double-click is not reachable on a finger), so:
+                   * `flex-shrink-0` and a colour that stays readable on hover —
+                   * accent-text on bg-hover is 4.47:1 in the dark theme, hence
+                   * the hover override to text-primary.
+                   */
+                  className="flex-shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-accent-text transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:bg-bg-hover hover:text-text-primary"
                 >
                   {t(lang, "graphOpenInEditor")}
                 </button>
@@ -1128,9 +1274,9 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
               </button>
             </header>
 
-            <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto px-3 py-2">
+            <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5">
               {selectedNode.parseError ? (
-                <p className="mb-2 rounded-md border border-warning px-2 py-1 text-xs text-text-primary">
+                <p className="mb-2 border-l-2 border-warning bg-bg-primary/40 px-2 py-1 text-xs text-text-primary">
                   {t(lang, "graphParseError")}
                   {": "}
                   {selectedNode.parseError}
@@ -1173,14 +1319,15 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
               )}
             </div>
 
-            <div className="pointer-events-auto border-t border-border px-3 py-2">
-              <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
+            <div className="pointer-events-auto flex-shrink-0 border-t border-border/60 px-2.5 py-2">
+              <h3 className="mb-1 text-[11px] font-medium leading-4 text-text-muted">
                 {t(lang, "graphBacklinks")}
+                <span className="ml-1 tabular-nums">{backlinks.length}</span>
               </h3>
               {backlinks.length === 0 ? (
                 <p className="text-[11px] text-text-muted">{t(lang, "graphNoBacklinks")}</p>
               ) : (
-                <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+                <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto overscroll-contain max-md:max-h-24">
                   {backlinks.map(({ node, references }) => (
                     <li key={node.id}>
                       <button

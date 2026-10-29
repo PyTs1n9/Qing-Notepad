@@ -1,13 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowDownToLine,
   ArrowUp,
+  ChevronRight,
+  CircleAlert,
   ExternalLink,
   Puzzle,
   RotateCcw,
   ScrollText,
   ShieldCheck,
+  ShieldOff,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import {
@@ -19,45 +23,70 @@ import {
 } from "@/plugin/store";
 import { beginInstallFromIndex } from "@/plugin/install";
 import {
+  PERMISSION_LABEL_KEYS,
   authorName,
   hasPermission,
-  manifestCommands,
   isPluginPermission,
+  manifestCommands,
   manifestPermissions,
   type InstalledPlugin,
   type PluginPermission,
 } from "@/plugin/types";
 import { deactivatePlugin } from "@/plugin/headless";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { t } from "@/utils/i18n";
+import { t, tWithParams } from "@/utils/i18n";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
+import EmptyState from "@/components/Layout/EmptyState";
+import ModalShell from "@/components/Layout/ModalShell";
+import LoadingText from "@/components/LoadingText";
 import PermissionList from "./PermissionList";
+import PluginErrorBar from "./PluginErrorBar";
 
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <section className="mt-5">
-    <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-      {title}
-    </h2>
-    {children}
-  </section>
-);
+/**
+ * Card language lifted verbatim from `WorkspaceOverview.tsx`.
+ *
+ * The extensions page renders inside the same editor card as the workspace
+ * overview, one view apart. Inventing a second "Apple-like" system here made the
+ * two screens read as two products, so every frame, header and row below is the
+ * same class string the overview already uses.
+ *
+ * Row heights are `min-h-` on purpose, and there are three of them: 34px for a
+ * single 13/18 line, 52px when a permission label wraps to two lines at the
+ * 360 tier, and 38px in the sidebar's two-line rows. A fixed `h-` would clip the
+ * wrapped case.
+ */
+const CARD = "plugin-detail-card rounded-xl border border-border bg-bg-secondary/40";
+const CARD_HEAD = "flex items-center justify-between gap-2 border-b border-border/70 px-3.5 py-2.5";
+const CARD_TITLE = "text-xs font-semibold uppercase tracking-[0.12em] text-text-muted";
+const ROW = "plugin-detail-row flex w-full min-h-[34px] items-center gap-2.5 rounded-lg px-2 py-2";
+// `truncate` is what makes these shrinkable: `overflow: hidden` drops the flex
+// automatic minimum size, so no `min-w-0` is needed - and none is wanted, since
+// `min-w-` would turn the 360 wrapping rule back into an overflow.
+const LABEL = "plugin-detail-label flex-1 truncate text-[13px] leading-[18px] text-text-primary";
+
+const PRIMARY_BUTTON =
+  "flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60";
+const GHOST_BUTTON =
+  "flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border border-border px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent/40 hover:bg-bg-hover/60 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50";
+// Danger is carried by the icon, the border and the copy - never by the label
+// colour: `text-danger` sits at 2.47:1 on the yellow theme and 2.51:1 on green.
+const DANGER_BUTTON =
+  "flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg border border-danger/45 px-2.5 text-xs font-medium text-text-secondary transition-colors hover:border-danger/70 hover:bg-danger/12 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50";
+
+type LogState = {
+  status: "idle" | "loading" | "ready" | "error";
+  lines: string[];
+  message?: string;
+};
 
 const MetaRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="flex items-start gap-3 border-b border-border/60 py-1.5 last:border-b-0">
-    <span className="w-20 flex-shrink-0 text-[11px] text-text-muted">{label}</span>
-    <span className="min-w-0 flex-1 break-words text-[11px] text-text-secondary">{children}</span>
-  </div>
-);
-
-const EmptyState: React.FC<{ lang: "zh" | "en" }> = ({ lang }) => (
-  <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-bg-secondary text-text-muted">
-      <Puzzle size={20} />
+  <div className="plugin-detail-meta-row flex items-start gap-3 border-b border-border/60 px-3.5 py-2 last:border-b-0">
+    <span className="plugin-detail-meta-label w-[72px] flex-shrink-0 text-[11px] leading-4 text-text-muted">
+      {label}
     </span>
-    <h2 className="mt-3 text-sm font-medium text-text-primary">{t(lang, "pluginsSelectHint")}</h2>
-    <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-text-muted">
-      {t(lang, "pluginsSelectHintBody")}
-    </p>
+    <span className="min-w-0 flex-1 break-words text-[11px] leading-4 text-text-secondary">
+      {children}
+    </span>
   </div>
 );
 
@@ -68,9 +97,22 @@ const EmptyState: React.FC<{ lang: "zh" | "en" }> = ({ lang }) => (
  * plugin (show version, permissions, actions) or only an index entry (show the
  * install action). When it names both, the installed record wins and the index
  * entry is used only to decide whether an update exists.
+ *
+ * The two selections are two different pages, not one page with holes:
+ *
+ * - an index entry is a **decision page** - header, description, declared
+ *   permissions, details - because `PluginIndexEntry` carries no commands
+ *   (they live in `InstalledPlugin.manifest.contributes.commands`), so there is
+ *   nothing to fill the rest with;
+ * - an installed plugin is a **management page** - adding the stat cards, the
+ *   command/info pair, the log card and the manage card.
+ *
+ * The header carries at most two buttons, filled first. Everything destructive
+ * lives in the manage card at the bottom.
  */
 const PluginDetailBody: React.FC = () => {
   const lang = useSettingsStore((state) => state.lang);
+  const hydrated = usePluginStore((state) => state.hydrated);
   const installed = usePluginStore((state) => state.installed);
   const index = usePluginStore((state) => state.index);
   const selectedId = usePluginStore((state) => state.selectedId);
@@ -80,14 +122,32 @@ const PluginDetailBody: React.FC = () => {
   const rollback = usePluginStore((state) => state.rollback);
   const uninstall = usePluginStore((state) => state.uninstall);
   const setPermissions = usePluginStore((state) => state.setPermissions);
+  const refreshIndex = usePluginStore((state) => state.refreshIndex);
 
   const [uninstallOpen, setUninstallOpen] = useState(false);
-  const [logLines, setLogLines] = useState<string[] | null>(null);
+  const [log, setLog] = useState<LogState>({ status: "idle", lines: [] });
+  // The permission row whose request is in flight. It is per-row on purpose:
+  // `installBusy` is the install pipeline's flag and a grant must not block it.
+  const [busyPermission, setBusyPermission] = useState<string | null>(null);
 
-  // A different plugin must not inherit the previous one's confirm dialog.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const logToken = useRef(0);
+  const keepDataRef = useRef<HTMLButtonElement | null>(null);
+
+  // A different plugin must not inherit the previous one's confirm dialog, its
+  // log panel, or - worst of all - an in-flight `plugin_read_log` that resolves
+  // after the switch and paints the old plugin's lines into the new pane.
   useEffect(() => {
     setUninstallOpen(false);
-    setLogLines(null);
+    setBusyPermission(null);
+    logToken.current += 1;
+    setLog({ status: "idle", lines: [] });
+  }, [selectedId]);
+
+  // Selecting a plugin starts at its header, not wherever the last one was
+  // scrolled to. Deliberately instant: a smooth scroll here reads as lag.
+  useEffect(() => {
+    scrollerRef.current?.scrollTo({ top: 0 });
   }, [selectedId]);
 
   const record: InstalledPlugin | null = findInstalled(installed, selectedId);
@@ -100,6 +160,11 @@ const PluginDetailBody: React.FC = () => {
   const description = manifest?.description ?? entry?.description ?? "";
   const author = manifest ? authorName(manifest) : entry?.author ?? "";
   const version = record?.version ?? entry?.version ?? "";
+  const sourceLabel = record
+    ? record.source === "index"
+      ? t(lang, "pluginSourceIndex")
+      : t(lang, "pluginSourceFile")
+    : "";
   // The index wins over the manifest here. An installed package carries the
   // URL it was packed with, so trusting `manifest.repository` first kept the
   // pane pointing at a path that had already moved out of the source repo.
@@ -121,46 +186,112 @@ const PluginDetailBody: React.FC = () => {
 
   const loadLog = useCallback(async () => {
     if (!record) return;
+    const token = ++logToken.current;
+    setLog({ status: "loading", lines: [] });
     try {
       const lines = await invoke<string[]>("plugin_read_log", { id: record.id });
-      setLogLines(lines);
+      // The selection changed while this was in flight; its answer is about a
+      // plugin that is no longer on screen.
+      if (token !== logToken.current) return;
+      setLog({ status: "ready", lines });
     } catch (error) {
-      setLogLines([String(error)]);
+      if (token !== logToken.current) return;
+      // The failure is *not* log content. It used to be pushed into the `<pre>`
+      // as a single "line", which made a host error look like the plugin's own
+      // output.
+      setLog({ status: "error", lines: [], message: String(error) });
     }
+  }, [record]);
+
+  const chromeBar = (
+    <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-border px-3">
+      <h1 className="plugin-detail-chrome-prefix text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+        {t(lang, "pluginsTitle")}
+      </h1>
+      {updates > 0 && (
+        <span className="flex-shrink-0 rounded bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
+          {updates}
+        </span>
+      )}
+      {name && (
+        // Hidden from screen readers: the hero below already names the plugin,
+        // and a duplicate would be read twice on every selection.
+        <span aria-hidden="true" className="min-w-0 truncate text-[11px] text-text-muted">
+          <span className="plugin-detail-chrome-prefix">/ </span>
+          {name}
+        </span>
+      )}
+    </div>
+  );
+
+  // `installed` is empty until the first `plugin_list_installed` resolves, so an
+  // ungated pane flashes "no extension selected" on every cold start.
+  if (!hydrated) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {chromeBar}
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+          <LoadingText label={t(lang, "loading")} className="text-xs text-text-muted" />
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * The grant list is re-read from the store instead of closing over `granted`:
+   * two clicks in the same tick both started from the render's snapshot and the
+   * second write silently dropped the first one's change.
+   *
+   * It sits *above* the early return on purpose. A hook placed after a
+   * conditional `return` changes the hook count between renders, which React
+   * reports as "Rendered more hooks than during the previous render" - and it
+   * fires exactly once, the first time the pane goes from empty to selected,
+   * so the retry button appears to fix it.
+   */
+  const readGranted = useCallback((): PluginPermission[] => {
+    if (!record) return [];
+    const latest = findInstalled(usePluginStore.getState().installed, record.id);
+    return (latest?.grantedPermissions ?? []).filter(isPluginPermission);
   }, [record]);
 
   if (!selectedId || (!record && !entry)) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-border px-3">
-          <h1 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-            {t(lang, "pluginsTitle")}
-          </h1>
-          {updates > 0 && (
-            <span className="rounded bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
-              {updates}
-            </span>
-          )}
-        </div>
-        <div className="min-h-0 flex-1">
+        {chromeBar}
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {lastError ? (
             // The empty state is exactly where a first install lands when it is
             // refused, so the reason has to be readable here rather than only in
             // a toast that has already faded.
-            <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-              <p className="max-w-md rounded-lg border border-danger/40 bg-danger/5 px-3 py-2 text-xs leading-relaxed text-danger">
-                {lastError}
-              </p>
-              <button
-                type="button"
-                onClick={() => usePluginStore.getState().setLastError(null)}
-                className="mt-3 rounded-lg border border-border px-3 py-1.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                {t(lang, "close")}
-              </button>
+            <div className="mx-auto w-full max-w-[880px] px-5 py-5 sm:px-7 sm:py-6">
+              <PluginErrorBar
+                message={lastError}
+                onDismiss={() => usePluginStore.getState().setLastError(null)}
+              />
             </div>
           ) : (
-            <EmptyState lang={lang} />
+            <div className="flex h-full items-center justify-center">
+              {selectedId ? (
+                // The id survived but the index no longer lists it. The selection
+                // is *not* cleared here: the list already lost it, and silently
+                // blanking the pane would hide the fact that something vanished.
+                <EmptyState
+                  icon={<Puzzle size={18} />}
+                  title={t(lang, "pluginsGoneTitle")}
+                  description={t(lang, "pluginsGoneBody")}
+                  action={{
+                    label: t(lang, "pluginsRefreshIndex"),
+                    onClick: () => void refreshIndex(true),
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  icon={<Puzzle size={18} />}
+                  title={t(lang, "pluginsSelectHint")}
+                  description={t(lang, "pluginsSelectHintBody")}
+                />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -168,293 +299,465 @@ const PluginDetailBody: React.FC = () => {
   }
 
   const granted = record?.grantedPermissions ?? [];
+  const commands = manifest ? manifestCommands(manifest) : [];
+  // The same list the permission card draws as dashed rows, so the number and
+  // the rows cannot disagree (a write grant implies its read).
+  const missing = record
+    ? declared.filter(
+        (permission) => isPluginPermission(permission) && !hasPermission(granted, permission),
+      )
+    : [];
   const impliedRead = (permission: PluginPermission) =>
     (permission === "notes:read" && hasPermission(granted, "notes:write")) ||
     (permission === "todo:read" && hasPermission(granted, "todo:write"));
 
-  const revoke = (permission: PluginPermission) => {
+  const grant = async (permission: PluginPermission) => {
     if (!record) return;
-    const next = granted.filter(
+    const current = readGranted();
+    if (hasPermission(current, permission)) return;
+    setBusyPermission(permission);
+    try {
+      await setPermissions(record.id, [...current, permission]);
+    } finally {
+      setBusyPermission(null);
+    }
+  };
+
+  const revoke = async (permission: PluginPermission) => {
+    if (!record) return;
+    const next = readGranted().filter(
       (item) =>
         item !== permission &&
         !(permission === "notes:write" && item === "notes:read") &&
         !(permission === "todo:write" && item === "todo:read"),
     );
-    void setPermissions(record.id, next);
+    setBusyPermission(permission);
+    try {
+      await setPermissions(record.id, next);
+    } finally {
+      setBusyPermission(null);
+    }
   };
 
-  const commands = manifest ? manifestCommands(manifest) : [];
+  // A write grant carries its read; the button says so instead of quietly
+  // taking two rows away.
+  const revokeAlso = (permission: PluginPermission): string[] => {
+    const implied: PluginPermission | null =
+      permission === "notes:write" ? "notes:read" : permission === "todo:write" ? "todo:read" : null;
+    if (!implied || !hasPermission(readGranted(), implied)) return [];
+    return [t(lang, PERMISSION_LABEL_KEYS[implied])];
+  };
+
+  const confirmUninstall = (keepStorage: boolean) => {
+    if (!record) return;
+    setUninstallOpen(false);
+    deactivatePlugin(record.id);
+    void uninstall(record.id, keepStorage);
+  };
+
+  // Only the installed page has metrics. A version is not a metric: `v1.0.1` at
+  // `text-2xl` breaks the numeral baseline and elevates the least useful fact on
+  // the page, so it stays in the header's meta line.
+  const stats: Array<{ key: string; label: string; value: number; icon: typeof ShieldCheck }> = [
+    { key: "permissions", label: t(lang, "pluginPermissions"), value: granted.length, icon: ShieldCheck },
+    { key: "commands", label: t(lang, "pluginCommands"), value: commands.length, icon: Terminal },
+  ];
+  // A missing count of zero is not a metric either - it reads as "nothing is
+  // wrong", which no other card states. The cell exists only when it is non-zero.
+  if (missing.length > 0) {
+    stats.push({
+      key: "missing",
+      label: t(lang, "pluginPermissionsMissing"),
+      value: missing.length,
+      icon: ShieldOff,
+    });
+  }
+
+  const toggleEnabled = record ? (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void setEnabled(record.id, !record.enabled)}
+      className={GHOST_BUTTON}
+    >
+      {t(lang, record.enabled ? "pluginDisable" : "pluginEnable")}
+    </button>
+  ) : null;
+
+  // At most two buttons, filled first; never a destructive one. The order is
+  // fixed so Tab reaches the enable/disable toggle before the manage card's
+  // uninstall.
+  const headerAction = !record && entry ? (
+    <button
+      type="button"
+      disabled={busy}
+      aria-busy={busy || undefined}
+      onClick={() => void beginInstallFromIndex(entry)}
+      className={PRIMARY_BUTTON}
+    >
+      <ArrowDownToLine size={13} />
+      {busy ? t(lang, "pluginBusyInstalling") : t(lang, "pluginInstall")}
+    </button>
+  ) : record && updateAvailable && entry ? (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        aria-busy={busy || undefined}
+        onClick={() => void beginInstallFromIndex(entry)}
+        className={PRIMARY_BUTTON}
+      >
+        <ArrowUp size={13} />
+        {busy ? t(lang, "pluginBusyInstalling") : t(lang, "pluginUpdate")}
+      </button>
+      {toggleEnabled}
+    </>
+  ) : (
+    toggleEnabled
+  );
+
+  const permissionsCard = (
+    <section className={`mt-3 ${CARD}`}>
+      <div className={CARD_HEAD}>
+        <h2 className={CARD_TITLE}>{t(lang, "pluginPermissions")}</h2>
+      </div>
+      <PermissionList
+        permissions={record ? granted : declared}
+        lang={lang}
+        onRevoke={record ? (permission) => void revoke(permission) : undefined}
+        canRevoke={(permission) => !impliedRead(permission)}
+        missing={missing}
+        onGrant={record ? (permission) => void grant(permission) : undefined}
+        onRevokeAlso={record ? revokeAlso : undefined}
+        busyPermission={busyPermission}
+      />
+      {record && granted.length > 0 && (
+        <p className="px-3.5 pb-3 text-[11px] leading-relaxed text-text-muted">
+          {t(lang, "pluginLockedNote")}
+        </p>
+      )}
+    </section>
+  );
+
+  const commandsCard = (
+    <section className={`min-w-0 ${CARD}`}>
+      <div className={CARD_HEAD}>
+        <h2 className={CARD_TITLE}>{t(lang, "pluginCommands")}</h2>
+      </div>
+      {commands.length === 0 ? (
+        <p className="px-3.5 py-3 text-xs text-text-muted">{t(lang, "pluginNoCommands")}</p>
+      ) : (
+        // Static information, so no hover fill: a row that lights up on hover
+        // promises a click that is not there.
+        <ul className="p-1.5">
+          {commands.map((command) => (
+            <li key={command.id} className={ROW}>
+              <span className={LABEL} title={command.title}>
+                {command.title}
+              </span>
+              {command.category && (
+                <span className="plugin-command-category flex-shrink-0 text-[11px] leading-4 text-text-muted">
+                  {command.category}
+                </span>
+              )}
+              <span className="plugin-command-hint flex-shrink-0 font-mono text-[11px] leading-4 text-text-muted">
+                Ctrl+Shift+P
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+
+  const infoCard = (
+    <aside className={`min-w-0 ${CARD}`}>
+      <div className={CARD_HEAD}>
+        <h2 className={CARD_TITLE}>{t(lang, "pluginInfo")}</h2>
+      </div>
+      <div>
+        <MetaRow label="ID">
+          <code className="font-mono">{record?.id ?? entry?.id}</code>
+        </MetaRow>
+        {version && <MetaRow label={t(lang, "pluginVersion")}>v{version}</MetaRow>}
+        {record && <MetaRow label={t(lang, "pluginSource")}>{sourceLabel}</MetaRow>}
+        {manifest?.license && (
+          <MetaRow label={t(lang, "pluginLicense")}>{manifest.license}</MetaRow>
+        )}
+        {repoLinks.length > 0 && (
+          <MetaRow label={t(lang, "pluginRepository")}>
+            <span className="flex flex-col gap-1">
+              {repoLinks.map((link) => (
+                <button
+                  key={link.url}
+                  type="button"
+                  onClick={() => void openInDefaultBrowser(link.url)}
+                  title={link.url}
+                  className="flex w-full min-w-0 items-center gap-1.5 text-accent-text hover:underline"
+                >
+                  {repoLinks.length > 1 && (
+                    <span className="w-12 flex-shrink-0 text-left text-text-muted">{link.label}</span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-left">{link.url}</span>
+                  <ExternalLink size={10} className="flex-shrink-0" />
+                </button>
+              ))}
+            </span>
+          </MetaRow>
+        )}
+      </div>
+    </aside>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-9 flex-shrink-0 items-center gap-2 border-b border-border px-3">
-        <h1 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
-          {t(lang, "pluginsTitle")}
-        </h1>
-        <span className="min-w-0 truncate text-[11px] text-text-muted">/ {name}</span>
-      </div>
+      <p className="sr-only" aria-live="polite">
+        {tWithParams(lang, "pluginSelectedAnnounce", { name })}
+      </p>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <div className="flex items-start gap-3">
-          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-accent-light text-accent-text">
-            <Puzzle size={18} />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="min-w-0 truncate text-sm font-semibold text-text-primary">{name}</h2>
-              {updateAvailable && (
-                <span className="flex items-center gap-1 rounded bg-accent-light px-1.5 py-0.5 text-[10px] font-medium text-accent-text">
-                  <ArrowUp size={10} />
-                  {t(lang, "pluginUpdateAvailable")}
-                </span>
-              )}
-              {record && !record.enabled && (
-                <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-muted">
-                  {t(lang, "pluginDisabled")}
-                </span>
-              )}
+      {chromeBar}
+
+      {/* The scroller owns `container-type` and therefore no padding (C1);
+          `.plugin-detail-body` carries the gutter and does the querying. */}
+      <div ref={scrollerRef} className="plugin-detail-scroller min-h-0 flex-1 overflow-y-auto">
+        <div className="plugin-detail-body mx-auto w-full max-w-[880px] px-5 py-5 sm:px-7 sm:py-6">
+          <header className="plugin-detail-header flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <h1 className="plugin-detail-title brand-face min-w-0 truncate text-[19px] leading-tight text-text-primary">
+                  {name}
+                </h1>
+                {updateAvailable && (
+                  <span className="flex flex-shrink-0 items-center gap-1 rounded-full border border-accent/15 bg-accent-light px-2 py-0.5 text-[11px] font-semibold text-accent-text">
+                    <ArrowUp size={12} />
+                    {t(lang, "pluginUpdateAvailable")}
+                  </span>
+                )}
+                {record && !record.enabled && (
+                  <span className="flex-shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] font-semibold text-text-secondary">
+                    {t(lang, "pluginDisabled")}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] leading-4 text-text-muted">
+                {[author, version ? `v${version}` : null, sourceLabel].filter(Boolean).join(" · ")}
+              </p>
             </div>
-            <p className="mt-0.5 text-[11px] text-text-muted">
-              {[author, version ? `v${version}` : null].filter(Boolean).join(" · ")}
-            </p>
-          </div>
+            {headerAction && (
+              <div className="plugin-detail-actions flex flex-shrink-0 flex-wrap items-center gap-1.5">
+                {headerAction}
+              </div>
+            )}
+          </header>
 
-          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
-            {!record && entry && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void beginInstallFromIndex(entry)}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-[11px] font-medium text-on-accent transition-opacity hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
-              >
-                <ArrowDownToLine size={12} />
-                {t(lang, "pluginInstall")}
-              </button>
-            )}
-            {record && updateAvailable && entry && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void beginInstallFromIndex(entry)}
-                className="flex items-center gap-1.5 rounded-lg bg-accent px-2.5 py-1.5 text-[11px] font-medium text-on-accent transition-opacity hover:opacity-90 active:scale-[0.98] disabled:opacity-60"
-              >
-                <ArrowUp size={12} />
-                {t(lang, "pluginUpdate")}
-              </button>
-            )}
-            {record && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void setEnabled(record.id, !record.enabled)}
-                  className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+          {lastError && (
+            <div className="mt-3">
+              <PluginErrorBar
+                message={lastError}
+                onDismiss={() => usePluginStore.getState().setLastError(null)}
+              />
+            </div>
+          )}
+
+          {description && (
+            <p className="mt-3 max-w-[60ch] text-[13px] leading-[21px] text-text-secondary">
+              {description}
+            </p>
+          )}
+
+          {record && (
+            <dl className="mt-5 flex gap-3">
+              {stats.map((stat) => (
+                <div
+                  key={stat.key}
+                  className={`${CARD} flex min-w-0 flex-1 flex-col-reverse gap-1.5 px-3.5 py-3`}
                 >
-                  {t(lang, record.enabled ? "pluginDisable" : "pluginEnable")}
-                </button>
-                {record.previousVersion && (
+                  <dt className="flex items-center gap-1.5 text-xs text-text-muted">
+                    <stat.icon size={12} className="flex-shrink-0 opacity-70" />
+                    <span className="min-w-0 truncate">{stat.label}</span>
+                  </dt>
+                  <dd className="text-2xl font-semibold leading-none tabular-nums text-text-primary">
+                    {stat.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {permissionsCard}
+
+          {record ? (
+            <div className="plugin-detail-columns mt-3 grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-3">
+              {commandsCard}
+              {infoCard}
+            </div>
+          ) : (
+            <div className="mt-3">{infoCard}</div>
+          )}
+
+          {record && (
+            <section className={`mt-3 ${CARD}`}>
+              <div className={CARD_HEAD}>
+                <h2 className={CARD_TITLE}>{t(lang, "pluginLogSection")}</h2>
+                {log.status === "ready" && (
                   <button
                     type="button"
+                    onClick={() => setLog({ status: "idle", lines: [] })}
+                    className="flex-shrink-0 rounded px-1 text-[11px] font-medium text-text-secondary transition-colors hover:text-text-primary"
+                  >
+                    {t(lang, "close")}
+                  </button>
+                )}
+              </div>
+              <div className="p-1.5">
+                {log.status === "idle" && (
+                  <button
+                    type="button"
+                    onClick={() => void loadLog()}
+                    className={`${ROW} text-left transition-colors hover:bg-bg-hover/40`}
+                  >
+                    <ScrollText size={14} className="flex-shrink-0 text-text-muted" />
+                    <span className="text-[13px] leading-[18px] text-text-primary">
+                      {t(lang, "pluginViewLog")}
+                    </span>
+                    <ChevronRight size={13} className="ml-auto flex-shrink-0 text-text-muted" />
+                  </button>
+                )}
+
+                {log.status === "loading" && (
+                  <LoadingText
+                    label={t(lang, "pluginLogLoading")}
+                    className="px-2 py-2 text-xs text-text-muted"
+                  />
+                )}
+
+                {log.status === "error" && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-lg border border-danger/45 px-2.5 py-2"
+                  >
+                    <CircleAlert size={13} className="mt-px flex-shrink-0 text-text-secondary" />
+                    <p
+                      className="min-w-0 flex-1 break-words text-[11px] leading-4 text-text-primary"
+                      title={log.message}
+                    >
+                      {t(lang, "pluginLogLoadFailed")}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void loadLog()}
+                      className="flex-shrink-0 text-[11px] font-medium text-text-secondary underline-offset-2 transition-colors hover:text-text-primary hover:underline"
+                    >
+                      {t(lang, "pluginLogRetry")}
+                    </button>
+                  </div>
+                )}
+
+                {log.status === "ready" && (
+                  <pre className="plugin-log-pre max-h-56 overflow-auto whitespace-pre-wrap break-words px-2 py-2 font-mono text-[11px] leading-[18px] text-text-secondary">
+                    {log.lines.length === 0 ? t(lang, "pluginLogEmpty") : log.lines.join("\n")}
+                  </pre>
+                )}
+              </div>
+            </section>
+          )}
+
+          {record && (
+            <section className={`mt-3 ${CARD}`}>
+              <div className={CARD_HEAD}>
+                <h2 className={CARD_TITLE}>{t(lang, "pluginManage")}</h2>
+              </div>
+              {record.previousVersion && (
+                <div className="flex items-center justify-between gap-3 border-b border-border/70 px-3.5 py-2.5">
+                  {/* A permanent caption, not a `title`: after a broken update
+                      this row is the only way back, and `title` is hover-only -
+                      invisible to keyboard and touch. */}
+                  <p className="min-w-0 text-[11px] leading-4 text-text-muted">
+                    {tWithParams(lang, "pluginRollbackHint", { version: record.previousVersion })}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={busy}
                     onClick={() => void rollback(record.id)}
-                    title={`v${record.previousVersion}`}
-                    className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                    className={GHOST_BUTTON}
                   >
                     <RotateCcw size={12} />
                     {t(lang, "pluginRollback")}
                   </button>
-                )}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                <p className="min-w-0 text-[11px] leading-4 text-text-muted">
+                  {t(lang, "pluginUninstallConsequence")}
+                </p>
                 <button
                   type="button"
+                  disabled={busy}
                   onClick={() => setUninstallOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg border border-danger/40 px-2.5 py-1.5 text-[11px] text-danger transition-colors hover:bg-danger/10"
+                  className={DANGER_BUTTON}
                 >
                   <Trash2 size={12} />
                   {t(lang, "pluginUninstall")}
                 </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {description && (
-          <p className="mt-3 max-w-2xl text-xs leading-relaxed text-text-secondary">{description}</p>
-        )}
-
-        {lastError && (
-          <p className="mt-3 rounded-lg border border-danger/40 bg-danger/5 px-2.5 py-1.5 text-[11px] text-danger">
-            {lastError}
-          </p>
-        )}
-
-        <Section title={t(lang, "pluginPermissions")}>
-          <PermissionList
-            permissions={record ? granted : declared}
-            lang={lang}
-            onRevoke={record ? revoke : undefined}
-            canRevoke={(permission) => !impliedRead(permission)}
-            missing={
-              record
-                ? declared.filter(
-                    (permission) => isPluginPermission(permission) && !hasPermission(granted, permission),
-                  )
-                : []
-            }
-            onGrant={
-              record
-                ? (permission) => void setPermissions(record.id, [...granted, permission])
-                : undefined
-            }
-          />
-          {record && granted.length > 0 && (
-            <p className="mt-1.5 text-[10px] leading-relaxed text-text-muted">
-              {t(lang, "pluginLockedNote")}
-            </p>
-          )}
-        </Section>
-
-        <Section title={t(lang, "pluginCommands")}>
-          {commands.length === 0 ? (
-            <p className="text-xs text-text-muted">{t(lang, "pluginNoCommands")}</p>
-          ) : (
-            <ul className="space-y-1">
-              {commands.map((command) => (
-                <li
-                  key={command.id}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-bg-secondary/40 px-2.5 py-1.5"
-                >
-                  <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
-                    {command.title}
-                  </span>
-                  {command.category && (
-                    <span className="flex-shrink-0 text-[10px] text-text-muted">{command.category}</span>
-                  )}
-                  <span className="flex-shrink-0 text-[10px] text-text-muted">Ctrl+Shift+P</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
-        <Section title={t(lang, "pluginInfo")}>
-          <div className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-1">
-            <MetaRow label="ID">
-              <code className="text-[10px]">{record?.id ?? entry?.id}</code>
-            </MetaRow>
-            {version && <MetaRow label={t(lang, "pluginVersion")}>v{version}</MetaRow>}
-            {record && (
-              <MetaRow label={t(lang, "pluginSource")}>
-                {record.source === "index" ? t(lang, "pluginSourceIndex") : t(lang, "pluginSourceFile")}
-              </MetaRow>
-            )}
-            {manifest?.license && (
-              <MetaRow label={t(lang, "pluginLicense")}>{manifest.license}</MetaRow>
-            )}
-            {repoLinks.length > 0 && (
-              <MetaRow label={t(lang, "pluginRepository")}>
-                <span className="flex flex-col items-start gap-1">
-                  {repoLinks.map((link) => (
-                    <button
-                      key={link.url}
-                      type="button"
-                      onClick={() => void openInDefaultBrowser(link.url)}
-                      className="inline-flex max-w-full items-center gap-1 text-accent-text hover:underline"
-                    >
-                      {repoLinks.length > 1 && (
-                        <span className="w-12 flex-shrink-0 text-left text-text-muted">{link.label}</span>
-                      )}
-                      <span className="min-w-0 truncate">{link.url}</span>
-                      <ExternalLink size={10} className="flex-shrink-0" />
-                    </button>
-                  ))}
-                </span>
-              </MetaRow>
-            )}
-          </div>
-        </Section>
-
-        {record && (
-          <Section title={t(lang, "pluginViewLog")}>
-            {logLines === null ? (
-              <button
-                type="button"
-                onClick={() => void loadLog()}
-                className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                <ScrollText size={12} />
-                {t(lang, "pluginViewLog")}
-              </button>
-            ) : (
-              <div className="rounded-lg border border-border bg-bg-primary">
-                <div className="flex items-center justify-between border-b border-border px-2.5 py-1.5">
-                  <span className="text-[10px] text-text-muted">{t(lang, "pluginLogTitle")}</span>
-                  <button
-                    type="button"
-                    onClick={() => setLogLines(null)}
-                    className="text-[10px] text-text-secondary hover:text-text-primary"
-                  >
-                    {t(lang, "close")}
-                  </button>
-                </div>
-                <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words px-2.5 py-2 text-[10px] leading-relaxed text-text-secondary">
-                  {logLines.length === 0 ? t(lang, "pluginLogEmpty") : logLines.join("\n")}
-                </pre>
               </div>
-            )}
-          </Section>
-        )}
+            </section>
+          )}
+        </div>
       </div>
 
       {uninstallOpen && record && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <div className="app-modal-backdrop absolute inset-0" onClick={() => setUninstallOpen(false)} />
-          <section
-            role="dialog"
-            aria-modal="true"
-            className="isolate surface-glass surface-glass--dialog relative w-[min(440px,calc(100vw-32px))] overflow-hidden rounded-xl border border-border bg-bg-primary shadow-2xl"
-          >
-            <header className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-              <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-danger/10 text-danger">
-                <ShieldCheck size={16} />
-              </span>
-              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
-                {t(lang, "pluginUninstallTitle").replace("{name}", name)}
-              </h2>
-            </header>
-            <p className="px-4 py-3 text-xs leading-relaxed text-text-secondary">
-              {t(lang, "pluginUninstallBody")}
-            </p>
-            <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+        // Portalled by ModalShell, which is what makes this survive the
+        // `container-type` ancestor: a hand-rolled `fixed inset-0` overlay is
+        // clipped into the panel (and had no Escape, no focus return and no
+        // accessible name).
+        <ModalShell
+          role="alertdialog"
+          tone="danger"
+          size="sm"
+          // `TONE_TILE.danger` is `bg-danger/10 text-danger` - 2.2:1. The solid
+          // tile is passed in whole so the icon never renders in danger-on-tint.
+          icon={
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-danger text-on-danger">
+              <Trash2 size={16} />
+            </span>
+          }
+          title={tWithParams(lang, "pluginUninstallTitle", { name })}
+          description={t(lang, "pluginUninstallBody")}
+          onClose={() => setUninstallOpen(false)}
+          initialFocusRef={keepDataRef}
+          footer={
+            <>
               <button
                 type="button"
                 onClick={() => setUninstallOpen(false)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                className={GHOST_BUTTON}
               >
                 {t(lang, "pluginPermPromptCancel")}
               </button>
               <button
+                ref={keepDataRef}
                 type="button"
-                onClick={() => {
-                  setUninstallOpen(false);
-                  deactivatePlugin(record.id);
-                  void uninstall(record.id, true);
-                }}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+                disabled={busy}
+                onClick={() => confirmUninstall(true)}
+                className={GHOST_BUTTON}
               >
                 {t(lang, "pluginUninstallKeep")}
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setUninstallOpen(false);
-                  deactivatePlugin(record.id);
-                  void uninstall(record.id, false);
-                }}
-                className="rounded-lg bg-danger px-3 py-1.5 text-xs font-medium text-on-danger transition-opacity hover:opacity-90"
+                disabled={busy}
+                onClick={() => confirmUninstall(false)}
+                className="flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-lg bg-danger px-3 text-xs font-medium text-on-danger transition-colors hover:bg-danger/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {t(lang, "pluginUninstallDrop")}
               </button>
-            </footer>
-          </section>
-        </div>
+            </>
+          }
+        >
+          <p className="text-xs leading-relaxed text-text-secondary">
+            {t(lang, "pluginUninstallConsequence")}
+          </p>
+        </ModalShell>
       )}
     </div>
   );

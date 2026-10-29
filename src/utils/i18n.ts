@@ -821,6 +821,20 @@ export type TranslationKeys = {
   pluginsEmptyAvailable: string;
   pluginsOfflineHint: string;
   pluginsIndexLoading: string;
+  pluginsInstalledLoading: string;
+  pluginsSearchClear: string;
+  pluginsSearchNoResult: string;
+  pluginsSearchScope: string;
+  pluginsIndexMissing: string;
+  pluginsIndexMissingBody: string;
+  pluginsIndexMissingShort: string;
+  pluginsAvailableAllInstalled: string;
+  /** Footnote for when the index only holds entries that are filtered out. */
+  pluginsListHiddenBySearch: string;
+  pluginsIndexOfflineHintAllInstalled: string;
+  pluginsGoneTitle: string;
+  pluginsGoneBody: string;
+  pluginSelectedAnnounce: string;
   pluginsInstallFromFile: string;
   pluginsInstallFromFolder: string;
   pluginsRefreshIndex: string;
@@ -835,13 +849,18 @@ export type TranslationKeys = {
   pluginLicense: string;
   pluginPermissions: string;
   pluginPermissionsNone: string;
+  pluginPermissionsMissing: string;
+  pluginManage: string;
+  pluginRollbackHint: string;
   pluginCommands: string;
   pluginNoCommands: string;
   pluginInstall: string;
+  pluginBusyInstalling: string;
   pluginUpdate: string;
   pluginUninstall: string;
   pluginUninstallTitle: string;
   pluginUninstallBody: string;
+  pluginUninstallConsequence: string;
   pluginUninstallKeep: string;
   pluginUninstallDrop: string;
   pluginRollback: string;
@@ -856,12 +875,18 @@ export type TranslationKeys = {
   pluginInfo: string;
   pluginSourceFile: string;
   pluginViewLog: string;
+  pluginLogSection: string;
   pluginLogEmpty: string;
   pluginLogTitle: string;
+  pluginLogLoading: string;
+  pluginLogLoadFailed: string;
+  pluginLogRetry: string;
   pluginUpdateAvailable: string;
   pluginPermissionRevoke: string;
   pluginPermissionNew: string;
   pluginPermissionGrant: string;
+  pluginPermImplied: string;
+  pluginPermRevokeAlso: string;
   pluginLockedNote: string;
   pluginPermPromptInstallTitle: string;
   pluginPermPromptUpdateTitle: string;
@@ -1761,6 +1786,19 @@ const zh: TranslationKeys = {
   pluginsEmptyAvailable: "暂无可用插件",
   pluginsOfflineHint: "离线，数据可能是旧的",
   pluginsIndexLoading: "正在获取扩展索引…",
+  pluginsInstalledLoading: "正在读取已安装扩展…",
+  pluginsSearchClear: "清空搜索",
+  pluginsSearchNoResult: "没有匹配的扩展",
+  pluginsSearchScope: "搜索范围：名称、描述、作者",
+  pluginsIndexMissing: "还没有获取到扩展索引",
+  pluginsIndexMissingBody: "索引由插件作者的仓库提供，目前没有获取到。可以手动刷新重试。",
+  pluginsIndexMissingShort: "暂无索引",
+  pluginsAvailableAllInstalled: "索引里的扩展都已安装",
+  pluginsListHiddenBySearch: "已安装项因搜索隐藏",
+  pluginsIndexOfflineHintAllInstalled: "离线数据，可能漏掉新扩展",
+  pluginsGoneTitle: "这个扩展已从索引中移除",
+  pluginsGoneBody: "它可能被作者下架，或在最近一次刷新时被移出。刷新索引可以再确认一次。",
+  pluginSelectedAnnounce: "已选择 {name}",
   pluginsInstallFromFile: "从文件安装",
   pluginsInstallFromFolder: "从文件夹安装",
   pluginsRefreshIndex: "刷新索引",
@@ -1775,13 +1813,18 @@ const zh: TranslationKeys = {
   pluginLicense: "许可",
   pluginPermissions: "权限",
   pluginPermissionsNone: "不需要任何权限",
+  pluginPermissionsMissing: "未授予",
+  pluginManage: "管理",
+  pluginRollbackHint: "回到 v{version}",
   pluginCommands: "命令",
   pluginNoCommands: "没有提供命令",
   pluginInstall: "安装",
+  pluginBusyInstalling: "正在安装…",
   pluginUpdate: "更新",
   pluginUninstall: "卸载",
   pluginUninstallTitle: "卸载 {name}？",
   pluginUninstallBody: "扩展文件会被删除。保留设置数据后，重新安装仍可沿用。",
+  pluginUninstallConsequence: "它提供的命令会从命令面板移除，已授予的权限一并收回。",
   pluginUninstallKeep: "保留数据并卸载",
   pluginUninstallDrop: "全部删除",
   pluginRollback: "回滚",
@@ -1795,13 +1838,19 @@ const zh: TranslationKeys = {
   pluginSource: "来源",
   pluginInfo: "信息",
   pluginSourceFile: "本地文件安装",
-  pluginViewLog: "错误日志",
+  pluginViewLog: "查看错误日志",
+  pluginLogSection: "错误日志",
   pluginLogEmpty: "没有错误记录",
-  pluginLogTitle: "错误日志（最近 100 条）",
+  pluginLogTitle: "最近 100 条",
+  pluginLogLoading: "正在读取日志…",
+  pluginLogLoadFailed: "日志读取失败",
+  pluginLogRetry: "重试",
   pluginUpdateAvailable: "有可用更新",
   pluginPermissionRevoke: "撤销",
   pluginPermissionNew: "新增",
   pluginPermissionGrant: "授予",
+  pluginPermImplied: "随「{permission}」一起授予",
+  pluginPermRevokeAlso: "同时撤销：{list}",
   pluginLockedNote: "撤销后，扩展再调用这项能力会被直接拒绝。",
   pluginPermPromptInstallTitle: "安装 {name}？",
   pluginPermPromptUpdateTitle: "更新 {name}？",
@@ -2704,6 +2753,19 @@ const en: TranslationKeys = {
   pluginsEmptyAvailable: "No extensions available",
   pluginsOfflineHint: "Offline — this list may be out of date",
   pluginsIndexLoading: "Fetching the extension index…",
+  pluginsInstalledLoading: "Reading installed extensions…",
+  pluginsSearchClear: "Clear search",
+  pluginsSearchNoResult: "No matching extensions",
+  pluginsSearchScope: "Searches name, description and author",
+  pluginsIndexMissing: "The extension index has not been fetched yet",
+  pluginsIndexMissingBody: "The index comes from the plugin repository and has not been fetched yet. Refresh to try again.",
+  pluginsIndexMissingShort: "No index",
+  pluginsAvailableAllInstalled: "Every extension in the index is already installed",
+  pluginsListHiddenBySearch: "Installed entries are hidden by the search",
+  pluginsIndexOfflineHintAllInstalled: "Offline data may miss newer extensions",
+  pluginsGoneTitle: "This extension is no longer in the index",
+  pluginsGoneBody: "It may have been withdrawn, or dropped in the last refresh. Refresh the index to check again.",
+  pluginSelectedAnnounce: "{name} selected",
   pluginsInstallFromFile: "Install from file",
   pluginsInstallFromFolder: "Install from folder",
   pluginsRefreshIndex: "Refresh index",
@@ -2718,13 +2780,18 @@ const en: TranslationKeys = {
   pluginLicense: "License",
   pluginPermissions: "Permissions",
   pluginPermissionsNone: "No permissions required",
+  pluginPermissionsMissing: "Not granted",
+  pluginManage: "Manage",
+  pluginRollbackHint: "Back to v{version}",
   pluginCommands: "Commands",
   pluginNoCommands: "Provides no commands",
   pluginInstall: "Install",
+  pluginBusyInstalling: "Installing…",
   pluginUpdate: "Update",
   pluginUninstall: "Uninstall",
   pluginUninstallTitle: "Uninstall {name}?",
   pluginUninstallBody: "The extension files will be deleted. Keeping its settings means a reinstall can pick up where it left off.",
+  pluginUninstallConsequence: "Its commands leave the command palette and its granted permissions are withdrawn.",
   pluginUninstallKeep: "Keep settings and uninstall",
   pluginUninstallDrop: "Delete everything",
   pluginRollback: "Roll back",
@@ -2738,13 +2805,19 @@ const en: TranslationKeys = {
   pluginSource: "Source",
   pluginInfo: "Details",
   pluginSourceFile: "Installed from a file",
-  pluginViewLog: "Error log",
+  pluginViewLog: "View error log",
+  pluginLogSection: "Error log",
   pluginLogEmpty: "No errors logged",
-  pluginLogTitle: "Error log (last 100 entries)",
+  pluginLogTitle: "Last 100 entries",
+  pluginLogLoading: "Reading the log…",
+  pluginLogLoadFailed: "Could not read the log",
+  pluginLogRetry: "Retry",
   pluginUpdateAvailable: "Update available",
   pluginPermissionRevoke: "Revoke",
   pluginPermissionNew: "New",
   pluginPermissionGrant: "Grant",
+  pluginPermImplied: "Granted with “{permission}”",
+  pluginPermRevokeAlso: "Also revokes: {list}",
   pluginLockedNote: "Once revoked, the extension's calls to that capability are refused.",
   pluginPermPromptInstallTitle: "Install {name}?",
   pluginPermPromptUpdateTitle: "Update {name}?",

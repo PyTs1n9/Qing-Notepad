@@ -1345,3 +1345,37 @@ graph LR
 - 同时保持通过：`verify:graph-scan`（112 条）、`verify:graph-index`（70 条）、`verify:graph-sync`（46 条）、`npx tsc --noEmit`。
 - `verify-graph-scan.mjs` 里"txt 不给标题候选"这条断言按新语义改成"txt 用正文首行作候选"，并在脚本里注明原因；同理，该脚本的 frontmatter fixture 把 `[[不该成为边]]` 从 `aliases` 挪到 `related`，以便"frontmatter 里的 `[[…]]` 不产生链接"这条断言继续只测屏蔽、不夹带标题语义。
 - **未验证**：本机无 GUI。画布标签的实际观感（24 字截断与 `父目录 · 前8位` 的省略表现）需人工目视。
+
+## 7. 浮层 UI 扁平化（Apple 式，2026-10-29）
+
+**问题**：截图里的左浮层有 3 层边框嵌套 —— 面板 `border` → 三个 `OverlaySection` 各自 `rounded-md border` → 节点列表内层又是一个 `rounded-md border`。256px 宽里三层框把内容挤成「三个叠放的小部件」，用户原话是「方格太多」。
+
+**结论（冻结，改回前先读这段）**
+
+1. **一层外框，内部零边框**。面板是唯一 surface；三段之间只允许一条发丝线 `-mx-2.5 mb-3 mt-1.5 h-px flex-shrink-0 bg-border/60`。`-mx-2.5` 是为了抵消内容区 `px-2.5` 做全宽出血，**负值与前缀内距绑定，改一个必须改另一个**；`flex-shrink-0` 不加会在短窗口被 flex 压成 0 而不报错。间距刻意不对称（上 6 / 下 12）：线属于它下面那一组。
+2. **分组标题去 uppercase / tracking-wide / font-semibold**，统一 `text-[11px] font-medium leading-4 text-text-muted`。中文没有大小写，`uppercase` 是空操作，`tracking-wide` 只会让 CJK 字距变怪。
+3. **筛选项从原生 checkbox 改 `role="switch"` 开关行**：整行可点，轨道 `h-5 w-9 rounded-full`（开 `bg-accent` / 关 `bg-bg-active`）、圆钮 `h-4 w-4 bg-white`，与 `SettingsModal.tsx` 既有 switch 同款；轨道 36 / 钮 16 / 左偏移 2 → 开启 `translate-x-4` 正好贴右 2px。**保留「只看孤立节点」那条的 ref 做 `清除筛选` 卸载后的焦点降落点**，否则按钮自卸载后焦点掉到 `body`。
+4. **节点列表行高 = 槽 32 − 间隙 4 = 28**。`ROW_HEIGHT` 是槽，`ROW_GAP` 是行间空带；行元素自己 `inset-x-1 py-0.5`、`height = ROW_HEIGHT - ROW_GAP`，`maxHeight: 256`（8 槽整）。三者（常量 / 内联 `top,height` / `maxHeight`）必须同改。行内**不能**再套一层 `h-7` 包装：`role="option"` 与点击处理器必须长在几何等于行的那个元素上，否则命中区与 a11y 节点会漂移。
+5. **选中态 = `bg-bg-active` + `text-text-primary` + 标题 `font-medium`**，不用 `text-accent-text`。理由是对比度：dark 下 `#738df9` on `#373a40` 约 3.6，而 `verify-contrast.mjs` 的 wash 口径测的是 `bg-accent/15` 上的 accent-text，覆盖不到 `bg-active`。accent 这一屏只许出现在节点 kind 圆点。
+6. **标签激活 = `border-transparent bg-accent-light text-accent-text`**（dark 4.744）。实心 `bg-accent + text-on-accent` 虽然达标，但会是这屏唯一的高饱和块，和「accent 只留圆点」冲突。护栏：底色不许换 `bg-accent/15`、`accent-light/80` 等更亮的底 —— 这个组合只有 0.24 余量。
+7. **`在编辑器打开` 必须带 `hover:text-text-primary`**：accent-text on `bg-bg-hover` = 4.47，差 0.03 不过 4.5；静态态 4.69 是达标的，只有悬停会掉下去。它是窄屏触控端唯一的 native 打开入口，不许省 `flex-shrink-0`。
+8. **零结果时的 ARIA 与焦点**：`role="listbox"` / `tabIndex` / `aria-activedescendant` 改成 `nodes.length > 0` 的条件值（空 listbox 是 Tab 陷阱：读屏播「列表，0 项」且没有出口）；空态 `<p role="status">` 移到滚动容器**外面**（兄弟节点），加 `min-h-32` 居中壳。焦点迁移必须双重守卫（`nodes.length === 0` **且** `scrollRef.current === document.activeElement`）—— 只判后者会在后台同步把节点推成 0 时抢焦点，这类 bug 几乎不可复现。
+9. **双滚动条不变式**：浮层内容区 `overflow-y-auto` 与列表 `maxHeight: 256` 必须**同时**存在。前者管「短窗口下三段超面板高」，后者管「列表别把上面两段顶出视口」。缺任一个都是 bug，不是冗余。
+
+**没做 / 下次再说**：4 个桶（全部/原生笔记/资料库/断链）做 `<div role="radiogroup">` 筛选按钮组 —— 它会把「清除筛选」从原子动作降级成「把单选拨回全部」，语义上更干净，但本次不动结构；工具栏「添加文件夹」仍保留边框，与浮层内扁平语言不一致，属已知遗留。
+
+**未验证**：本机无 GUI。1px 发丝线在 85% 半透明面板上的可见度、4px 行间空带是否够、开关行 6px 行内距的手感，都需要桌面会话目视确认。
+
+## 8. 画布背景改为透明（2026-10-29 追加）
+
+**结论**：知识库页不再自己画底色。`GraphRenderer` 容器去掉 `bg-bg-primary`，`ForceGraph2D` 的 `backgroundColor` 改成 `"transparent"`，加载态容器同样去掉底色 —— 画布下面是壳层卡片的 `.surface-glass`（磨砂 + 纸纹 + 壁纸），和待办 / 工作台视图一致（它们本来就不铺自己的背景）。
+
+**连带改动（不写会出可见瑕疵）**
+
+- `GraphPalette.bg` 删除（type / `PALETTE_VARIABLES` / `PALETTE_FALLBACKS` / `readGraphPalette` / 初值五处）。留着它就是留一条「把不透明色接回画布」的路，下一个人一定会接回去。
+- 悬空节点的填充原本是 `palette.bg` 实心圆（为了让虚线环看起来是空心的）。画布透明后那会变成一个 **bg 色的实心点浮在玻璃上**，所以改成 `globalCompositeOperation = "destination-out"` 抹掉底下链接画过的像素：真正的「洞」，与背景无关。注意 force-graph 每帧先 `clearRect` 再画（`force-graph.mjs:818`），所以 `backgroundColor="transparent"` 不会留下拖影。
+- 工具栏搜索框 `bg-bg-primary` → `bg-bg-primary/50`，否则整页透明后它是最大的那块实心矩形。
+
+**代价（已知、接受）**：10px 节点标签现在直接坐在 60% 左右 tint 的磨砂面上，壁纸复杂时可读性会低于原来的不透明底 —— 与 `docs/decisions-glass-blur.md` 里「半透明 + 小字 + 4.5:1 三者不可同时成立」是同一条限制。要换可读性就把侧栏/面板的 tint 抬上去，别给标签加底色光晕（那等于把不透明底缩成一小块，观感更碎）。
+
+**未验证**：本机无 GUI。透明画布在四种主题 + 有壁纸/无壁纸组合下的实际观感、悬空节点 destination-out 的边缘有没有暗边，需要桌面会话目视。

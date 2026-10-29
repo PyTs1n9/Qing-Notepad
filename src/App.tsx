@@ -442,6 +442,18 @@ export default function App() {
     };
   }, [initialized]);
 
+  // Entering the extensions page re-reads both columns. The install list is a
+  // local directory read; the index call is deliberately *not* forced: Rust
+  // answers from its 24 h cache without a network round-trip, so hopping
+  // between views stays free, while a window left open for days still picks up
+  // a newer index the next time the page is opened.
+  useEffect(() => {
+    if (currentView !== "plugins") return;
+    const plugins = usePluginStore.getState();
+    void plugins.refreshInstalled();
+    void plugins.refreshIndex(false);
+  }, [currentView]);
+
   // The settings kill switch has to stop live workers, not just refuse new
   // calls: a disabled plugin must not keep a channel into the host.
   useEffect(() => {

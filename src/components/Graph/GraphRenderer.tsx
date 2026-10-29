@@ -57,7 +57,6 @@ import {
  * ~3.06:1 as a text colour in the dark theme.
  */
 const PALETTE_VARIABLES: Record<keyof GraphPalette, string> = {
-  bg: "--color-bg-primary",
   nodeNative: "--color-accent",
   nodeVault: "--color-text-secondary",
   nodeIsolatedFill: "--color-bg-secondary",
@@ -71,7 +70,6 @@ const PALETTE_VARIABLES: Record<keyof GraphPalette, string> = {
 
 /** CSS keyword fallbacks: no hex, so a missing variable can never bake a colour in. */
 const PALETTE_FALLBACKS: Record<keyof GraphPalette, string> = {
-  bg: "Canvas",
   nodeNative: "Highlight",
   nodeVault: "GrayText",
   nodeIsolatedFill: "Canvas",
@@ -90,7 +88,6 @@ export function readGraphPalette(): GraphPalette {
     return value || PALETTE_FALLBACKS[key];
   };
   return {
-    bg: read("bg"),
     nodeNative: read("nodeNative"),
     nodeVault: read("nodeVault"),
     nodeIsolatedFill: read("nodeIsolatedFill"),
@@ -262,7 +259,6 @@ const GraphRenderer = forwardRef<GraphRendererHandle, GraphRendererProps>((props
 
   const [size, setSize] = React.useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [palette, setPalette] = React.useState<GraphPalette>(() => ({
-    bg: PALETTE_FALLBACKS.bg,
     nodeNative: PALETTE_FALLBACKS.nodeNative,
     nodeVault: PALETTE_FALLBACKS.nodeVault,
     nodeIsolatedFill: PALETTE_FALLBACKS.nodeIsolatedFill,
@@ -433,8 +429,16 @@ const GraphRenderer = forwardRef<GraphRendererHandle, GraphRendererProps>((props
       ctx.beginPath();
       ctx.arc(node.x ?? 0, node.y ?? 0, radius, 0, Math.PI * 2);
       if (dangling) {
-        ctx.fillStyle = current.bg;
+        // Erase rather than fill with a colour. The canvas is transparent now, so
+        // a `palette.bg` disc would read as a solid dot sitting on the glass and
+        // the dashed ring would stop looking hollow. `destination-out` removes
+        // whatever the link pass drew under this circle and leaves true
+        // transparency, which is what "hollow" means on a translucent surface.
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,1)";
+        ctx.globalCompositeOperation = "destination-out";
         ctx.fill();
+        ctx.restore();
       } else if (failed) {
         ctx.fillStyle = current.labelMuted;
         ctx.fill();
@@ -689,7 +693,12 @@ const GraphRenderer = forwardRef<GraphRendererHandle, GraphRendererProps>((props
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden bg-bg-primary focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      // No background of its own: the canvas is transparent so the shell's glass
+      // and paper grain show through, the same way the todo and workspace views
+      // sit directly on the card. Painting `bg-bg-primary` here (and in the
+      // canvas fill below) would put an opaque rectangle inside a translucent
+      // card and hide the wallpaper the user chose.
+      className="relative h-full w-full overflow-hidden focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
       // 可访问性（§4.5.3）：canvas 自己不可聚焦，容器承担焦点与角色。
       // `aria-label` 由调用方传入；「点空白取消选中」已经没有了（见上面对
       // `onBackgroundClick` 的说明），取消选中走这里冒泡出去的 Esc —— 由
@@ -705,7 +714,7 @@ const GraphRenderer = forwardRef<GraphRendererHandle, GraphRendererProps>((props
           graphData={graphData}
           width={size.width}
           height={size.height}
-          backgroundColor={palette.bg}
+          backgroundColor="transparent"
           nodeRelSize={NODE_REL_SIZE}
           nodeCanvasObject={paintNode}
           nodePointerAreaPaint={paintPointerArea}

@@ -94,15 +94,26 @@ export const usePluginStore = create<PluginStoreState>((set, get) => ({
   },
 
   refreshIndex: async (force = false) => {
+    // Entering the extensions page fires this on every visit, and a fast
+    // view toggle would otherwise stack invokes; Rust writes the cache file on
+    // each successful fetch, so overlapping calls race on that write. The flag
+    // is set before the first `await`, which makes this check reliable even
+    // when two callers run in the same tick.
+    if (get().indexLoading) return;
     set({ indexLoading: true });
-    const result = await fetchPluginIndex(force);
-    set({
-      index: result.plugins,
-      indexStatus: result.status,
-      indexSource: result.source,
-      indexFetchedAt: result.fetchedAt,
-      indexLoading: false,
-    });
+    try {
+      const result = await fetchPluginIndex(force);
+      set({
+        index: result.plugins,
+        indexStatus: result.status,
+        indexSource: result.source,
+        indexFetchedAt: result.fetchedAt,
+      });
+    } finally {
+      // `fetchPluginIndex` swallows its own failures, but a wedged fallback must
+      // not leave the spinner running and block every later refresh.
+      set({ indexLoading: false });
+    }
   },
 
   select: (id) => set({ selectedId: id, lastError: null }),
