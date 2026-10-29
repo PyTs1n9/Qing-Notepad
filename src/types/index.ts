@@ -59,7 +59,7 @@ export interface AppFont {
   path: string;
 }
 
-export type ViewType = "todo" | "note" | "canvas" | "workspace";
+export type ViewType = "todo" | "note" | "graph" | "canvas" | "workspace" | "plugins";
 
 export type {
   CanvasBoard,
@@ -75,6 +75,8 @@ export type {
   CanvasImageItem,
   CanvasItem,
   CanvasNodeItem,
+  CanvasRefItem,
+  CanvasRefTarget,
   CanvasRichTextFields,
   CanvasRichTextItem,
   CanvasShapeItem,

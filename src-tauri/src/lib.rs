@@ -6,9 +6,14 @@ use tauri::{
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 
+mod clipboard;
 mod credentials;
 mod pdf_export;
+mod plugin;
+mod plugin_host;
+mod plugin_manifest;
 mod storage;
+mod vault;
 mod window_bg;
 
 // Global flag: whether we are truly quitting the app
@@ -76,6 +81,11 @@ fn set_tray_language(app: tauri::AppHandle, lang: String) -> Result<(), String> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // The extension host's only door. Held as `Arc<HostBridge>` so the protocol
+    // handler and `plugin_ext_host_send` reach the same queue; the poll itself
+    // blocks, so it runs on its own thread rather than the protocol thread.
+    let ext_bridge = std::sync::Arc::new(plugin_host::HostBridge::default());
+
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -92,6 +102,36 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(ext_bridge.clone())
+        // `qing-plugin-rpc`: the hidden extension-host webview's only way out.
+        // `capabilities: []` rules out Tauri IPC there, so the conversation has
+        // to ride a custom scheme — which needs no capability and is still
+        // re-checked on the main window at every hop.
+        .register_asynchronous_uri_scheme_protocol(plugin_host::SCHEME, {
+            let bridge = ext_bridge.clone();
+            move |ctx, request, responder| {
+                let app = ctx.app_handle().clone();
+                let method = request.method().to_string();
+                // Path *and* query: the probe reports its verdict in the query
+                // string, and dropping it here would blind the only instrument
+                // that can see a blocked `fetch`.
+                let path = request
+                    .uri()
+                    .path_and_query()
+                    .map(|value| value.as_str().to_string())
+                    .unwrap_or_default();
+                let body = request.into_body();
+                let bridge = bridge.clone();
+                // `/down` blocks until there is something to deliver. One
+                // thread, at most, is parked here: the ext-host keeps a single
+                // poll in flight for all of its workers.
+                std::thread::spawn(move || {
+                    let response =
+                        plugin_host::handle_request(&app, &bridge, &method, &path, &body);
+                    responder.respond(response);
+                });
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             quit_app,
             set_tray_language,
@@ -107,6 +147,30 @@ pub fn run() {
             storage::storage_migrate,
             storage::open_data_path,
             window_bg::set_window_background,
+            clipboard::clipboard_read,
+            clipboard::clipboard_write,
+            plugin::plugin_list_installed,
+            plugin::plugin_install,
+            plugin::plugin_uninstall,
+            plugin::plugin_set_enabled,
+            plugin::plugin_set_permissions,
+            plugin::plugin_rollback,
+            plugin::plugin_read_manifest,
+            plugin::plugin_discard_staging,
+            plugin::plugin_storage_get,
+            plugin::plugin_storage_set,
+            plugin::plugin_storage_delete,
+            plugin::plugin_storage_keys,
+            plugin::plugin_fetch_index,
+            plugin::plugin_read_log,
+            plugin::plugin_append_log,
+            plugin_host::plugin_ext_host_send,
+            plugin_host::plugin_ext_host_open,
+            vault::vault_register,
+            vault::vault_list,
+            vault::vault_remove,
+            vault::vault_scan,
+            vault::vault_read_file,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -118,6 +182,27 @@ pub fn run() {
             // `fs:scope` is deliberately narrow, so the directory the app will
             // read from has to be allowed explicitly before the first frame.
             storage::register_startup_roots(app.handle());
+
+            // Vault whitelist + directory watchers. Runs after the data root is
+            // known (it stores `vaults.json` under `<data>/graph/`). The
+            // watcher thread is started here so a folder edited in another
+            // application shows up in the graph without a manual refresh.
+            vault::init(app.handle());
+
+            // A crash during an install must not leave a staging tree behind;
+            // it is scratch space, so clearing it unconditionally is safe.
+            plugin::clean_staging_on_startup(app.handle());
+
+            // CSP probe: open the hidden extension host so its page can answer
+            // whether `connect-src` reaches a custom scheme on this WebView2.
+            // Dev-only by env var; the mode switch (P1b step 7) decides when it
+            // opens for real.
+            if std::env::var("QING_EXT_HOST_PROBE").is_ok() {
+                match plugin_host::plugin_ext_host_open(app.handle().clone()) {
+                    Ok(outcome) => eprintln!("[plugin-host] probe: {outcome}"),
+                    Err(error) => eprintln!("[plugin-host] probe failed: {error}"),
+                }
+            }
 
             // Create tray menu in the fallback language; the frontend replaces
             // it as soon as it knows the persisted `lang`.

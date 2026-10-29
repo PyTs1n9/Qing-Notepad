@@ -1,5 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Eye, EyeOff, LogIn, LogOut, Mail, ShieldCheck, UserPlus, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  LogIn,
+  LogOut,
+  Mail,
+  ShieldCheck,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { isSupabaseConfigured } from "@/utils/supabase";

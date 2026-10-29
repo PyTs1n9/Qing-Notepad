@@ -1,0 +1,23 @@
+{
+  "id": "qing.hello-headless",
+  "name": "时间戳剪贴板",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "engines": { "host": ">=0.7.3 <1.0.0" },
+  "description": "把当前时间戳写进剪贴板，用来验证「安装 → 授权 → 命令面板 → 权限拒绝」整条链路。",
+  "author": { "name": "Qing Notepad", "url": "https://github.com/PyTs1n9/Qing-Notepad" },
+  "license": "MIT",
+  "repository": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-hello-headless",
+  "main": "main.js",
+  "activationEvents": ["onCommand:qing.hello-headless.run"],
+  "permissions": ["clipboard:write", "notify"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "qing.hello-headless.run",
+        "title": "复制当前时间戳",
+        "category": "示例"
+      }
+    ]
+  }
+}

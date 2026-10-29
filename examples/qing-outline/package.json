@@ -1,0 +1,74 @@
+{
+  "name": "outline",
+  "publisher": "qing",
+  "displayName": "大纲",
+  "description": "在笔记侧栏列出当前笔记的 Markdown 标题层级，点标题把光标移到那一行。",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "Qing Notepad",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-outline"
+  },
+  "engines": {
+    "qing": ">=0.7.3 <1.0.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onView:qing.outline.toc",
+    "onCommand:qing.outline.focus",
+    "onCommand:qing.outline.refresh",
+    "onCommand:qing.outline.bold",
+    "onCommand:qing.outline.mark-duplicates"
+  ],
+  "permissions": [
+    "editor:read",
+    "editor:write",
+    "editor:decorate",
+    "editor:selection",
+    "views",
+    "notify"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "qing.outline.focus",
+        "title": "大纲：跳到所点标题",
+        "category": "示例"
+      },
+      {
+        "command": "qing.outline.refresh",
+        "title": "大纲：刷新",
+        "category": "示例"
+      },
+      {
+        "command": "qing.outline.bold",
+        "title": "大纲：给选中标题加粗",
+        "category": "示例"
+      },
+      {
+        "command": "qing.outline.mark-duplicates",
+        "title": "大纲：标记重复词",
+        "category": "示例"
+      }
+    ],
+    "views": [
+      {
+        "id": "qing.outline.toc",
+        "title": "大纲"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "pack": "node build.mjs && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.8.0"
+  }
+}

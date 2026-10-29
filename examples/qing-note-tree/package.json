@@ -1,0 +1,61 @@
+{
+  "name": "note-tree",
+  "publisher": "qing",
+  "displayName": "笔记树结构图",
+  "description": "把笔记目录以树状结构画到 canvas 画布：文件夹为分支、笔记为叶节点，连线为曲线，支持折叠与 AI 概括。",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "Qing Notepad",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-note-tree"
+  },
+  "engines": {
+    "qing": ">=0.7.3 <1.0.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:qing.note-tree.pull",
+    "onCommand:qing.note-tree.summarize",
+    "onCommand:qing.note-tree.cleanMissing"
+  ],
+  "permissions": [
+    "notes:read",
+    "canvas:read",
+    "canvas:write",
+    "ai:summarize",
+    "storage",
+    "notify"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "qing.note-tree.pull",
+        "title": "把笔记树画到当前画布",
+        "category": "笔记树"
+      },
+      {
+        "command": "qing.note-tree.summarize",
+        "title": "为缺失摘要的节点生成 AI 概括",
+        "category": "笔记树"
+      },
+      {
+        "command": "qing.note-tree.cleanMissing",
+        "title": "清理源笔记已删除的节点",
+        "category": "笔记树"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "pack": "node build.mjs && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.8.0"
+  }
+}

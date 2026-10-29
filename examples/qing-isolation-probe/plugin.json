@@ -1,0 +1,23 @@
+{
+  "id": "qing.isolation-probe",
+  "name": "隔离自检",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "engines": { "host": ">=0.7.3 <1.0.0" },
+  "description": "在真实 Worker 里检查 window / document / Tauri IPC / 网络四条隔离前提，结果用提示消息报告。",
+  "author": { "name": "Qing Notepad", "url": "https://github.com/PyTs1n9/Qing-Notepad" },
+  "license": "MIT",
+  "repository": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-isolation-probe",
+  "main": "main.js",
+  "activationEvents": ["onCommand:qing.isolation-probe.run"],
+  "permissions": ["notify"],
+  "contributes": {
+    "commands": [
+      {
+        "id": "qing.isolation-probe.run",
+        "title": "运行隔离自检",
+        "category": "示例"
+      }
+    ]
+  }
+}

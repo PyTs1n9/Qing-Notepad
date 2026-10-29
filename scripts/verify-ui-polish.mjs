@@ -116,7 +116,12 @@ check("P0-2", "全局焦点环 + 滚动容器负 offset", () => {
     throw new Error("缺少全局 :focus-visible 规则");
   }
   if (!css.includes("outline-offset: -2px")) throw new Error("缺少负 offset 覆盖");
-  for (const keep of [".canvas-switcher-create:focus-within::after", ".sticky-mode .sticky-content:focus"]) {
+  // `.canvas-switcher-create:focus-within::after` was listed here until the
+  // canvas-apple-ui decision (docs/decisions-canvas-apple-ui.md §3.5 + appendix
+  // C) deleted the 105° accent sweep from both switcher rows: the gradient's
+  // hue drifts per theme, and the create form already draws a real focus ring on
+  // its input (accent border + 3px halo). The remaining entry is untouched.
+  for (const keep of [".sticky-mode .sticky-content:focus"]) {
     if (!css.includes(keep)) throw new Error(`既有焦点样式被破坏：${keep}`);
   }
   return true;

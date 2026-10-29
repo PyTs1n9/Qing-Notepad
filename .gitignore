@@ -12,6 +12,12 @@ node_modules
 dist
 dist-ssr
 
+# …except the example plugins' entry points: `examples/qing-wordcount-ts`
+# declares `main: ./dist/extension.js`, and the example is only useful if it
+# can be installed straight from a checkout.
+!examples/*/dist/
+!examples/*/dist/**
+
 # Environment files (the tracked template is .env.example)
 .env
 .env.local
@@ -54,8 +60,14 @@ IDEA.md
 # Scratch output from design/AI generation runs (never shipped, never tracked)
 /outputs/
 
+# Ad-hoc screenshot / probe scratch from UI verification rounds (`.tmp-*.png`,
+# `.tmp-*.mjs`, `.tmp-*.sh`). These are one-shot artefacts, never deliverables.
+/.tmp-*
+scripts/.tmp-*
+
 # headless verification sandbox
 .verify-sandbox/
+src/__arch_probe__/
 
 # manual scratch directory used while testing storage migration
 /d/

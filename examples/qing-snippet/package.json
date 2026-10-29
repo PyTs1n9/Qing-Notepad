@@ -1,0 +1,85 @@
+{
+  "name": "snippet",
+  "publisher": "qing",
+  "displayName": "片段库",
+  "description": "把常用段落存成片段，一条命令插到光标处；支持日期/时间/光标/选区四个占位符。",
+  "version": "1.0.1",
+  "license": "MIT",
+  "author": {
+    "name": "Qing Notepad",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-snippet"
+  },
+  "engines": {
+    "qing": ">=0.7.3 <1.0.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onCommand:qing.snippet.insert",
+    "onCommand:qing.snippet.new",
+    "onCommand:qing.snippet.delete",
+    "onCommand:qing.snippet.restore",
+    "onCommand:qing.snippet.export",
+    "onCommand:qing.snippet.import"
+  ],
+  "permissions": [
+    "storage",
+    "views",
+    "notify",
+    "editor:read",
+    "editor:write",
+    "editor:selection"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "qing.snippet.insert",
+        "title": "插入片段",
+        "category": "片段"
+      },
+      {
+        "command": "qing.snippet.new",
+        "title": "把选中文字存为片段",
+        "category": "片段"
+      },
+      {
+        "command": "qing.snippet.delete",
+        "title": "删除片段",
+        "category": "片段"
+      },
+      {
+        "command": "qing.snippet.restore",
+        "title": "恢复上次删除的片段",
+        "category": "片段"
+      },
+      {
+        "command": "qing.snippet.export",
+        "title": "导出全部片段到光标处",
+        "category": "片段"
+      },
+      {
+        "command": "qing.snippet.import",
+        "title": "从选中内容导入片段",
+        "category": "片段"
+      }
+    ],
+    "views": [
+      {
+        "id": "qing.snippet.panel",
+        "title": "片段"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "pack": "node build.mjs && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.8.0"
+  }
+}

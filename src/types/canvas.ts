@@ -12,6 +12,12 @@ interface CanvasItemBase {
   height: number;
   rotation: number;
   zIndex: number;
+  /**
+   * Hidden items keep their slot in the board but are not drawn, not hit-tested
+   * and do not route connectors. Folding a structure tree is expressed this way
+   * so the tree semantics stay in the plugin instead of the canvas core.
+   */
+  hidden?: boolean;
 }
 
 export interface CanvasImageItem extends CanvasItemBase {
@@ -45,7 +51,33 @@ export interface CanvasShapeItem extends CanvasItemBase, CanvasRichTextFields {
   strokeWidth: number;
 }
 
-export type CanvasConnectorStyle = "straight" | "orthogonal";
+/**
+ * What a reference node points at. `root` is a synthetic node for a tree root
+ * ("全部笔记") — it has no backing record, only a label.
+ */
+export type CanvasRefTarget =
+  | { kind: "note"; id: string }
+  | { kind: "folder"; id: string }
+  | { kind: "root"; label: string };
+
+/**
+ * A read-only reference card. The board stores the *pointer*, never the body:
+ * title and summary are refreshed from the source, which is what makes
+ * re-syncing idempotent and keeps the board file small.
+ */
+export interface CanvasRefItem extends CanvasItemBase {
+  type: "ref";
+  ref: CanvasRefTarget;
+  title: string;
+  excerpt?: string;
+  summary?: string;
+  /** Content hash the summary was generated from; a mismatch means stale. */
+  summaryHash?: string;
+  /** Fold state for tree-style uses; descendants are hidden separately. */
+  collapsed?: boolean;
+}
+
+export type CanvasConnectorStyle = "straight" | "orthogonal" | "curve";
 export type CanvasAnchor = "top" | "right" | "bottom" | "left";
 
 export interface CanvasConnectorBinding {
@@ -89,7 +121,7 @@ export interface CanvasDoodleItem extends CanvasItemBase {
 }
 
 export type CanvasRichTextItem = CanvasTextItem | CanvasShapeItem;
-export type CanvasNodeItem = CanvasImageItem | CanvasTextItem | CanvasShapeItem;
+export type CanvasNodeItem = CanvasImageItem | CanvasTextItem | CanvasShapeItem | CanvasRefItem;
 export type CanvasItem = CanvasNodeItem | CanvasConnectorItem | CanvasDoodleItem;
 
 export interface CanvasBoard {
@@ -120,7 +152,7 @@ export function isCanvasRichTextItem(item: CanvasItem): item is CanvasRichTextIt
 }
 
 export function isCanvasNodeItem(item: CanvasItem): item is CanvasNodeItem {
-  return item.type === "image" || item.type === "text" || item.type === "shape";
+  return item.type === "image" || item.type === "text" || item.type === "shape" || item.type === "ref";
 }
 
 /** Upgrade legacy boards without rewriting their text until the next save. */

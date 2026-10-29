@@ -12,12 +12,12 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
-  Sparkles,
   Square,
   Trash2,
   Undo2,
   X,
 } from "lucide-react";
+import XiaoQingMark from "./XiaoQingMark";
 import { useSettingsStore } from "@/stores/settingsStore";
 import {
   LOCAL_MODEL_ID,
@@ -189,27 +189,28 @@ const ReasoningBlock = React.memo(ReasoningBlockImpl);
  *
  * With a `brand` it carries the vendor mark on a bare tile: the logo brings its
  * own colour, and an accent disc behind it would read as a second brand. Without
- * one (小青, or a vendor missing from the table) it keeps the Sparkles mark on
- * the accent tile, which is what the assistant looks like on its own.
+ * one the assistant speaks as 小青, so the tile becomes the app's own book disc -
+ * the old accent circle plus a Sparkles glyph said "generic assistant", which is
+ * the one thing this identity must not say.
  */
 const AssistantAvatar: React.FC<{ size?: number; brand?: ModelBrand | null }> = ({
   size,
   brand,
-}) => (
-  <div
-    className={`ai-avatar flex flex-shrink-0 items-center justify-center rounded-full ${
-      brand
-        ? "ai-avatar--brand text-text-primary"
-        : "bg-accent-light text-accent-text ring-1 ring-accent/20"
-    }`}
-    // One variable drives both the tile and the glyph it holds, so an inline
-    // size override (header 28, empty state 44) scales both together.
-    style={size ? ({ "--ai-avatar-size": `${size}px` } as React.CSSProperties) : undefined}
-    title={brand?.label}
-  >
-    {brand ? <ModelBrandIcon brand={brand} /> : <Sparkles />}
-  </div>
-);
+}) => {
+  if (!brand) return <XiaoQingMark size={size} />;
+
+  return (
+    <div
+      className="ai-avatar ai-avatar--brand flex flex-shrink-0 items-center justify-center rounded-full text-text-primary"
+      // One variable drives both the tile and the glyph it holds, so an inline
+      // size override (header 26, empty state 44) scales both together.
+      style={size ? ({ "--ai-avatar-size": `${size}px` } as React.CSSProperties) : undefined}
+      title={brand.label}
+    >
+      <ModelBrandIcon brand={brand} />
+    </div>
+  );
+};
 
 function formatTime(timestamp: number, lang: "zh" | "en"): string {
   return new Date(timestamp).toLocaleTimeString(lang === "zh" ? "zh-CN" : "en-US", {
@@ -902,25 +903,28 @@ const AiSidebar: React.FC<AiSidebarProps> = ({ onOpenSettings }) => {
       {/* Header: assistant identity + status, session controls, clear (with confirm), close */}
       {/* h-9 matches the note tab bar height so this border lands on the same
           line as the tab strip's border across the window. */}
-      <div className="ai-head flex h-9 flex-shrink-0 items-center gap-2.5 border-b border-border">
-        <AssistantAvatar size={28} brand={headerBrand} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium leading-tight text-text-primary">
+      <div className="ai-head flex h-9 flex-shrink-0 items-center gap-2 border-b border-border">
+        <AssistantAvatar size={26} brand={headerBrand} />
+        {/* One line, not two. A 36px strip cannot hold a tile plus a 14px name
+            plus a 10px status row without `leading-tight` on both - the old
+            layout spent its whole margin on squeezing. The status word is not
+            removed, only moved: the dot keeps it in `title` and `aria-label`,
+            which is where "why can't I send" is actually asked. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="truncate text-[13px] font-medium leading-none text-text-primary">
             {headerModelLabel}
-          </div>
-          <div className="mt-0.5 flex items-center gap-1.5">
-            <span
-              className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-                missingKeyForSelection ? "bg-text-muted/50" : "bg-green-500"
-              }`}
-              aria-hidden="true"
-            />
-            <span className="truncate text-[10px] leading-none text-text-muted">
-              {missingKeyForSelection
-                ? t(lang, "aiStatusNoKey")
-                : t(lang, "aiStatusReady")}
-            </span>
-          </div>
+          </span>
+          <span
+            className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+              // Token colours instead of `bg-green-500` + a 50% muted dot: the
+              // missing-key state is a warning, not an absence, and a hard-coded
+              // green collides with the green theme.
+              missingKeyForSelection ? "bg-warning" : "bg-success"
+            }`}
+            role="img"
+            title={missingKeyForSelection ? t(lang, "aiStatusNoKey") : t(lang, "aiStatusReady")}
+            aria-label={missingKeyForSelection ? t(lang, "aiStatusNoKey") : t(lang, "aiStatusReady")}
+          />
         </div>
         <div className="relative flex items-center gap-0.5">
           <button

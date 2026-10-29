@@ -220,6 +220,20 @@
      An ink-brown foreground is the only direction that works: #3d2c00 clears
      4.5 against all four grounds (6.89 worst case, yellow theme). */
   --color-on-warning: #3d2c00;
+  /* 小青's mark, taken from `src-tauri/icons/icon.png`: a circular haze-blue
+     ground with a warm paper book on it. Two deliberate departures from the icon
+     - see `docs/decisions-ai-mark.md`:
+     1. The ground is the icon's #a8c2ca **pressed dark** to #2c4a57. Its own
+        32x32 build is the evidence: at that size the pale ground and pale paper
+        melt into one blob, so the mark inverts the value instead of copying it.
+     2. The drawn shape is the book alone; the laptop base is what disappears
+        first at 32px and would only add noise at 20.
+     Ratios measured 2026-10-28: paper on ground 8.07, ground on the light
+     sidebar 7.35, ground on the dark sidebar 1.74 - hence the light rim in the
+     component, which is what keeps the disc off the night ground. */
+  --color-qing-mark-bg: #2c4a57;
+  --color-qing-mark-page: #faf4e6;
+  --color-qing-mark-fold: #16333f;
 }
 
 /* Dark Theme */
@@ -350,6 +364,41 @@
      (see SHELL_TOP_GAP_* in shellLayout.ts). */
   --shell-top-gap: 6px;
   --box-radius: 10px;
+
+  /* Canvas floating layers. Every value is a multiple of the 6px rhythm the
+     shell already uses, except the two control metrics, which are pointer
+     sizes rather than spacing.
+     `--canvas-rail-row-h` is deliberately *not* tied to `--canvas-ctl-h`:
+     a list row and a tool button are different things, and a mis-hit on a row
+     reloads the whole board while a mis-hit on a tool only picks another tool
+     (see docs/decisions-canvas-apple-ui.md §1.4 / §7.9.4). */
+  --canvas-pill-h: 2.5rem; /* 40px */
+  --canvas-pill-inset: 0.75rem; /* 12px */
+  --canvas-pill-radius: 0.625rem; /* 10px = --box-radius */
+  --canvas-ctl-h: 1.75rem; /* 28px */
+  --canvas-gap-in: 0.125rem; /* 2px  within a cluster */
+  --canvas-gap-cluster: 0.375rem; /* 6px  between clusters */
+  --canvas-gap-seg: 0.5rem; /* 8px  between segments */
+  --canvas-rail-w: 2.75rem; /* 44px */
+  --canvas-rail-w-open: 15.5rem; /* 248px */
+  --canvas-rail-row-h: 2rem; /* 32px */
+
+  /* Letterpress rail marks: one 20px square per canvas, pressed into the panel
+     at rest and standing proud for the current one. The four values live here
+     because the row mark, the "+" row and the two `.theme-dark` overrides all
+     have to agree on them — a ring drawn from the accent itself measures 2.07
+     (yellow) against the panel, and a well mixed from the panel fill would
+     disappear the moment the row gets a hover wash. */
+  --rail-mark: 1.25rem; /* 20px */
+  --rail-ring: color-mix(in srgb, var(--color-accent-text) 80%, var(--color-border));
+  --rail-well: color-mix(in srgb, var(--color-text-primary) 7%, transparent);
+  --rail-wash: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
+
+  /* The 1px hairline that separates segments inside the pill and the two
+     dividers inside the rail. Mixed from the border and the muted text colour
+     so it stays legible on all four themes (measured 2.71-2.99 against the
+     pill fill, which is what a hairline needs to be readable as a line). */
+  --pill-divider: color-mix(in srgb, var(--color-border) 62%, var(--color-text-muted) 38%);
 
   /* Unitless on purpose: only calc(var(--x) * 1px) / * 1% add units, and a
      stored "12px" would make the calc() invalid and silently drop the rule. */
@@ -617,6 +666,402 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Canvas pill — floating toolbar, macOS desktop vocabulary            */
+/*                                                                     */
+/* The pill is centred over the canvas, detached from every edge. Its  */
+/* presence is carried by the shadow and the 1px hairline, *not* by    */
+/* the fill: measured, the pill fill sits only 1.08-1.13 against the   */
+/* canvas in all four themes, which is invisible. Raising the tint to  */
+/* "make it visible" turns the pill into a solid bar and loses the     */
+/* floating reading — do not.                                          */
+/*                                                                     */
+/* The query container is the *layer*, never the pill. The pill is     */
+/* `width: max-content`; putting `container-type: inline-size` on it   */
+/* would make inline-size containment decide its width, so it would    */
+/* collapse and every threshold below would fire (or never fire) for   */
+/* reasons unrelated to the content.                                   */
+/*                                                                     */
+/* Thresholds are *stage* widths, not toolbar widths. `inset-inline:   */
+/* 12px` makes the layer exactly as wide as the old `.canvas-toolbar`  */
+/* content box (card - 24px), so the old measured values could be      */
+/* converted by subtracting the geometry savings (-75px) and the save  */
+/* state text (-24px) rather than re-measured from scratch.            */
+/*                                                                     */
+/* Labels step down by information value, not by order: the two        */
+/* trailing actions first (their glyphs are unambiguous and the        */
+/* tooltip keeps the name), then the menu names, then the canvas name, */
+/* then the zoom readout. Below 426px the two trailing actions fold    */
+/* into a "..." menu instead of disappearing — each of them has        */
+/* exactly one entry point in the whole app.                           */
+/*                                                                     */
+/* The seven thresholds are 950 / 820·755 / 545 / 470 / 426 / 396 /    */
+/* 362. Each one equals the content width *at the moment it fires*     */
+/* plus 4-6px of slack — never the width after it has fired. The gaps  */
+/* between the last three (46 / 30 / 34) are structural: they are      */
+/* exactly what that step removes, so they stay put even if the        */
+/* absolute values are re-tuned on a real screen.                      */
+/* ------------------------------------------------------------------ */
+
+.canvas-pill-layer {
+  position: absolute;
+  z-index: 40;
+  inset-inline: var(--canvas-pill-inset);
+  top: var(--canvas-pill-inset);
+  /* Out of the height budget: the canvas starts at the top of the card.
+     Paint containment is not implied by `inline-size`, so the pill and its
+     shadow still overflow this empty shell. */
+  height: 0;
+  display: flex;
+  justify-content: center;
+  /* Required. With `height: 0` the default `stretch` would squash the pill
+     to zero height. */
+  align-items: flex-start;
+  /* The two 12px gutters must stay click-through so a stroke can start at
+     the very top edge of the canvas. */
+  pointer-events: none;
+  container-type: inline-size;
+  container-name: canvas-pill;
+}
+
+.canvas-pill {
+  --pill-fill: color-mix(in srgb, var(--color-bg-secondary) 95%, transparent);
+  display: flex;
+  align-items: center;
+  /* Content-sized. A fixed width or `flex-1` would make the pill 100% of a
+     narrow stage and it would stop reading as a pill. */
+  width: max-content;
+  max-width: 100%;
+  height: var(--canvas-pill-h);
+  gap: var(--canvas-gap-seg);
+  padding-inline: 0.375rem;
+  border: 1px solid color-mix(in srgb, var(--color-border) 88%, transparent);
+  border-radius: var(--canvas-pill-radius);
+  background-color: var(--pill-fill);
+  box-shadow:
+    0 1px 1px color-mix(in srgb, #000 10%, transparent),
+    0 6px 18px -12px color-mix(in srgb, #000 55%, transparent);
+  pointer-events: auto;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+/* A black drop shadow is invisible on #1a1b1e, so the dark theme reads depth
+   from a lit top edge plus a deeper, tighter shadow. */
+.theme-dark .canvas-pill {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 8px 20px -14px #000;
+}
+
+/* Editing text hands the top of the canvas to the format bar. `inert` (set
+   from JSX while the editor is open) is what removes the pill from the tab
+   order and the accessibility tree — opacity alone leaves thirteen invisible
+   tab stops behind. */
+.canvas-pill--hidden {
+  opacity: 0;
+}
+
+/* Three segments split by two hairlines. Spacing does the grouping while the
+   labels are visible; once they are gone the row degenerates into an even grid
+   of icons, and those two lines are the only thing left saying
+   "name / tools / actions". That is why there are two and not five. */
+.canvas-seg {
+  display: flex;
+  align-items: center;
+  gap: var(--canvas-gap-in);
+  flex-shrink: 0;
+}
+
+.canvas-seg--cluster {
+  gap: var(--canvas-gap-cluster);
+}
+
+/* The identity cluster breathes at the *cluster* beat (6px), not the 2px used
+   inside a group of controls: an icon, a name and a state are three different
+   things. It is also what makes the 34px collapse at ③ work — 16 + 6 + 12 with
+   one gap instead of two. */
+.canvas-seg--identity {
+  gap: var(--canvas-gap-cluster);
+}
+
+/* View menu and zoom figure answer the same question, so they sit 6px apart —
+   the ⑥ reduction is exactly "view 28 + this gap 6 = 34px". */
+.canvas-seg--viewport {
+  gap: var(--canvas-gap-cluster);
+}
+
+/* The only structural divider in the pill: 1x16px, drawn twice — between
+   identity and tools, and between tools and actions.
+   The lit right edge is a `box-shadow`, not a second 1px element: it reads as a
+   cut with one lit wall while the layout stays at the 1px all seven breakpoints
+   were computed against (a second element would cost 2px of layout and move
+   every threshold below it). */
+.canvas-seg-rule {
+  flex-shrink: 0;
+  width: 1px;
+  height: 1rem;
+  background-color: var(--pill-divider);
+  box-shadow: 1px 0 0 color-mix(in srgb, #fff 45%, transparent);
+}
+
+/* Dark gets a cut, not a groove. `--pill-divider` has to stay at 2.70-2.96
+   here: below 545px it is the only structural signal left that says
+   "name / tools / actions", so the physics of a groove (floor darker than both
+   walls) is impossible without breaking that. A dark wall on top of it read as
+   "a light bar with a drop shadow" and made the divider 3px wide where the
+   light themes' is 2px — the same capsule cannot change its line weight with
+   the theme, and a 2.3:1 wall would add a third structural weight next to the
+   2.7-3.0 hairline and the 3.6 selection ring. So: one side lit, both themes.
+   Light reads as a groove (line darker than the fill), dark as a seam (line
+   lighter) — the direction is not promised to match, the readability is. */
+.theme-dark .canvas-seg-rule {
+  box-shadow: 1px 0 0 color-mix(in srgb, #fff 18%, transparent);
+}
+
+/* Segment-level swaps, not label fades: hiding a whole cluster is a discrete
+   event, so `display` is allowed here (it is not allowed for text). */
+.canvas-seg--more {
+  display: none;
+}
+
+/* A canvas name is user text up to 80 chars; without a ceiling the title block
+   would starve the tools before any breakpoint below fires. It is also the one
+   shrinkable item in the row: without `min-width: 0` the flex item refuses to
+   go under its content and `truncate` never runs — the pill would overflow
+   instead of the name ellipsising. */
+.canvas-toolbar-title-label {
+  /* The only shrinkable thing in segment A: everything else is `shrink-0`, so
+     a long name gives way before any tool does. */
+  min-width: 0;
+  flex-shrink: 1;
+  max-width: 15rem;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* Text that steps out at a breakpoint collapses to a zero-width box instead of
+   `display: none`. `display` cannot be transitioned, so dragging the window
+   used to make the words disappear with a snap; `max-width` glides. The target
+   is a literal length because `max-content` cannot be interpolated. */
+.canvas-toolbar-action-label,
+.canvas-toolbar-menu-label {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 12rem;
+  white-space: nowrap;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* Replaces the 4px `gap-1` of the control base: a gap cannot be collapsed by
+   itself at a breakpoint, a margin can. */
+.canvas-toolbar-action-label {
+  margin-inline-start: 0.25rem;
+}
+
+.canvas-toolbar-menu-chevron {
+  flex-shrink: 0;
+  max-width: 0.75rem;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* The trigger's own padding has to glide with its label: collapsing the words
+   while the 6px side padding snaps would shrink the button in two visible
+   steps. Written here rather than as a utility because `transition-colors`
+   cannot express a fourth property. */
+.canvas-toolbar-trigger {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    padding var(--dur-base) var(--ease-out);
+}
+
+.canvas-toolbar-zoom {
+  max-width: 3rem;
+  min-width: 2.5rem;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    min-width var(--dur-base) var(--ease-out),
+    padding var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* Saving / saved. Fixed width so swapping the spinner for the check does not
+   move the name — the state changes on every autosave, 650ms apart.
+   The two states are deliberately *different colours*: `--color-text-muted`
+   (5.04 / 4.66 / 5.09 / 5.11 against the pill fill) for the resting check,
+   `--color-text-secondary` (6.04-7.37) while saving. Same colour in both
+   states would make "saving" and "saved" indistinguishable, and the colour
+   change is the only thing this 12px glyph has to say. `--color-success` was
+   rejected: 1.86 (blue) / 1.92 (yellow) / 2.08 (green) is under the 3:1 a
+   non-text indicator needs. */
+.canvas-toolbar-status {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.canvas-toolbar-status--saving {
+  color: var(--color-text-secondary);
+}
+
+/* Focus rings for the two floating layers. `--color-accent` as a line colour
+   measures 2.07 (yellow) / 2.54 (green) against the pill fill, under the 3:1
+   a non-text indicator needs; `--color-accent-text` is 5.00-5.13 everywhere.
+   On a filled (selected) control the ring lands on the accent block, so it
+   switches to the on-accent foreground. */
+.canvas-pill :where(button, [role="menuitem"]):focus-visible,
+.canvas-switcher-panel :where(button, input):focus-visible {
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: -2px;
+}
+
+.canvas-pill button[aria-pressed="true"]:focus-visible {
+  outline-color: var(--color-on-accent);
+}
+
+/* The delete confirmation's `✓` is a filled danger block, so its ring is the
+   same rule as a pressed pill button: an accent-text ring drawn on the danger
+   fill is a line on a line. `--color-on-danger` is what the glyph already uses,
+   which keeps the ring at the same contrast as the icon it surrounds. */
+.canvas-switcher-panel .canvas-row__action--yes:focus-visible {
+  outline-color: var(--color-on-danger);
+}
+
+/* ① "Open canvas tile" and "Export" are the longest strings in the row and the
+   only pair whose meaning survives as an icon alone. */
+@container canvas-pill (max-width: 950px) {
+  .canvas-toolbar-action-label {
+    max-width: 0;
+    margin-inline-start: 0;
+    opacity: 0;
+  }
+}
+
+/* The menu-name threshold is per locale, and that is deliberate: a Chinese
+   label is roughly two thirds the width of its English counterpart at 12px, so
+   one English-sized breakpoint made the Chinese UI drop to bare icons ~65px
+   earlier than it had to — at the default 1200px window that meant no words at
+   all, for no reason. English keeps the more conservative number.
+
+   `:not([data-lang="zh"])` rather than `[data-lang="en"]` so a toolbar rendered
+   without the attribute still gets the wider, safe threshold. */
+@container canvas-pill (max-width: 820px) {
+  .canvas-pill:not([data-lang="zh"]) :is(
+    .canvas-toolbar-menu-label,
+    .canvas-toolbar-menu-chevron
+  ) {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  /* Every trigger collapses to the same 28px square, so the row reads as one
+     grid of icons instead of buttons of two different widths. The chevron goes
+     with the label: two glyphs in a 28px box read as two unrelated buttons. */
+  .canvas-pill:not([data-lang="zh"]) .canvas-toolbar-trigger {
+    min-width: var(--canvas-ctl-h);
+    padding-inline: 0;
+  }
+}
+
+@container canvas-pill (max-width: 755px) {
+  .canvas-pill[data-lang="zh"] :is(
+    .canvas-toolbar-menu-label,
+    .canvas-toolbar-menu-chevron
+  ) {
+    max-width: 0;
+    opacity: 0;
+  }
+
+  .canvas-pill[data-lang="zh"] .canvas-toolbar-trigger {
+    min-width: var(--canvas-ctl-h);
+    padding-inline: 0;
+  }
+}
+
+/* ③ The name goes; "which canvas am I in" is then answered by the accent row
+   and its monogram in the rail, which is the only place left that can.
+   `display: none`, not `max-width: 0`: the two 6px gaps around the name
+   collapse into one, so segment A lands on 16 + 6 + 12 = 34px. Keeping the
+   gaps would leave it at 40px and eat the 6-8px of slack that ⑤⑥⑦ rely on —
+   the exact reason those thresholds are 426 / 396 / 362 and not 30px lower. */
+@container canvas-pill (max-width: 545px) {
+  .canvas-toolbar-title-label {
+    display: none;
+  }
+}
+
+/* ④ The row is already all icons; the zoom figure is the last text left, and
+   `title` still carries it. Trigger content width 466px, slack 4px — the one
+   threshold that has to be measured rather than derived.
+   The cluster gap goes with it: a zero-width figure still holds the 6px gap
+   open, and ④ has to yield 40 + 6 = 46 or the 6px of slack that ⑤ counts on
+   silently disappears. */
+@container canvas-pill (max-width: 470px) {
+  .canvas-seg--viewport {
+    gap: 0;
+  }
+
+  .canvas-toolbar-zoom {
+    max-width: 0;
+    min-width: 0;
+    padding-inline: 0;
+    opacity: 0;
+  }
+}
+
+/* ⑤ C3 (open tile + export) folds into one "..." menu. Not "drops out": each of
+   the two has exactly one entry point in the whole app, so removing them here
+   would delete two features with nothing left to click. 426 = content 420
+   (390 + C3 58 - "..." 28) + 6. */
+@container canvas-pill (max-width: 426px) {
+  .canvas-seg--output {
+    display: none;
+  }
+
+  .canvas-seg--more {
+    display: flex;
+  }
+}
+
+/* ⑥ The view menu joins the same "..." menu and C2 leaves as a whole.
+   396 = content 390 (356 + view 28 + cluster gap 6) + 6. */
+@container canvas-pill (max-width: 396px) {
+  .canvas-seg--viewport {
+    display: none;
+  }
+}
+
+/* ⑦ Floor: scroll rather than clip, and never cut a button in half — a clipped
+   capsule shows a square notch that reads as a rendering bug. Content is 356px
+   here and the threshold is 362.
+   `max-width: 100%` is deliberately *kept*: the pill then never overflows the
+   layer, so the centred flex line still works and the scrolling happens inside
+   the pill. Widening the pill (`max-width: none`) would push the overflow out
+   of both sides of a centred container and the left half could never be
+   scrolled to; `justify-content: flex-start` on `.canvas-pill-layer` would fix
+   that, but a container query cannot style its own container.
+   `padding-inline` goes 6 → 10 because the scroll container clips on the
+   padding box: at 6px the 10px corner radius eats the corner of the first and
+   last button. `scroll-padding-inline` reserves the same slot for keyboard
+   focus, which scrolls the button to the very edge. */
+@container canvas-pill (max-width: 362px) {
+  .canvas-pill {
+    padding-inline: 0.625rem;
+    scroll-padding-inline: 0.625rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+}
+
 /* The AI panel is its own query container for the same reason as the shell
    strip: its width is dragged by the user, so the viewport says nothing about
    how much room the transcript actually has.
@@ -698,6 +1143,65 @@
 
 .ai-avatar--brand > .ai-brand {
   font-size: calc(var(--ai-avatar-size) * 0.8);
+}
+
+/* 小青's mark reuses the same container-query variable as the tile it replaces,
+   so a bubble avatar and a header avatar stay in step without either one passing
+   a size. An explicit `size` prop wins through an inline style, which outranks
+   both this class and the width/height presentation attributes. */
+.xq-mark {
+  display: block;
+  flex-shrink: 0;
+  width: var(--ai-avatar-size, 24px);
+  height: var(--ai-avatar-size, 24px);
+}
+
+/* The rail entry. Opacity and transform only - the mark is on screen for the
+   whole session, so it must not carry a per-frame `filter`. The open state gets
+   a static glow, not a breathing animation: an idle rail has nothing to say. */
+.xq-entry {
+  border-radius: 7px;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* Closed, it steps back to the weight of its neighbours without going grey:
+   0.72 keeps the face readable, full opacity on hover is the invite. */
+.xq-entry[data-dim="true"] {
+  opacity: 0.72;
+}
+
+/* Hover is read off the 44px button, not the 24px mark: the padding around the
+   mark belongs to the same target, so the glow must not flicker as the pointer
+   crosses the gap between them. */
+.group:hover .xq-entry,
+.xq-entry[data-open="true"] {
+  opacity: 1;
+}
+
+.group:hover .xq-entry {
+  transform: scale(1.06);
+}
+
+.xq-entry[data-open="true"] {
+  /* Two-part glow because the two themes need different halves: the 1px ring is
+     the only thing visible on light backgrounds, the soft paper bloom is the only
+     thing visible on the night sidebar. */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-qing-mark-bg) 55%, transparent),
+    0 0 12px color-mix(in srgb, var(--color-qing-mark-page) 26%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xq-entry {
+    transition: none;
+  }
+
+  .group:hover .xq-entry {
+    transform: none;
+  }
 }
 
 /* Vendor marks are authored at `1em`, so they track the type size around them
@@ -838,9 +1342,18 @@
   }
 
   /* Scroll containers clip a positive offset, so the ring goes inward there.
-     Same reason for the tab strip: it is a 36px horizontal scroller. */
+     Same reason for the tab strip: it is a 36px horizontal scroller, and for
+     the canvas pill and rail, which sit flush against the edges of a card with
+     `overflow: hidden` (and the pill itself scrolls below 362px).
+     The extensions page joins them: both its columns scroll, and a 38px row
+     inside a 6px-padded list would have its ring cut on the first and last
+     line. */
   [role="treeitem"]:focus-visible,
-  .note-tab-strip button:focus-visible {
+  .note-tab-strip button:focus-visible,
+  .canvas-pill button:focus-visible,
+  .canvas-switcher-panel :where(button, input):focus-visible,
+  .plugin-list button:focus-visible,
+  .plugin-detail-body :where(button, a):focus-visible {
     outline-offset: -2px;
   }
 }
@@ -857,6 +1370,16 @@
 }
 
 .note-tab-strip::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/* Same reason for the pill, which only scrolls below 362px: a 6px bar inside a
+   40px capsule would sit on the bottom of every icon. `scrollbar-width: none`
+   lives in the 362px query itself; the WebKit pseudo-element has to sit outside
+   it because Chromium ignores `::-webkit-scrollbar` once `scrollbar-width` is
+   declared. */
+.canvas-pill::-webkit-scrollbar {
   height: 0;
   width: 0;
 }
@@ -927,101 +1450,525 @@
 .canvas-rich-text-editor mark { border-radius: 0.18em; padding: 0 0.12em; }
 .canvas-rich-text-editor .ProseMirror { min-height: 100%; }
 
-/* Canvas switcher — compact when idle, expressive when opened. */
-.canvas-switcher {
-  isolation: isolate;
+/* ------------------------------------------------------------------ */
+/* Canvas rail — a macOS list in a 44px strip that opens to 248px      */
+/*                                                                     */
+/* Three rules decided the material before anything else was drawn.    */
+/*                                                                     */
+/* 1. No `backdrop-filter`. The rail lives inside the editor card,     */
+/*    together with its own frosted layer, so a second filter would    */
+/*    sample the card rather than the wallpaper while still paying     */
+/*    for a full compositing buffer — the same conclusion the note tab */
+/*    bar comment records. At a 96% tint the visible pass-through is   */
+/*    4%, which a 16px blur cannot show; the tint *is* the frost.      */
+/*    (It also used to carry `isolation: isolate` to host that filter; */
+/*    `.app-root` holds the only stacking context, so it goes too.)    */
+/*                                                                     */
+/* 2. Selection is carried by the *mark*, not by the row. A full       */
+/*    `bg-accent` fill in a 44px strip is a 32px blue lozenge with a   */
+/*    letter punched out of it: too heavy to read as a list item, and  */
+/*    it competes with the pill's own accent buttons 60px above. At    */
+/*    rest the chip is the only thing that turns accent; the row gets  */
+/*    a 14% wash only while the panel is open, where there is actually */
+/*    a row to wash. Contrast improves rather than regresses: the chip */
+/*    is still `on-accent` on `accent` (5.17-6.44), and the row text   */
+/*    is `text-primary` on a 14% wash (>10:1), not the 4.12 the old    */
+/*    `accent/15 + accent-text` pair measured.                         */
+/*                                                                     */
+/* 3. It floats, like the pill. A 1px hairline on all four sides and   */
+/*    `inset-inline-end: 6px` read as a panel; the previous three-sided */
+/*    border glued to the card edge read as a strip cut into it, with  */
+/*    only two rounded corners and a seam where it met the border.     */
+/*                                                                     */
+/* The rail is vertically centred in the band between the pill and the */
+/* bottom of the stage, never behind the pill: it starts at 60px       */
+/* (12 inset + 40 pill + 8 gap) and the two therefore cannot collide   */
+/* whatever the window width. No horizontal avoidance is needed — do   */
+/* not pad the pill on its right.                                      */
+/* ------------------------------------------------------------------ */
+
+.canvas-rail-layer {
+  position: absolute;
+  z-index: 30;
+  /* 6px off the card edge: a floating panel, not a strip welded to it. */
+  inset-inline-end: 0.375rem;
+  top: calc(var(--canvas-pill-inset) + var(--canvas-pill-h) + 0.5rem);
+  bottom: var(--canvas-pill-inset);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .canvas-switcher-panel {
+  /* Hosts `.canvas-rail-fade`; the rows themselves stay unpositioned so the
+     overlay needs no z-index of its own. */
   position: relative;
-  width: 2.75rem;
-  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  width: var(--canvas-rail-w);
+  /* The cap belongs to the panel, not to the list: the 6px padding and the
+     footer are part of the height budget (a 480px panel shows 11 open rows,
+     not 12). `100%` is the height of the band the layer hands it. */
+  max-height: min(70vh, 480px, 100%);
   overflow: hidden;
+  pointer-events: auto;
+  /* 6px top and bottom, the same beat as every other floating layer here.
+     No horizontal padding: every left/right position in this panel is a 6px
+     margin on the row itself, so the list, the group label, the create form
+     and the footer all land on one ruler. Inline padding here would inset the
+     scroll container and give the rows a second, invisible left edge — which
+     is exactly the "new row 2px off the list" defect this replaces. */
+  padding-block: 0.375rem;
+  padding-inline: 0;
   border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-  border-right: 0;
-  border-radius: 1rem 0 0 1rem;
-  background: color-mix(in srgb, var(--color-bg-secondary) 92%, transparent);
+  /* All four corners: the panel floats 6px off the card edge, so there is no
+     seam to hide and no reason to square off one side. */
+  border-radius: var(--canvas-pill-radius);
+  background-color: color-mix(in srgb, var(--color-bg-secondary) 96%, transparent);
+  /* Same recipe as the pill. The measured fill sits 1.08-1.13 against the
+     canvas, so the shadow is what makes the panel exist at all. */
   box-shadow:
-    -12px 0 26px color-mix(in srgb, var(--color-text-primary) 8%, transparent),
-    0 10px 28px color-mix(in srgb, var(--color-text-primary) 12%, transparent),
-    inset 1px 0 color-mix(in srgb, white 22%, transparent);
-  backdrop-filter: blur(16px) saturate(1.12);
-  transition:
-    width var(--dur-slow) var(--ease-spring),
-    box-shadow var(--dur-base) var(--ease-out),
-    background-color var(--dur-base) var(--ease-out);
-}
-
-.canvas-switcher-panel::before {
-  position: absolute;
-  z-index: -1;
-  top: 10%;
-  right: -34px;
-  width: 80px;
-  height: 80px;
-  content: "";
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
-  opacity: 0;
-  filter: blur(22px);
-  transition: opacity var(--dur-slow) var(--ease-out);
+    0 1px 1px color-mix(in srgb, #000 9%, transparent),
+    0 8px 22px -14px color-mix(in srgb, #000 50%, transparent);
+  /* Width only. The old transition ran on `--ease-spring`, whose 5% overshoot
+     is 12px at 248px — the panel is clipped by the card on that side, so the
+     overshoot showed up as a stutter. Layout sizes do not overshoot. */
+  transition: width var(--dur-slow) var(--ease-out);
 }
 
 .canvas-switcher-panel--open {
-  width: 15.5rem;
-  box-shadow:
-    -18px 0 36px color-mix(in srgb, var(--color-text-primary) 12%, transparent),
-    0 14px 34px color-mix(in srgb, var(--color-text-primary) 15%, transparent),
-    inset 1px 0 color-mix(in srgb, white 28%, transparent);
+  width: var(--canvas-rail-w-open);
 }
 
-.canvas-switcher-panel--open::before {
+.theme-dark .canvas-switcher-panel {
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 10px 24px -16px #000;
+}
+
+/* The row cycles are identical in both states (32px); only the width moves, so
+   opening the panel cannot shift a row vertically.
+   No divider at rest *and* none open: the old `inset 0 -1px 0` hairline under
+   the "+" row ran the full width of the panel, which at 248px reads as a table
+   cell boundary rather than a list. The rows separate by their own 32px beat. */
+.canvas-switcher-new,
+.canvas-switcher-create {
+  flex-shrink: 0;
+  height: var(--canvas-rail-row-h);
+  margin-inline: 0.375rem;
+  padding-inline: 0;
+  /* 8px, the radius of a `canvas-row`: the "+" row is one of them, and a 6px
+     wash next to an 8px one is visible at this size. */
+  border-radius: 0.5rem;
+}
+
+/* At 44px the chip is the whole row, so it centres; 15px of glyph plus the
+   label's zero-width box would otherwise push it off centre. */
+.canvas-switcher-new {
+  justify-content: center;
+  gap: 0;
+}
+
+.canvas-switcher-panel--open .canvas-switcher-new {
+  justify-content: flex-start;
+}
+
+/* No `gap` in either state: the 6px before the label is a margin on the label
+   itself, so the resting state can take it to zero together with `max-width`
+   (a gap cannot be collapsed by a child). */
+.canvas-switcher-new-label {
+  overflow: hidden;
+  max-width: 0;
+  margin-inline-start: 0;
+  opacity: 0;
+  /* Same size and weight as a canvas name: it is a row, not a caption. */
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    margin-inline-start var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+.canvas-switcher-panel--open .canvas-switcher-new-label {
+  max-width: 12rem;
+  margin-inline-start: 0.375rem;
   opacity: 1;
 }
 
-.canvas-switcher-new,
-.canvas-switcher-create {
-  position: relative;
+/* 20px, and only while open: it is the one thing that separates the two panel
+   heights, and it animates with the width so nothing jumps. */
+.canvas-group-label {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
   overflow: hidden;
+  max-height: 0;
+  /* 6px: flush with the mark column, so the section header starts on the same
+     vertical line as the marks it heads — a margin, not padding, because the
+     panel itself has no inline padding. Margins go to zero with the height:
+     they are part of the 20px this row contributes, not free space around it. */
+  margin-block: 0;
+  margin-inline: 0.375rem;
+  padding-inline: 0;
+  opacity: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  transition:
+    max-height var(--dur-slow) var(--ease-out),
+    margin var(--dur-slow) var(--ease-out),
+    opacity var(--dur-slow) var(--ease-out);
 }
 
-.canvas-switcher-new::after,
-.canvas-switcher-create::after {
+.canvas-switcher-panel--open .canvas-group-label {
+  max-height: 1rem;
+  margin-block: 0.25rem 0.125rem;
+  opacity: 1;
+}
+
+.canvas-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--canvas-gap-in);
+  /* Shrinks inside the panel's `min(70vh, 480px, 100%)` and scrolls there. */
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* No inline padding: the rows carry the 6px themselves. The 2px that used to
+     sit here (to keep the overlay scrollbar off the card edge) would have
+     pushed every row 2px right of the group label and the footer — one ruler
+     means one owner, and the row's own 6px margin is now that owner. The
+     scrollbar overlaps that margin instead, which is why it is pinned to
+     `thin`: a classic 15px bar would sit on the row's 28px action button and
+     cover the icon. 8px only reaches the button's 7px transparent gutter. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pill-divider) transparent;
+}
+
+/* "There is more below". An overlay, not `mask-image`: a mask fades the row
+   that is *currently* scrolling out of view — including its accent selection
+   block — which is precisely the row the hint is about. The overlay sits above
+   the rows (`pointer-events: none` keeps wheel and click working), starts
+   exactly on the footer's top hairline so neither the hairline nor the footer
+   is dimmed, and is faded out by JS the moment the list reaches its end —
+   otherwise the last row would rest inside the gradient and read as washed
+   out.
+
+   `bottom` is the footer's 28px *plus* the panel's 6px bottom padding: this is
+   an absolutely positioned child, so its `bottom` is measured from the padding
+   box, which extends 6px below the content the footer sits on. Taking the
+   footer height alone would lay the opaque end of the gradient 6px into it. */
+.canvas-rail-fade {
   position: absolute;
-  inset: 0;
-  content: "";
+  inset-inline: 0;
+  bottom: calc(1.75rem + 0.375rem);
+  height: 1.5rem;
   pointer-events: none;
-  background: linear-gradient(105deg, color-mix(in srgb, var(--color-accent) 13%, transparent), transparent 58%);
-  opacity: 0;
+  background-image: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--color-bg-secondary) 96%, transparent),
+    transparent
+  );
+  opacity: 1;
   transition: opacity var(--dur-base) var(--ease-out);
 }
 
-.canvas-switcher-new:hover::after,
-.canvas-switcher-create:focus-within::after {
+.canvas-rail-fade[data-at-end="true"] {
+  opacity: 0;
+}
+
+/* The empty state takes a list-row slot (32px), the "switching..." line takes a
+   footer-height slot (28px): they are different kinds of row, not two styles of
+   the same one. Both sit on the same 6px ruler as everything else. */
+.canvas-list__empty {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 2rem;
+  margin-inline: 0.375rem;
+  padding-inline: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.canvas-list__status {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  height: 1.75rem;
+  margin-inline: 0.375rem;
+  padding-inline: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+/* Layout only: no `onClick`, no `role`, no `tabIndex`. The whole row is
+   clickable because the main button is stretched, which removes the need for
+   `stopPropagation` between the row and its actions.
+   `gap: 0` — horizontal spacing inside this row is margins only (6px before
+   the name, 2px before each action). A `gap` survives the resting state, where
+   the name's `max-width: 0` cannot take it with it. */
+.canvas-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0;
+  height: var(--canvas-rail-row-h);
+  margin-inline: 0.375rem;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  color: var(--color-text-secondary);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+/* `--rail-wash`, not `--color-bg-hover`: `utils/theme.ts` assigns
+   `--color-bg-hover` the value of `--color-bg-secondary`, and the panel fill
+   *is* `bg-secondary 96%` — 1.00 contrast, i.e. no hover at all on a custom
+   palette. The wash is mixed from the text colour, so it tracks every theme. */
+.canvas-row:hover {
+  background-color: var(--rail-wash);
+  color: var(--color-text-primary);
+}
+
+/* No `translateX` on hover and no glowing bar on the active row: an Apple list
+   moves nothing and lights nothing. The raised mark alone marks the current
+   canvas — at rest there is no 235px row to wash, and when open a 14% accent
+   wash plus a filled mark said "selected" twice for one state. */
+.canvas-row--active {
+  color: var(--color-text-primary);
+}
+
+.canvas-switcher-panel--open .canvas-row--active:hover {
+  background-color: var(--rail-wash);
+}
+
+.canvas-row__main:disabled,
+.canvas-row__main[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.canvas-row__main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  /* At rest the only content is the 24px chip, so it must sit centred in the
+     32px row; once open the row is filled and the cluster starts at the left. */
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  padding-inline: 0;
+  border-radius: 0.375rem;
+  text-align: left;
+}
+
+.canvas-switcher-panel--open .canvas-row__main {
+  justify-content: flex-start;
+}
+
+/* The letterpress mark. 20x20 inside a 32px row: at rest it is a well pressed
+   into the panel (a dark line along the inside top edge, a lit one along the
+   bottom), and the current canvas is the same square standing proud — panel
+   fill, accent ring, lit top edge, 1px drop. One shape, two depths, so the rail
+   reads as a column of like objects in both states. A bare letter in a 44px
+   strip reads as text that failed to render; a 20px well reads as a token. */
+.canvas-row__mark {
+  display: flex;
+  flex: 0 0 var(--rail-mark);
+  align-items: center;
+  justify-content: center;
+  width: var(--rail-mark);
+  height: var(--rail-mark);
+  border-radius: 0.375rem;
+  background-color: var(--rail-well);
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, #000 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #fff 45%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+.canvas-row--active .canvas-row__mark {
+  background-color: var(--color-bg-secondary);
+  box-shadow:
+    inset 0 0 0 1px var(--rail-ring),
+    inset 0 1px 0 color-mix(in srgb, #fff 55%, transparent),
+    0 1px 2px color-mix(in srgb, #000 12%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* Pressing is a *relative* brightness: a well only reads as pressed while it is
+   darker than the panel. `text-primary` is dark ink in the three light themes
+   and a light ink in dark, so the same 7% mix presses in one case and pops out
+   in the other — at 248px that inverted the whole vocabulary, with the selected
+   square (panel fill + ring) reading as the flattest cell in the list.
+   Dark keeps the *amplitude* and flips the channel: `--color-bg-shell` is the
+   gutter colour, 55% of it lands one step under the panel (measured #17181b
+   against #25262a, Δ 1.18 — the light themes measure Δ 1.18-1.22 with ink).
+   Invariant, not a number: every theme has to be checked for *direction*. */
+.theme-dark {
+  --rail-well: color-mix(in srgb, var(--color-bg-shell) 55%, transparent);
+}
+
+/* On a dark panel the well's 55% black inner shadow has nothing to contrast
+   with, so the press needs a lit bottom edge — a much fainter one than the
+   light themes' 45%, which would turn the square into a white sticker. The
+   raised state's top highlight drops to 20% for the same reason: at 55% it
+   doubles up with the accent ring into two concentric lines. */
+.theme-dark .canvas-row__mark {
+  box-shadow:
+    inset 0 1px 2px color-mix(in srgb, #000 55%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #fff 8%, transparent);
+}
+
+.theme-dark .canvas-row--active .canvas-row__mark {
+  box-shadow:
+    inset 0 0 0 1px var(--rail-ring),
+    inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent),
+    0 1px 2px color-mix(in srgb, #000 12%, transparent);
+}
+
+/* The row wash (8%) is one point lighter than the well (7%), so a hovered row
+   would swallow its own mark. The well deepens to stay readable through it —
+   and the raised square does not change on hover at all: its ring is what
+   carries the state, and swapping it for an accent fill made hover look like a
+   second selection. */
+.canvas-row:hover .canvas-row__mark {
+  background-color: color-mix(in srgb, var(--color-text-primary) 12%, transparent);
+}
+
+/* The width collapse happens on the *name span*, never on the main button: the
+   button carries "click anywhere on this row", so collapsing it would shrink
+   the whole resting-state hit area down to the monogram slot — invisible in a
+   screenshot, broken in use.
+   The 6px before the name is a margin here, not a gap on the row, because the
+   resting state has to take it to zero together with the width: `max-width: 0`
+   alone leaves 32 + 6 + 2 + 2 = 42px of content in a 32px strip. */
+.canvas-row__name {
+  min-width: 0;
+  max-width: 0;
+  margin-inline-start: 0;
+  overflow: hidden;
+  /* A canvas name is a list item, not a caption: 13px/500 is the size the eye
+     reads a sidebar row at, and it is what makes the 248px panel look like a
+     list rather than a legend for the chips. */
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition:
+    max-width var(--dur-base) var(--ease-out),
+    margin-inline-start var(--dur-base) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out);
+}
+
+/* 234px row - 20 (mark) - 6 (margin) - 2 (action margin) - 56 (two actions)
+   leaves 150px of name, capped at 9rem: about twelve CJK characters. */
+.canvas-switcher-panel--open .canvas-row__name {
+  max-width: 9rem;
+  margin-inline-start: 0.375rem;
   opacity: 1;
 }
 
-.canvas-switcher-new > *,
-.canvas-switcher-create > * {
-  position: relative;
-  z-index: 1;
-}
-
-.canvas-switcher-plus {
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--color-accent-light) 72%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent);
+/* Row actions are not tab stops (`tabIndex={-1}`): twenty canvases would
+   otherwise be sixty-one stops before the footer. `F2` / `Delete` on the row
+   itself is the keyboard path, as in Finder.
+   `display: none` while the rail is 44px wide, and not `width: 0`: they are out
+   of the tab order anyway, and a zero-width flex item still consumes its
+   margin.
+   `height: 1.75rem` rather than `100%`: 28px inside a 32px row, so the hover
+   block is inset 2px from the row's top and bottom instead of butting against
+   the 8px corner. The 2px before it is a margin — the row has no `gap`. */
+.canvas-row__action {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-inline-start: 0.125rem;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  color: var(--color-text-muted);
+  opacity: 0;
   transition:
-    transform var(--dur-base) var(--ease-spring),
-    background-color var(--dur-base) var(--ease-out);
+    opacity var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
-.canvas-switcher-new:hover .canvas-switcher-plus {
-  transform: rotate(90deg) scale(1.06);
-  background: color-mix(in srgb, var(--color-accent-light) 92%, transparent);
+.canvas-switcher-panel--open .canvas-row__action {
+  display: flex;
 }
 
+.canvas-switcher-panel--open .canvas-row:hover .canvas-row__action,
+.canvas-switcher-panel--open .canvas-row:focus-within .canvas-row__action {
+  opacity: 1;
+}
+
+.canvas-row__action:hover {
+  background-color: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* Destructive tint only as a *background*: `--color-danger` used as a glyph
+   colour measures 2.26 (yellow) / 2.32 (green), under the 3:1 a 14px icon
+   needs, so the icon itself stays `text-text-primary`. */
+.canvas-row__action--danger:hover {
+  background-color: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* The current row is marked by its raised square and nothing else, so its
+   action buttons keep the ordinary muted grey instead of inverting. */
+.canvas-row--active .canvas-row__action {
+  color: var(--color-text-muted);
+}
+
+.canvas-row--active .canvas-row__action:hover {
+  background-color: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+  color: var(--color-text-primary);
+}
+
+/* Confirming a delete touches nothing but its own row, so it can be the only
+   filled danger block in the app; the glyph uses `on-danger`, never white. */
+.canvas-row__action--yes,
+.canvas-row__action--yes:hover {
+  background-color: var(--color-danger);
+  color: var(--color-on-danger);
+}
+
+/* Delete confirmation is inline and wordless: in a 235px row the question
+   template alone is 88px, which left ~3.8 CJK characters for the name — a
+   confirmation that cannot name its object. The question goes to the `✓`
+   accessible name instead, where space is free. The pair replaces the two
+   hover actions in place, so they are never hidden by the hover rule. */
+.canvas-row__action--confirm {
+  opacity: 1;
+}
+
+/* The create and rename forms are rows too: the 6px before the field is a
+   margin (their `px-2` is gone), and the two 28px buttons sit 2px apart on the
+   same beat as a row's actions. No `gap` anywhere — a form is a row. */
 .canvas-switcher-input {
+  margin-inline-start: 0.375rem;
   border: 1px solid color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
   border-radius: 0.5rem;
   background: color-mix(in srgb, var(--color-bg-primary) 78%, transparent);
@@ -1029,80 +1976,25 @@
   animation: canvas-switcher-input-in var(--dur-base) var(--ease-out) both;
 }
 
-.canvas-switcher-rename,
-.canvas-switcher-confirm {
+.canvas-switcher-create > button,
+.canvas-switcher-rename > button {
+  margin-inline-start: 0.125rem;
+}
+
+.canvas-switcher-rename {
   animation: canvas-switcher-input-in var(--dur-base) var(--ease-out) both;
 }
 
-.canvas-switcher-confirm {
-  border-radius: 0.55rem;
-  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
-  padding-left: 0.45rem;
-}
-
-.canvas-switcher-row {
-  position: relative;
-  animation: canvas-switcher-row-in var(--dur-slow) var(--ease-out) both;
-  transition:
-    transform var(--dur-fast) var(--ease-out),
-    opacity var(--dur-fast) var(--ease-out);
-}
-
-.canvas-switcher-row--active::before {
-  position: absolute;
-  top: 0.55rem;
-  bottom: 0.55rem;
-  left: 0.15rem;
-  width: 2px;
-  content: "";
-  border-radius: 999px;
-  background: var(--color-accent);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--color-accent) 58%, transparent);
-}
-
-.canvas-switcher-row:hover {
-  transform: translateX(-2px);
-}
-
-.canvas-switcher-index {
-  transition:
-    color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-base) var(--ease-spring);
-}
-
-.canvas-switcher-row:hover .canvas-switcher-index {
-  transform: scale(1.08);
-}
-
-.canvas-switcher-row--active .canvas-switcher-index {
-  background: var(--color-accent);
-  /* Same rule as the `text-on-accent` utilities: the accent block is bright in
-     the dark theme, where white only measures 3.68. */
-  color: var(--color-on-accent);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--color-accent) 28%, transparent);
-}
-
-.canvas-switcher-delete {
-  transform: scale(0.86);
-  transition:
-    opacity var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out),
-    transform var(--dur-fast) var(--ease-out);
-}
-
-.canvas-switcher-delete:hover {
-  transform: scale(1);
-}
-
+/* The footer was a full-width strip closed by a top hairline; the hairline is
+   gone (it ran the panel's full width and read as a table edge), so the footer
+   is now an ordinary 28px row on the same 6px ruler — with the row radius,
+   because its hover wash is the only thing that draws its shape. */
 .canvas-switcher-footer {
-  color: color-mix(in srgb, var(--color-text-muted) 72%, transparent);
-}
-
-@keyframes canvas-switcher-row-in {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: translateX(0); }
+  flex-shrink: 0;
+  height: 1.75rem;
+  margin-inline: 0.375rem;
+  padding-inline: 0;
+  border-radius: 0.5rem;
 }
 
 @keyframes canvas-switcher-input-in {
@@ -1110,12 +2002,24 @@
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
+/* The accent spotlight, the 105° sweep gradient and the per-index stagger are
+   gone: an Apple list does not fly its rows in, and a spectrum-shifting
+   gradient cannot be kept in tune across four themes. */
 @media (prefers-reduced-motion: reduce) {
+  .canvas-pill,
+  .canvas-pill-layer,
+  .canvas-toolbar-title-label,
+  .canvas-toolbar-action-label,
+  .canvas-toolbar-menu-label,
+  .canvas-toolbar-menu-chevron,
+  .canvas-toolbar-zoom,
   .canvas-switcher-panel,
-  .canvas-switcher-plus,
-  .canvas-switcher-index,
-  .canvas-switcher-delete,
-  .canvas-switcher-row,
+  .canvas-switcher-new-label,
+  .canvas-group-label,
+  .canvas-row,
+  .canvas-row__name,
+  .canvas-row__action,
+  .canvas-rail-fade,
   .canvas-switcher-input {
     animation: none;
     transition-duration: 1ms;
@@ -1672,6 +2576,34 @@ body.sticky-body {
 .markdown-preview ul,
 .markdown-preview ol {
   padding-left: 1.5em;
+}
+
+/* Announcement board body copy.
+   `.markdown-preview` zeroes block margins on purpose (the editor preview draws
+   its own spacing), which in a 300px column runs consecutive paragraphs
+   together. This adds a hairline back and nothing else: it is unlayered, so it
+   wins over the utilities the component would otherwise need for the same job -
+   that is the whole reason it exists instead of another `[&_p]:` class. */
+.announcement-body.markdown-preview p,
+.announcement-body.markdown-preview ul,
+.announcement-body.markdown-preview ol,
+.announcement-body.markdown-preview blockquote {
+  margin-block: 0.35em;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.announcement-body.markdown-preview ul,
+.announcement-body.markdown-preview ol {
+  padding-left: 1.1em;
+}
+
+.announcement-body.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.announcement-body.markdown-preview > :last-child {
+  margin-bottom: 0;
 }
 
 /* Markdown tables. `display: block` turns the table into its own scroll
@@ -2254,5 +3186,260 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   .ai-stream-cursor,
   .ai-typing-dots > span {
     animation: none;
+  }
+}
+
+/* Plugin notices: one short slide-in, no exit animation. A toast is read, not
+   watched — animating it away would draw the eye to the corner it leaves. */
+.app-toast {
+  animation: app-toast-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes app-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Command palette: the list follows the input, so only the sheet animates. */
+.command-palette {
+  animation: command-palette-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes command-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Graph overlay panel: one short entrance so the canvas never gains a
+   hard-edged pop-in when the panel is expanded again. Collapsing swaps the
+   panel for a rail button in the same corner, and *both* states are absolutely
+   positioned — nothing here animates width or height, because a box transition
+   would resize the canvas and make the force layout re-heat for a purely
+   cosmetic change. */
+.graph-panel-in {
+  animation: graph-panel-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes graph-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-toast,
+  .command-palette,
+  .graph-panel-in {
+    animation: none;
+  }
+}
+
+/*
+ * 知识库加载态：逐字上跳。
+ * 整句一起跳会像故障，错开 55ms 才有一列字「依次起身」的观感；周期从
+ * `--dur-slow` 推导，换主题时动效节奏仍然一致。
+ */
+.graph-loading-char {
+  display: inline-block;
+  animation: graph-loading-jump calc(var(--dur-slow) * 3.2) var(--ease-out) infinite;
+  will-change: transform;
+}
+
+@keyframes graph-loading-jump {
+  0%,
+  62%,
+  100% {
+    transform: translateY(0);
+  }
+  28% {
+    transform: translateY(-0.26em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-loading-char {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Plugin decorations (`qing.editor.setDecorations`)                   */
+/*                                                                     */
+/* A plugin asks for a semantic kind and the host maps it to one of    */
+/* these five classes; the theme decides what it looks like. Only the  */
+/* background (and one 1px underline for the three that mean "wrong")  */
+/* are set — the glyph colour stays `--color-text-primary`, so          */
+/* readability in every theme is that theme's own text contrast,       */
+/* untouched.                                                          */
+/*                                                                     */
+/* Tints are `color-mix` against the semantic tokens rather than hex,  */
+/* so the default palette and the dark/blue/yellow/green overrides all */
+/* resolve to their own values, and a future theme inherits them.      */
+/* ------------------------------------------------------------------ */
+.qing-dec-error,
+.qing-dec-warning,
+.qing-dec-success,
+.qing-dec-muted,
+.qing-dec-highlight {
+  border-radius: 2px;
+  /* A mark that wraps keeps its tint on every line instead of only the first. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.qing-dec-error {
+  background-color: color-mix(in srgb, var(--color-danger) 16%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-danger) 50%, transparent);
+}
+
+.qing-dec-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 20%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-warning) 50%, transparent);
+}
+
+.qing-dec-success {
+  background-color: color-mix(in srgb, var(--color-success) 16%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-success) 50%, transparent);
+}
+
+.qing-dec-highlight {
+  background-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.qing-dec-muted {
+  background-color: color-mix(in srgb, var(--color-text-muted) 14%, transparent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Extensions page: container queries for the detail column            */
+/*                                                                     */
+/* The detail pane is squeezed by the editor card it is docked in, not */
+/* by the viewport, so `sm:`/`lg:` cannot decide when its rows stop    */
+/* fitting: at a 900px window the pane can still be 380px wide. This   */
+/* is the same trap `.canvas-toolbar` hit.                             */
+/*                                                                     */
+/* `container-type` cannot live on the padded element (C1) - a         */
+/* container does not match its own query - so the scroller carries    */
+/* the name and the body carries the padding.                          */
+/*                                                                     */
+/* Three tiers only, and each one owns one kind of decision:           */
+/*   640  the command / info pair collapses to one column              */
+/*   460  the header drops to a column and the row extras go away      */
+/*   360  the narrowest stack: full-width buttons, wrapping labels     */
+/* ------------------------------------------------------------------ */
+.plugin-detail-scroller {
+  container-type: inline-size;
+  container-name: plugin-detail;
+}
+
+/* 640: two columns -> one, command card first. Forcing this from the
+   container is the whole point: the grid lives inside a draggable card,
+   so its own width is what matters, not the window's. */
+@container plugin-detail (max-width: 640px) {
+  .plugin-detail-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 460: the action slot moves under the name instead of squeezing it. */
+@container plugin-detail (max-width: 460px) {
+  .plugin-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .plugin-detail-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  /* The page label and its slash prefix are chrome; the hero already
+     names the plugin. */
+  .plugin-detail-chrome-prefix {
+    display: none;
+  }
+
+  .plugin-detail-meta-label {
+    width: 64px;
+  }
+
+  .plugin-log-pre {
+    max-height: 10rem;
+  }
+}
+
+/* 360: the narrowest card the pane has to survive. */
+@container plugin-detail (max-width: 360px) {
+  .plugin-detail-body {
+    padding: 16px 12px 24px;
+  }
+
+  .plugin-detail-title {
+    font-size: 17px;
+  }
+
+  .plugin-detail-actions {
+    flex-direction: column;
+  }
+
+  .plugin-detail-actions > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* "Whether to grant this" is the decision this page exists for, so the
+     permission label wraps here instead of turning into an ellipsis.
+     Rows are `min-h-`, so a two-line label grows the row to ~52px on its
+     own - nothing here may set a fixed height. */
+  .plugin-detail-label {
+    white-space: normal;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+  }
+
+  /* Monospace permission codes and the keyboard hint go last, not first:
+     `notes:write` is the only machine-readable identifier on the page and it
+     is what an issue, a manifest edit or a log line refers to. They only
+     leave once the card is too narrow to hold both, which is this tier and
+     not the 460 one. */
+  .plugin-perm-code,
+  .plugin-command-hint,
+  .plugin-command-category {
+    display: none;
+  }
+
+  .plugin-detail-card {
+    border-radius: 10px;
+  }
+
+  .plugin-detail-row {
+    padding-inline: 8px;
+    border-radius: 8px;
+  }
+
+  .plugin-detail-meta-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .plugin-detail-meta-label {
+    width: auto;
   }
 }

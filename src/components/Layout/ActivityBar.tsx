@@ -1,9 +1,11 @@
 import React from "react";
-import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Settings, Sparkles, Users } from "lucide-react";
+import { CheckSquare, FileText, Images, Network, PanelLeftClose, PanelLeftOpen, Pin, Puzzle, Settings, Users } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { ViewType } from "@/types";
+import XiaoQingMark from "@/components/AI/XiaoQingMark";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
+import { countUpdates, usePluginStore } from "@/plugin/store";
 import { t } from "@/utils/i18n";
 
 interface ActivityBarProps {
@@ -27,16 +29,30 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const setAlwaysOnTop = useSettingsStore((s) => s.setAlwaysOnTop);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const setAiSidebarOpen = useAiStore((s) => s.setSidebarOpen);
+  const updateCount = usePluginStore((s) => countUpdates(s.installed, s.index));
   // `motion` already ships with the app; this only asks it to stop animating,
   // it does not swap the indicator for a static one - the capsule must still be
   // painted on the first frame.
   const reduceMotion = useReducedMotion();
 
-  const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean }> = [
+  const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean; badge?: number }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
     { view: "todo", label: t(lang, "todo"), icon: <CheckSquare size={22} strokeWidth={1.7} /> },
+    // Order is fixed by docs/decisions-knowledge-graph.md §8.4: the knowledge
+    // base sits between the two "my own content" views and the workspace, so the
+    // rail reads note -> todo -> graph -> workspace -> canvas -> plugins.
+    { view: "graph", label: t(lang, "knowledgeBase"), icon: <Network size={22} strokeWidth={1.7} /> },
     { view: "workspace", label: t(lang, "workspace"), icon: <Users size={22} strokeWidth={1.7} /> },
     { view: "canvas", label: t(lang, "canvas"), icon: <Images size={22} strokeWidth={1.7} /> },
+    // Fifth page, not a bottom toggle: the plugin page is a destination like the
+    // other four, and it has to join the sliding capsule (one `layoutId`, never
+    // a second element — see the AI and pin buttons below).
+    {
+      view: "plugins",
+      label: t(lang, "pluginsTitle"),
+      icon: <Puzzle size={22} strokeWidth={1.7} />,
+      badge: updateCount,
+    },
   ];
 
   // One element shared through `layoutId`: it travels between items instead of
@@ -57,7 +73,7 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
     // `overflow: hidden` rounds the corners of the first and last buttons.
     <aside className="flex h-full w-12 flex-shrink-0 flex-col items-center text-text-primary transition-colors">
       <nav className="flex w-full flex-col items-center gap-1" aria-label="Activity bar">
-        {items.map(({ view, label, icon, disabled }) => {
+        {items.map(({ view, label, icon, disabled, badge }) => {
           const active = !disabled && currentView === view;
           return (
             <button
@@ -78,6 +94,16 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
             >
               {active && indicator("activity-indicator")}
               <span className="relative inline-flex">{icon}</span>
+              {typeof badge === "number" && badge > 0 && (
+                // Counts above nine stop being information and start being a
+                // badge-shaped smudge at 44px wide.
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-0.5 -top-0.5 flex h-[13px] min-w-[13px] items-center justify-center rounded-full bg-accent px-1 text-[9px] font-semibold leading-none text-on-accent"
+                >
+                  {badge > 9 ? "9+" : badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -90,14 +116,23 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           title={t(lang, "aiAssistant")}
           aria-label={t(lang, "aiAssistant")}
           aria-pressed={aiSidebarOpen}
-          className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
+          className={`group relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover ${
             aiSidebarOpen ? "text-accent-text" : "text-text-muted"
           }`}
         >
           {/* A toggle is not a page: it gets the same capsule but never joins the
               sliding indicator, otherwise the two would fight over one element. */}
           {aiSidebarOpen && <span className="activity-capsule absolute inset-0 rounded-lg" />}
-          <Sparkles size={20} strokeWidth={1.7} className="relative" />
+          {/* A mark, not a glyph. The other four entries are 22px line icons;
+              小青 is the app's own book disc, and that difference in kind - not
+              just in size - is what keeps it from reading as a sixth page. */}
+          <span
+            className="xq-entry relative inline-flex"
+            data-dim={!aiSidebarOpen}
+            data-open={aiSidebarOpen}
+          >
+            <XiaoQingMark size={24} />
+          </span>
         </button>
         <button
           type="button"

@@ -20,6 +20,11 @@ interface CanvasToolbarMenuProps {
   disabled?: boolean;
   align?: "start" | "end";
   panelClassName?: string;
+  /** Renders the trigger as a bare icon button. `label` still supplies the
+   * accessible name and the tooltip, but no visible label and no chevron — used
+   * by the pill's overflow ("...") menu, which has no room for words at the
+   * widths where it appears. */
+  iconOnly?: boolean;
   children: ReactNode;
 }
 
@@ -44,6 +49,7 @@ export function CanvasToolbarMenu({
   disabled = false,
   align = "start",
   panelClassName = "w-64",
+  iconOnly = false,
   children,
 }: CanvasToolbarMenuProps) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -92,16 +98,23 @@ export function CanvasToolbarMenu({
       if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
       close();
     };
+    /* Escape is a single decision point, so this listener claims the key on the
+       capture phase and marks it consumed. Without `capture`, this handler runs
+       *after* CanvasView's window listener (its mount effect registered first),
+       so Escape would close the menu and clear the canvas selection in the same
+       keystroke — the user only asked to close the menu. `preventDefault()` is
+       the flag the view tests (`event.defaultPrevented`). */
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       close();
       triggerRef.current?.focus();
     };
     window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [close, open]);
 
@@ -110,12 +123,14 @@ export function CanvasToolbarMenu({
       <button
         ref={triggerRef}
         type="button"
-        className={`inline-flex h-8 flex-shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`canvas-toolbar-trigger inline-flex h-7 min-w-7 shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded-[7px] text-xs transition-colors duration-[var(--dur-fast)] ease-[var(--ease-out)] disabled:cursor-not-allowed disabled:opacity-40 ${
+          iconOnly ? "px-0" : "px-1.5"
+        } ${
           active
-            ? "bg-accent text-on-accent hover:bg-accent-hover"
+            ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent"
             : open
-              ? "bg-bg-hover text-text-primary"
-              : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              ? "bg-[color:var(--rail-wash)] text-text-primary"
+              : "text-text-secondary hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
         }`}
         onClick={() => onOpenChange(!open)}
         disabled={disabled}
@@ -126,8 +141,12 @@ export function CanvasToolbarMenu({
         aria-controls={open ? panelId : undefined}
       >
         {icon}
-        <span>{label}</span>
-        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        {!iconOnly && (
+          <>
+            <span className="canvas-toolbar-menu-label">{label}</span>
+            <ChevronDown size={12} className={`canvas-toolbar-menu-chevron transition-transform duration-[var(--dur-base)] ease-[var(--ease-out)] ${open ? "rotate-180" : ""}`} />
+          </>
+        )}
       </button>
       {open && createPortal(
         <MenuCloseContext.Provider value={close}>
@@ -135,7 +154,7 @@ export function CanvasToolbarMenu({
             ref={panelRef}
             id={panelId}
             role="menu"
-            className={`fixed z-[200] rounded-xl border border-border bg-bg-primary/98 p-2 text-xs text-text-primary shadow-2xl backdrop-blur-sm ${panelClassName}`}
+            className={`fixed z-[200] rounded-xl border border-border bg-bg-primary/98 p-2 text-xs text-text-primary shadow-2xl ${panelClassName}`}
             style={position}
           >
             {children}
@@ -165,7 +184,7 @@ export function CanvasToolbarMenuItem({
       className={`flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         active
           ? "bg-accent text-on-accent"
-          : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+          : "text-text-secondary hover:bg-[color:var(--rail-wash)] hover:text-text-primary"
       } ${className}`}
       onClick={() => {
         onSelect();

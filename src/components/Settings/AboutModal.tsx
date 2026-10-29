@@ -10,7 +10,7 @@ const BLOG_LABEL = new URL(BLOG_URL).host;
 const QQ_GROUP_NUMBER = "902898359";
 
 const SPONSOR_IMAGES = Object.entries(
-  import.meta.glob("@/assets/sponsors/*.{jpg,jpeg,png,webp,gif,svg}", {
+  import.meta.glob("../../assets/sponsors/*.{jpg,jpeg,png,webp,gif,svg}", {
     eager: true,
     query: "?url",
     import: "default",

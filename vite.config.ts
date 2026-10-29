@@ -14,6 +14,12 @@ export default defineConfig(async () => ({
     },
   },
 
+  optimizeDeps: {
+    // AI 模块通过动态 import 加载，Vite 运行时发现后会触发第二轮预构建并删除
+    // 第一轮缓存目录；预声明后首轮即包含，避免 Windows 下的重复预构建。
+    include: ["@huggingface/transformers"],
+  },
+
   clearScreen: false,
   server: {
     port: 8787,

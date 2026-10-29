@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Qing Extension Host</title>
+  </head>
+  <body>
+    <!--
+      External, never inline: the app CSP is `script-src 'self'` with no
+      `'unsafe-inline'`, and an inline script is *silently* discarded here —
+      the page loads, nothing errors, nothing runs. See `ext-host.js` for the
+      logic and for the measured protocol verdict.
+
+      The `onerror` below exists for the one failure that would otherwise be
+      invisible again: the script itself failing to load. It reports by
+      navigating, because a top-level navigation is not subject to
+      `connect-src` — a diagnostic must not report through the channel it is
+      testing.
+    -->
+    <script
+      src="ext-host.js"
+      onerror="location.href = location.origin + '/__probe?script=page-script-blocked'"
+    ></script>
+  </body>
+</html>

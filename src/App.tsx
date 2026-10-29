@@ -23,6 +23,14 @@ import TodoSidebar from "@/components/Todo/TodoSidebar";
 import NoteEditor from "@/components/Editor/NoteEditor";
 import CanvasView from "@/components/Canvas/CanvasView";
 import AiSidebar from "@/components/AI/AiSidebar";
+import PluginSidebar from "@/components/Plugin/PluginSidebar";
+import InstallPermissionPrompt from "@/components/Plugin/InstallPermissionPrompt";
+import PluginDetail from "@/components/Plugin/PluginDetail";
+import CommandPalette from "@/components/Layout/CommandPalette";
+import ToastHost from "@/components/ToastHost";
+import PanelErrorBoundary from "@/components/PanelErrorBoundary";
+import { usePluginStore } from "@/plugin/store";
+import { activateStartupPlugins, deactivateAllPlugins } from "@/plugin/headless";
 import { useAiStore } from "@/stores/aiStore";
 import SettingsModal, { type SettingsSection } from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
@@ -67,12 +75,15 @@ import { alertDialog } from "@/stores/dialogStore";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
+import { refreshAnnouncements } from "@/utils/announcements";
 import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
 import type { LatestRelease } from "@/utils/updateChecker";
 import { renderStoredNoteContentForExport } from "@/utils/markdown";
+import { storedContentToMarkdown } from "@/utils/htmlToMarkdown";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
 import { flushActiveNote } from "@/utils/noteFlush";
+import { CANVAS_OPEN_NOTE_EVENT } from "@/utils/canvasRefs";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -80,13 +91,18 @@ import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import type { Todo, Note, ViewType } from "@/types";
-import TurndownService from "turndown";
 
 const COLLAPSED_WIDTH = 0;
 const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
 const loadWorkspaceSidebar = () => import("@/components/Workspace/WorkspaceSidebar");
 const WorkspaceView = lazy(loadWorkspaceView);
 const WorkspaceSidebar = lazy(loadWorkspaceSidebar);
+// The graph page pulls in `react-force-graph-2d` (~250 kB) and only the graph
+// view needs it, so it must not be in the first chunk: a note-taking app that
+// pays for a force-directed graph on cold start would be a regression for every
+// user who never opens it.
+const loadGraphPage = () => import("@/components/Graph/GraphPage");
+const GraphPage = lazy(loadGraphPage);
 type ResizableSidebar = "notebook" | "ai";
 const handledPasswordRecoveryUrls = new Set<string>();
 
@@ -97,33 +113,6 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-function isStoredEditorHtml(content: string): boolean {
-  return /<\/?(p|h[1-6]|ul|ol|li|blockquote|pre|div|img|hr|br)\b[\s\S]*>/i.test(content);
-}
-
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  codeBlockStyle: "fenced",
-  emDelimiter: "*",
-  bulletListMarker: "-",
-  hr: "---",
-});
-
-turndownService.addRule("img", {
-  filter: "img",
-  replacement: (_content, node) => {
-    const el = node as HTMLImageElement;
-    const source = el.dataset.attachmentSrc || el.src;
-    return `![${el.alt || "image"}](${source})`;
-  },
-});
-
-function htmlToMarkdown(html: string): string {
-  return turndownService
-    .turndown(html)
-    .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1");
 }
 
 /**
@@ -235,6 +224,8 @@ export default function App() {
   const trashRetentionDays = useSettingsStore((s) => s.trashRetentionDays);
   const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
+  const pluginsDisabled = useSettingsStore((s) => s.pluginsDisabled);
+  const announcementsEnabled = useSettingsStore((s) => s.announcementsEnabled);
   const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
@@ -365,6 +356,7 @@ export default function App() {
           glassBlurBg?: number;
           glassTintBg?: number;
           glassSaturateBg?: number;
+          pluginsDisabled?: boolean;
         });
 
         // Drop recycle-bin entries that outlived the configured retention window.
@@ -429,8 +421,46 @@ export default function App() {
     };
   }, [initialized]);
 
-  // Keep the tab strip in step with the note list: a deleted note drops its tab,
-  // and any note opened through a non-tab entry point (new note button, tray,
+  // Plugin runtime. Reading the install list is cheap; starting a worker is
+  // not, so only plugins that declared `onStartup` are activated here. Five
+  // installed plugins without that event cost zero at launch.
+  useEffect(() => {
+    if (!initialized) return;
+    let cancelled = false;
+    void usePluginStore
+      .getState()
+      .hydrate()
+      .then(() => {
+        if (!cancelled) void activateStartupPlugins(usePluginStore.getState().installed);
+      })
+      .catch((error) => {
+        // A wedged store must not leave the page silently empty.
+        console.error("Failed to initialise the plugin store:", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialized]);
+
+  // Entering the extensions page re-reads both columns. The install list is a
+  // local directory read; the index call is deliberately *not* forced: Rust
+  // answers from its 24 h cache without a network round-trip, so hopping
+  // between views stays free, while a window left open for days still picks up
+  // a newer index the next time the page is opened.
+  useEffect(() => {
+    if (currentView !== "plugins") return;
+    const plugins = usePluginStore.getState();
+    void plugins.refreshInstalled();
+    void plugins.refreshIndex(false);
+  }, [currentView]);
+
+  // The settings kill switch has to stop live workers, not just refuse new
+  // calls: a disabled plugin must not keep a channel into the host.
+  useEffect(() => {
+    if (pluginsDisabled) deactivateAllPlugins();
+  }, [pluginsDisabled]);
+
+  // Keep the tab strip in step with the note list: a deleted note drops its tab,  // and any note opened through a non-tab entry point (new note button, tray,
   // global shortcut) joins the strip instead of opening invisibly.
   useEffect(() => {
     if (!tabsHydrated) return;
@@ -547,6 +577,8 @@ export default function App() {
         glassBlurBg,
         glassTintBg,
         glassSaturateBg,
+        pluginsDisabled,
+        announcementsEnabled,
       });
     }
   }, [
@@ -571,6 +603,8 @@ export default function App() {
     glassBlurBg,
     glassTintBg,
     glassSaturateBg,
+    pluginsDisabled,
+    announcementsEnabled,
     initialized,
   ]);
 
@@ -603,10 +637,34 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [initialized]);
 
+  // Announcement feed, idle pass - trigger (2) of decision D4: one attempt three
+  // seconds after the first paint, never part of `init()`. The login dialog is
+  // trigger (1) and shares the same single-flight, cooldown and TTL, so whichever
+  // runs first performs the request and the other one is a no-op.
+  useEffect(() => {
+    if (!initialized || !announcementsEnabled) return;
+    const timer = window.setTimeout(() => {
+      void refreshAnnouncements(lang);
+    }, 3_000);
+    return () => window.clearTimeout(timer);
+  }, [initialized, announcementsEnabled, lang]);
+
   // Auto-save todos
   useEffect(() => {
     if (initialized) saveTodos(todos);
   }, [todos, initialized]);
+
+  // A canvas reference node cannot switch views on its own: it announces the
+  // note it points at and the shell owns the routing.
+  useEffect(() => {
+    const handleOpenNoteFromCanvas = (event: Event) => {
+      const noteId = (event as CustomEvent<string>).detail;
+      if (!noteId) return;
+      setCurrentView("note");
+    };
+    window.addEventListener(CANVAS_OPEN_NOTE_EVENT, handleOpenNoteFromCanvas);
+    return () => window.removeEventListener(CANVAS_OPEN_NOTE_EVENT, handleOpenNoteFromCanvas);
+  }, []);
 
   useEffect(() => {
     if (initialized) saveTodoLists({ lists: todoLists, activeListId: activeTodoListId });
@@ -1045,10 +1103,7 @@ export default function App() {
         return;
       }
 
-      const exportContent = isStoredEditorHtml(storedContent)
-        ? htmlToMarkdown(storedContent)
-        : storedContent;
-      await writeTextFile(exportPath, exportContent);
+      await writeTextFile(exportPath, storedContentToMarkdown(storedContent));
     } catch (e) {
       console.error("Export file failed:", e);
       const detail = e instanceof Error ? e.message : String(e);
@@ -1083,10 +1138,12 @@ export default function App() {
   }, [lang]);
 
   // One left column for every view: the same width and the same collapsed flag
-  // follow you from notes to todos to the workspace. Only the canvas has no
-  // explorer, and a signed-out workspace keeps the rail alone because there is
-  // nothing to list.
+  // follow you from notes to todos to the workspace. The canvas and the graph
+  // have no explorer: the graph's vault list and filters live in an overlay
+  // inside the canvas instead (§8.4), because the note tree cannot represent
+  // vault nodes without inventing ghost notes (§2.1).
   const leftSidebarListVisible = currentView !== "canvas"
+    && currentView !== "graph"
     && (currentView !== "workspace" || Boolean(authUser));
   const toggleActiveSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -1215,6 +1272,10 @@ export default function App() {
                   <Suspense fallback={null}>
                     <WorkspaceSidebar />
                   </Suspense>
+                ) : currentView === "plugins" ? (
+                  <PanelErrorBoundary lang={lang}>
+                    <PluginSidebar />
+                  </PanelErrorBoundary>
                 ) : (
                   <Sidebar
                     currentView={currentView}
@@ -1254,7 +1315,19 @@ export default function App() {
                   <WorkspaceView onOpenAuth={() => setAuthOpen(true)} />
                 </Suspense>
               )
-              : currentView === "canvas"
+              : currentView === "plugins"
+                ? (
+                  <PanelErrorBoundary lang={lang}>
+                    <PluginDetail />
+                  </PanelErrorBoundary>
+                )
+                : currentView === "graph"
+                ? (
+                  <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted"><LoadingText label={t(lang, "loading")} /></div>}>
+                    <GraphPage setCurrentView={setCurrentView} />
+                  </Suspense>
+                )
+                : currentView === "canvas"
                 ? <CanvasView />
                 : (
                   <>
@@ -1291,10 +1364,20 @@ export default function App() {
         </div>
       </div>
 
+      <CommandPalette
+        onViewChange={setCurrentView}
+        onNewNote={handleNewNote}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onToggleAi={() => useAiStore.getState().setSidebarOpen(!useAiStore.getState().sidebarOpen)}
+      />
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onOpenAuth={() => setAuthOpen(true)}
+        onOpenPlugins={() => {
+          setSettingsOpen(false);
+          setCurrentView("plugins");
+        }}
         initialSection={settingsSection}
         hasWallpaper={hasBackground}
       />
@@ -1311,6 +1394,12 @@ export default function App() {
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <PasswordRecoveryModal />
       <AppDialog />
+      <ToastHost />
+      {/* Install-time permission prompt. Mounted here, not in the plugins view:
+          "install from folder" is reachable from every view, and a prompt that
+          only exists while the plugins page is open reads as "the button is
+          broken". */}
+      <InstallPermissionPrompt />
       <WorkspaceRemovalNotifier />
       {autoLoginLoading && (
         <div className="pointer-events-none fixed inset-x-0 top-12 z-[100] flex justify-center px-4">

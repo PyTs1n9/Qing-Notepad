@@ -24,7 +24,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Brain, Check, ChevronDown, Plus, Sparkles } from "lucide-react";
+import { Brain, Check, ChevronDown, Plus } from "lucide-react";
+import XiaoQingMark from "./XiaoQingMark";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { LOCAL_MODEL_ID, useAiStore } from "@/stores/aiStore";
 import { makeSelection, parseSelection } from "@/utils/ai/chat/endpoints";
@@ -261,7 +262,9 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
           {chipBrand ? (
             <ModelBrandIcon brand={chipBrand} className="text-text-primary" />
           ) : (
-            <Sparkles size={11} className="flex-shrink-0 text-accent-text" />
+            /* 12px, one under the vendor mark's 13px: the disc is solid, so at
+               equal size it out-weighs the line logos beside it in the list. */
+            <XiaoQingMark size={12} className="flex-shrink-0" />
           )}
           <span className="ai-model-chip__label truncate">{chipLabel}</span>
           {!localSelected && activeRow?.supportsThinking && (
@@ -316,7 +319,9 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
                     localSelected ? "text-accent-text" : "text-text-secondary"
                   }`}
                 >
-                  <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-accent-text" />
+                  {/* 小青's own mark, not a theme-tinted glyph: the row below
+                      is coloured for "selected", but the identity is fixed. */}
+                  <XiaoQingMark size={13} className="mt-0.5 flex-shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs">{t(lang, "aiModelLocal")}</span>
                     <span className="block truncate text-[10px] text-text-muted">
@@ -357,7 +362,10 @@ const ModelPicker: React.FC<ModelPickerProps> = ({ onManageModels }) => {
                       {rowBrand ? (
                         <ModelBrandIcon brand={rowBrand} className="mt-0.5 text-text-primary" />
                       ) : (
-                        <Sparkles size={12} className="mt-0.5 flex-shrink-0 text-text-muted" />
+                        /* An unrecognised vendor falls back to the app's own mark
+                           rather than guessing a logo - same book as the row for
+                           小青 itself, because both mean "this is ours". */
+                        <XiaoQingMark size={13} className="mt-0.5 flex-shrink-0" />
                       )}
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1 truncate text-xs">

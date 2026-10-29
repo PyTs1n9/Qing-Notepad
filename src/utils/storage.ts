@@ -12,6 +12,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { writeFileAtomic, writeJsonAtomic } from "./atomicWrite";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 import { markKnowledgeDirty, markNoteContentDirty } from "@/utils/ai/knowledgeDirty";
 import { isAiEndpoint, normalizeEndpoint, type AiEndpoint } from "@/utils/ai/chat/endpoints";
@@ -789,7 +790,7 @@ export async function saveTodos<T>(todos: T[]): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, TODOS_FILE);
-    await writeTextFile(path, JSON.stringify(todos, null, 2));
+    await writeJsonAtomic(path, todos);
     markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todos:", e);
@@ -897,7 +898,7 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, TODO_LISTS_FILE);
-    await writeTextFile(path, JSON.stringify(data, null, 2));
+    await writeJsonAtomic(path, data);
     markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todo lists:", e);
@@ -1042,7 +1043,7 @@ export async function saveNoteContent(id: string, content: string): Promise<void
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
-    await writeTextFile(path, content);
+    await writeFileAtomic(path, content);
     // Name the note so the knowledge index only re-reads this one body.
     markNoteContentDirty(id);
   } catch (e) {
@@ -1669,7 +1670,7 @@ export async function saveSettings(settings: Record<string, unknown>): Promise<v
   try {
     const base = await ensureDataDir();
     const path = await join(base, SETTINGS_FILE);
-    await writeTextFile(path, JSON.stringify(settings, null, 2));
+    await writeJsonAtomic(path, settings);
   } catch (e) {
     console.error("Failed to save settings:", e);
   }
@@ -1707,8 +1708,193 @@ export async function saveUiState(state: StoredUiState): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, UI_STATE_FILE);
-    await writeTextFile(path, JSON.stringify(state, null, 2));
+    await writeJsonAtomic(path, state);
   } catch (e) {
     console.error("Failed to save ui state:", e);
+  }
+}
+
+// --- Announcement feed (disk cache + read marks) ---
+//
+// The feed itself is remote (`announcements.json` in the repository); these two
+// files are its cross-launch cache and the "already read" marks (decision log
+// D4 / D8). Everything here is best-effort: an unreadable cache only costs one
+// network request and a lost read mark only re-shows a dot, so nothing on this
+// path is allowed to throw into the boot chain.
+const ANNOUNCEMENTS_DIR = "announcements";
+const ANNOUNCEMENT_CACHE_FILE = "cache.json";
+const ANNOUNCEMENT_SEEN_FILE = "seen.json";
+const ANNOUNCEMENT_DISMISSED_FILE = "dismissed.json";
+const ANNOUNCEMENT_SCHEMA_VERSION = 1;
+/** Bounds `seen.json` / `dismissed.json`: marks outlive the items they point at. */
+const ANNOUNCEMENT_MARK_LIMIT = 200;
+
+export interface StoredAnnouncementCache {
+  schemaVersion: number;
+  /** Epoch ms of the fetch that produced `items`; TTL is a relative difference. */
+  fetchedAt: number;
+  /**
+   * Response `ETag`, kept for a possible future conditional request. It is
+   * stored but never sent today: an unauthenticated `304` is not guaranteed to
+   * be exempt from the rate limit (GitHub documents the authenticated case
+   * only), so sending `If-None-Match` would buy bandwidth but no quota.
+   */
+  etag: string | null;
+  /** Validated feed items, not the raw payload - see `utils/announcements.ts`. */
+  items: unknown[];
+}
+
+function isStoredAnnouncementCache(value: unknown): value is StoredAnnouncementCache {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return record.schemaVersion === ANNOUNCEMENT_SCHEMA_VERSION
+    && Array.isArray(record.items)
+    && typeof record.fetchedAt === "number"
+    && Number.isFinite(record.fetchedAt);
+}
+
+async function ensureAnnouncementsDir(): Promise<string> {
+  const dir = await join(await getDataRoot(), ANNOUNCEMENTS_DIR);
+  // Creating this subdirectory is fine; recreating the data *root* is not. A
+  // missing root means the drive is gone (`DATA_DIRECTORY_UNAVAILABLE`) and
+  // making it again would present an unplugged drive as an empty library.
+  await ensureDirectory(dir);
+  return dir;
+}
+
+/**
+ * Cached feed, or null when there is none to trust.
+ *
+ * A structurally unusable file (unparsable JSON, unknown `schemaVersion`,
+ * `items` not an array) is deleted here rather than merely ignored: keeping a
+ * file we will never read again just means parsing the same garbage every
+ * launch. Per-item validation stays in `utils/announcements.ts`.
+ */
+export async function loadAnnouncementCache(): Promise<StoredAnnouncementCache | null> {
+  try {
+    const dir = await ensureAnnouncementsDir();
+    const path = await join(dir, ANNOUNCEMENT_CACHE_FILE);
+    if (!(await exists(path))) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readTextFile(path)) as unknown;
+    } catch {
+      // Unparsable JSON is the same verdict as an unrecognised shape, and the
+      // outer catch cannot delete the file it never learned the path of.
+      await remove(path).catch(() => undefined);
+      return null;
+    }
+
+    if (!isStoredAnnouncementCache(parsed)) {
+      await remove(path).catch(() => undefined);
+      return null;
+    }
+    return {
+      schemaVersion: parsed.schemaVersion,
+      fetchedAt: parsed.fetchedAt,
+      etag: typeof parsed.etag === "string" ? parsed.etag : null,
+      items: parsed.items,
+    };
+  } catch {
+    // Includes DATA_DIRECTORY_UNAVAILABLE: fall through to the bundled snapshot.
+    return null;
+  }
+}
+
+export async function saveAnnouncementCache(cache: StoredAnnouncementCache): Promise<void> {
+  try {
+    const dir = await ensureAnnouncementsDir();
+    const path = await join(dir, ANNOUNCEMENT_CACHE_FILE);
+    await writeTextFile(path, JSON.stringify(cache, null, 2));
+  } catch {
+    // Not user-visible: the in-memory copy and the snapshot still render.
+  }
+}
+
+/** `{ "<id>": "<ISO timestamp>" }`. Missing or corrupt file reads as empty. */
+export async function loadSeenAnnouncements(): Promise<Record<string, string>> {
+  return loadAnnouncementMarks(ANNOUNCEMENT_SEEN_FILE, "seen");
+}
+
+export async function saveSeenAnnouncements(seen: Record<string, string>): Promise<void> {
+  await saveAnnouncementMarks(ANNOUNCEMENT_SEEN_FILE, "seen", seen);
+}
+
+/**
+ * Announcements the user closed with the ✕.
+ *
+ * Separate from `seen.json` because they answer a different question: "seen"
+ * decides the read dot, "dismissed" decides whether the entry is shown at all.
+ * Without this file a dismissal only lasted until the board unmounted, so the
+ * entry came back on the next open of the login dialog.
+ */
+export async function loadDismissedAnnouncements(): Promise<Record<string, string>> {
+  return loadAnnouncementMarks(ANNOUNCEMENT_DISMISSED_FILE, "dismissed");
+}
+
+/** Serialises read-modify-write so two quick dismissals cannot lose one. */
+let dismissedWriteChain: Promise<void> = Promise.resolve();
+
+export async function markAnnouncementDismissed(id: string): Promise<void> {
+  if (!id) return;
+  dismissedWriteChain = dismissedWriteChain
+    .then(async () => {
+      const dismissed = await loadDismissedAnnouncements();
+      if (dismissed[id]) return;
+      dismissed[id] = new Date().toISOString();
+      await saveAnnouncementMarks(ANNOUNCEMENT_DISMISSED_FILE, "dismissed", dismissed);
+    })
+    .catch(() => undefined);
+  await dismissedWriteChain;
+}
+
+/**
+ * Shared reader for the two id-keyed mark files. Both use the same envelope
+ * (`{schemaVersion, seen|dismissed}`) and both are best effort: a corrupt file
+ * behaves exactly like a missing one.
+ */
+async function loadAnnouncementMarks(
+  fileName: string,
+  field: "seen" | "dismissed",
+): Promise<Record<string, string>> {
+  try {
+    const dir = await ensureAnnouncementsDir();
+    const path = await join(dir, fileName);
+    if (!(await exists(path))) return {};
+    const parsed = JSON.parse(await readTextFile(path)) as unknown;
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const record = (parsed as Record<string, unknown>)[field];
+    if (typeof record !== "object" || record === null) return {};
+
+    const marks: Record<string, string> = {};
+    for (const [id, stamped] of Object.entries(record as Record<string, unknown>)) {
+      if (typeof stamped === "string" && stamped) marks[id] = stamped;
+    }
+    return marks;
+  } catch {
+    return {};
+  }
+}
+
+async function saveAnnouncementMarks(
+  fileName: string,
+  field: "seen" | "dismissed",
+  marks: Record<string, string>,
+): Promise<void> {
+  try {
+    const dir = await ensureAnnouncementsDir();
+    const path = await join(dir, fileName);
+    // Newest marks survive: the file must not grow without bound, and an old id
+    // whose item is long gone cannot be missed by anything.
+    const entries = Object.entries(marks)
+      .sort((left, right) => right[1].localeCompare(left[1]))
+      .slice(0, ANNOUNCEMENT_MARK_LIMIT);
+    await writeTextFile(
+      path,
+      JSON.stringify({ schemaVersion: ANNOUNCEMENT_SCHEMA_VERSION, [field]: Object.fromEntries(entries) }, null, 2),
+    );
+  } catch {
+    // Best effort: a lost mark only re-shows a read dot or one announcement.
   }
 }

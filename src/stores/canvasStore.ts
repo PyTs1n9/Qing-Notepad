@@ -10,12 +10,25 @@ function cloneBoard(board: CanvasBoard): CanvasBoard {
 
 interface CanvasState {
   board: CanvasBoard;
+  /**
+   * Which document `board` is a view of. Lives here rather than in `CanvasView`
+   * so host APIs (the plugin bridge) can tell "the user is looking at this
+   * board" from "this board only exists on disk".
+   */
+  activeCanvasId: string | null;
   selectedId: string | null;
   selectedIds: string[];
   loaded: boolean;
   history: CanvasBoard[];
   future: CanvasBoard[];
   loadBoard: (board: CanvasBoard) => void;
+  setActiveCanvasId: (id: string | null) => void;
+  /**
+   * Replace the whole board while keeping undo history. Used by host APIs that
+   * compute a batch of changes at once (plugin writes); the user can still
+   * Ctrl+Z the result.
+   */
+  replaceBoard: (board: CanvasBoard) => void;
   setSelectedId: (id: string | null) => void;
   setSelectedIds: (ids: string[]) => void;
   toggleSelectedId: (id: string) => void;
@@ -42,6 +55,7 @@ function commit(state: CanvasState, board: CanvasBoard) {
 
 export const useCanvasStore = create<CanvasState>((set) => ({
   board: createEmptyCanvasBoard(),
+  activeCanvasId: null,
   selectedId: null,
   selectedIds: [],
   loaded: false,
@@ -49,6 +63,8 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   future: [],
 
   loadBoard: (board) => set({ board: cloneBoard(board), selectedId: null, selectedIds: [], loaded: true, history: [], future: [] }),
+  setActiveCanvasId: (id) => set({ activeCanvasId: id }),
+  replaceBoard: (board) => set((state) => commit(state, cloneBoard(board))),
   setSelectedId: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
   setSelectedIds: (ids) => set({ selectedIds: [...new Set(ids)], selectedId: ids[ids.length - 1] ?? null }),
   toggleSelectedId: (id) => set((state) => {

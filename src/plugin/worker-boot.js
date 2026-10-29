@@ -1,0 +1,531 @@
+/*
+ * Worker-side boot prelude.
+ *
+ * This file is never imported as a module. `headless.ts` reads it with `?raw`
+ * and concatenates it in front of the plugin body, so the whole thing becomes
+ * one blob URL. That is the only way to get a `qing` object in front of the
+ * plugin without asking plugin authors to import a runtime — and the spec
+ * requires exactly one of the two boot strategies, not two.
+ *
+ * Plain JavaScript on purpose: it is inlined as text, so it must run verbatim
+ * in the worker, with no transpile step of its own.
+ *
+ * Shape of the wrapper built by headless.ts:
+ *
+ *     <this file>
+ *     self.__qing_main = async function () {
+ *       <plugin main.js>
+ *     };
+ *
+ * The plugin body therefore starts only after `init` arrives: `qing.plugin.id`,
+ * `qing.permissions` and friends are already populated when module-level code
+ * runs, and top-level `await` works because the wrapper is async.
+ *
+ * Because the body is a plain global function, everything it needs — `qing`,
+ * and the CommonJS `module` / `exports` / `require` shim below — has to be
+ * published on `self`. Nothing else in this file is reachable from plugin code.
+ */
+(function () {
+  "use strict";
+
+  var meta = {
+    id: "",
+    version: "",
+    apiVersion: 1,
+    hostVersion: "",
+    permissions: [],
+  };
+  var nextRid = 1;
+  var pending = new Map();
+  var commandHandlers = new Map();
+  var viewProviders = new Map();
+  var listeners = { activate: [], deactivate: [] };
+  var started = false;
+
+  function post(message) {
+    self.postMessage(message);
+  }
+
+  /** Keep log payloads structured-cloneable and bounded. */
+  function describe(value) {
+    if (value instanceof Error) return value.stack || value.message || String(value);
+    if (typeof value === "function") return "[function]";
+    if (typeof value === "string") return value.length > 2000 ? value.slice(0, 2000) : value;
+    try {
+      var text = JSON.stringify(value);
+      if (typeof text !== "string") return String(value);
+      return text.length > 2000 ? text.slice(0, 2000) : text;
+    } catch (error) {
+      return String(value);
+    }
+  }
+
+  function makeError(code) {
+    var error = new Error(code);
+    error.code = code;
+    return error;
+  }
+
+  /*
+   * CommonJS compatibility shim.
+   *
+   * `esbuild --format=cjs` — and any hand-written CommonJS bundle — refers to
+   * `module`, `exports` and `require` as free variables. Inside the wrapper
+   * below those names would be unbound, so such a bundle died with
+   * `exports is not defined` before its first statement ran, which to the
+   * author is indistinguishable from a broken package. These three bindings
+   * make it *load*.
+   *
+   * They are not a module system: packages are single-file by contract (a blob
+   * worker cannot resolve relative imports anyway), so `require` only ever
+   * throws. Nothing here exposes host code, and nothing here resolves paths.
+   *
+   * They live on `self` rather than in this closure because the plugin body is
+   * installed as a separate global function (see `headless.ts`); only globals
+   * are visible from inside it.
+   */
+  var moduleShim = { exports: {} };
+
+  function requireShim(id) {
+    var error = makeError("E_REQUIRE_UNSUPPORTED");
+    error.message =
+      'require("' +
+      String(id) +
+      '") is not supported: a plugin must be a single bundled file';
+    throw error;
+  }
+
+  Object.defineProperty(self, "module", {
+    value: moduleShim,
+    // Writable on purpose: a UMD-style bundle writes `exports = module.exports
+    // = factory()` and an assignment to a non-writable global throws. Nothing
+    // is protected by freezing these — they grant no access to host code.
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  // `exports` starts as the same object as `module.exports`, so the common
+  // `exports.name = ...` form and the `module.exports = ...` form agree.
+  Object.defineProperty(self, "exports", {
+    value: moduleShim.exports,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+  Object.defineProperty(self, "require", {
+    value: requireShim,
+    writable: true,
+    configurable: true,
+    enumerable: false,
+  });
+
+  function rpc(namespace, method, args) {
+    var rid = nextRid++;
+    return new Promise(function (resolve, reject) {
+      pending.set(rid, { resolve: resolve, reject: reject });
+      post({ t: "rpc", rid: rid, ns: namespace, method: method, args: args || [] });
+    });
+  }
+
+  function fireAndForget(namespace, method, args) {
+    rpc(namespace, method, args).catch(function (error) {
+      post({ t: "log", level: "warn", args: [describe(error)] });
+    });
+  }
+
+  var qing = {
+    get apiVersion() {
+      return meta.apiVersion;
+    },
+    get hostVersion() {
+      return meta.hostVersion;
+    },
+    get plugin() {
+      return { id: meta.id, version: meta.version };
+    },
+    get permissions() {
+      return meta.permissions.slice();
+    },
+
+    log: function () {
+      var args = [];
+      for (var index = 0; index < arguments.length; index += 1) {
+        args.push(describe(arguments[index]));
+      }
+      post({ t: "log", level: "info", args: args });
+    },
+
+    storage: {
+      get: function (key) {
+        return rpc("storage", "get", [key]);
+      },
+      set: function (key, value) {
+        return rpc("storage", "set", [key, value]);
+      },
+      delete: function (key) {
+        return rpc("storage", "delete", [key]);
+      },
+      keys: function () {
+        return rpc("storage", "keys", []);
+      },
+    },
+
+    notes: {
+      list: function () {
+        return rpc("notes", "list", []);
+      },
+      /**
+       * The folder tree plus note placement. `list()` deliberately carries no
+       * `categoryId`, so it cannot describe a structure; this can.
+       */
+      tree: function () {
+        return rpc("notes", "tree", []);
+      },
+      get: function (id) {
+        return rpc("notes", "get", [id]);
+      },
+      create: function (input) {
+        return rpc("notes", "create", [input]);
+      },
+      update: function (id, patch) {
+        return rpc("notes", "update", [id, patch]);
+      },
+    },
+
+    /**
+     * Reference nodes on a canvas.
+     *
+     * The plugin never sees a canvas item id and never touches a board file:
+     * writes are keyed by a reference (`note:<id>` / `folder:<id>` / `root`),
+     * and `upsert` keeps the geometry of a node that already exists so a re-run
+     * cannot undo a drag.
+     *
+     * `boardId` is optional everywhere: omitting it means "the canvas the user
+     * is looking at", which is how a command run from the canvas gets a target
+     * without a picker. Outside the canvas view the host answers `E_NO_CANVAS`.
+     */
+    canvas: {
+      listRefKeys: function (input) {
+        return rpc("canvas", "listRefKeys", input === undefined || input === null ? [] : [input]);
+      },
+      upsertRefNodes: function (input) {
+        return rpc("canvas", "upsertRefNodes", [input]);
+      },
+      upsertRefConnectors: function (input) {
+        return rpc("canvas", "upsertRefConnectors", [input]);
+      },
+      setNodesHidden: function (input) {
+        return rpc("canvas", "setNodesHidden", [input]);
+      },
+      removeRefNodes: function (input) {
+        return rpc("canvas", "removeRefNodes", [input]);
+      },
+    },
+
+    /**
+     * One summary, on the user's own endpoint. Costs their API credit, so call
+     * it only from an explicit command — never on activate.
+     */
+    ai: {
+      summarize: function (noteId) {
+        return rpc("ai", "summarize", [noteId]);
+      },
+    },
+
+    /**
+     * The open note's document.
+     *
+     * Positions are CodeMirror document offsets into the Markdown source —
+     * `0` to `getText().length`, counted in UTF-16 code units. There is no
+     * document object to hold on to: every call reads the live text, so a
+     * position saved from an earlier call can be stale by the time it is used.
+     *
+     * **The text is Markdown source, not HTML.** Whatever comes back from
+     * `getText()` is exactly what gets saved; hand an HTML string to
+     * `replace()` and it is stored as literal HTML-shaped Markdown. Let the
+     * editor do the conversion — it owns the rules.
+     *
+     * `E_NO_EDITOR` means no note is open (the plugin is running while the user
+     * is on the todo page, or looking at a cloud note, for example).
+     */
+    editor: {
+      /**
+       * The document as Markdown source, or just the `[from, to)` slice when a
+       * range is given (so a plugin can count the selection without pulling the
+       * whole note into the worker). An empty range returns `""`.
+       */
+      getText: function (range) {
+        return rpc("editor", "getText", range === undefined || range === null ? [] : [range]);
+      },
+      /** `{ from, to, anchor, head, text }`; `from <= to` is guaranteed. */
+      getSelection: function () {
+        return rpc("editor", "getSelection", []);
+      },
+      /**
+       * Replace the half-open range `[from, to)` with `text` (Markdown, not
+       * HTML). An empty range is an insertion, `from === to ===
+       * getText().length` appends. The write goes through the editor's own
+       * change pipeline, so autosave, dirty tracking and undo see it exactly as
+       * if the user had typed it.
+       */
+      replace: function (range, text) {
+        return rpc("editor", "replace", [range, text]);
+      },
+      /**
+       * Mark ranges of the document. `kind` is one of "error", "warning",
+       * "success", "muted", "highlight" — a CSS class name is rejected. Calling
+       * again with the same `key` replaces that key's marks; an empty array
+       * clears them.
+       */
+      setDecorations: function (key, ranges) {
+        return rpc("editor", "setDecorations", [key, ranges]);
+      },
+      /**
+       * Move the caret: `{ anchor, head }`, same offsets as everything else,
+       * in either order (a backwards selection is real). `from`/`to` are
+       * accepted as a shorthand so `getSelection()` can be handed straight
+       * back. The scroll position follows CodeMirror's own behaviour — the
+       * caret is scrolled into view, nothing else moves.
+       */
+      setSelection: function (range) {
+        return rpc("editor", "setSelection", [range]);
+      },
+    },
+
+    /**
+     * Declarative sidebar panels (`contributes.views`, permission `views`).
+     *
+     * `registerTreeDataProvider` supplies the rows; the host decides when to
+     * ask. `refresh(viewId)` says "my data changed" and the panel re-fetches —
+     * it may only name a view this plugin contributes.
+     */
+    views: {
+      registerTreeDataProvider: function (viewId, provider) {
+        if (typeof viewId !== "string" || viewId.length === 0) return;
+        if (!provider || typeof provider.getChildren !== "function") return;
+        viewProviders.set(viewId, provider);
+      },
+      refresh: function (viewId) {
+        return rpc("views", "refresh", [viewId]);
+      },
+    },
+
+    todo: {
+      list: function () {
+        return rpc("todo", "list", []);
+      },
+      create: function (input) {
+        return rpc("todo", "create", [input]);
+      },
+      update: function (id, patch) {
+        return rpc("todo", "update", [id, patch]);
+      },
+    },
+
+    clipboard: {
+      read: function () {
+        return rpc("clipboard", "read", []);
+      },
+      write: function (text) {
+        return rpc("clipboard", "write", [text]);
+      },
+    },
+
+    ui: {
+      toast: function (message, tone) {
+        fireAndForget("ui", "toast", [message, tone || "info"]);
+      },
+    },
+
+    /**
+     * Register the handler for one contributed command. `commands.execute` is
+     * deliberately absent: plugins cannot call each other (decisions D6).
+     *
+     * The handler is called with one optional argument: the tree item's id when
+     * the command came from a row in a plugin-contributed panel, `undefined`
+     * when it came from the command palette.
+     */
+    commands: {
+      register: function (id, handler) {
+        if (typeof id !== "string" || typeof handler !== "function") return;
+        commandHandlers.set(id, handler);
+      },
+    },
+
+    on: function (event, callback) {
+      if (typeof callback !== "function" || !listeners[event]) return function () {};
+      listeners[event].push(callback);
+      return function () {
+        var index = listeners[event].indexOf(callback);
+        if (index >= 0) listeners[event].splice(index, 1);
+      };
+    },
+  };
+
+  Object.defineProperty(self, "qing", {
+    value: qing,
+    writable: false,
+    configurable: false,
+    enumerable: true,
+  });
+
+  function callSafely(callback) {
+    try {
+      var result = callback();
+      if (result && typeof result.catch === "function") {
+        result.catch(function (error) {
+          post({ t: "log", level: "error", args: [describe(error)] });
+        });
+      }
+    } catch (error) {
+      post({ t: "log", level: "error", args: [describe(error)] });
+    }
+  }
+
+  async function start() {
+    try {
+      if (typeof self.__qing_main === "function") {
+        await self.__qing_main();
+      }
+    } catch (error) {
+      post({ t: "log", level: "error", args: [describe(error)] });
+      return;
+    }
+    // A bundle written as CommonJS exports `activate` instead of registering
+    // its commands at module level, so without this the package loads, runs
+    // nothing, and looks broken. The shape below is the one VS Code passes, so
+    // a ported extension does not need a wrapper. `subscriptions` is always
+    // empty: every disposable this host hands out comes from `qing.on`, which
+    // already returns its own unsubscribe function.
+    var exported = self.module && self.module.exports;
+    if (exported && typeof exported.activate === "function") {
+      try {
+        var activated = exported.activate({ subscriptions: [] });
+        if (activated && typeof activated.then === "function") {
+          await activated;
+        }
+      } catch (error) {
+        post({ t: "log", level: "error", args: [describe(error)] });
+      }
+    }
+    for (var index = 0; index < listeners.activate.length; index += 1) {
+      callSafely(listeners.activate[index]);
+    }
+  }
+
+  self.addEventListener("message", async function (event) {
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+
+    if (data.t === "init") {
+      if (started) return;
+      started = true;
+      meta.id = data.id;
+      meta.version = data.version;
+      meta.apiVersion = data.apiVersion;
+      meta.hostVersion = data.hostVersion;
+      meta.permissions = data.permissions || [];
+      // `ready` goes out before the plugin body runs: the host needs to know
+      // the worker is alive even if the plugin then throws on line one.
+      post({ t: "ready" });
+      await start();
+      return;
+    }
+
+    if (data.t === "call") {
+      var callArgs = Array.isArray(data.args) ? data.args : [];
+
+      // Host → worker: the sidebar asking a provider for one level of children.
+      // `elementId` is `callArgs[1]` and is undefined at the root.
+      if (data.ns === "views" && data.method === "getChildren") {
+        var provider = viewProviders.get(callArgs[0]);
+        if (!provider) {
+          post({ t: "res", rid: data.rid, ok: false, code: "E_NO_HANDLER" });
+          return;
+        }
+        try {
+          var rows = await provider.getChildren(callArgs[1]);
+          // Row by row: one item the structured clone cannot carry must not
+          // take the whole panel down with it.
+          var plain = [];
+          if (Array.isArray(rows)) {
+            for (var row = 0; row < rows.length; row += 1) {
+              try {
+                plain.push(JSON.parse(JSON.stringify(rows[row])));
+              } catch (dropError) {
+                post({ t: "log", level: "warn", args: ["dropped an unclonable tree item"] });
+              }
+            }
+          }
+          post({ t: "res", rid: data.rid, ok: true, value: plain });
+        } catch (error) {
+          post({ t: "log", level: "error", args: [describe(error)] });
+          var providerCode = error && typeof error.code === "string" ? error.code : "E_INTERNAL";
+          post({ t: "res", rid: data.rid, ok: false, code: providerCode });
+        }
+        return;
+      }
+
+      if (data.ns !== "commands" || data.method !== "execute") {
+        post({ t: "res", rid: data.rid, ok: false, code: "E_INTERNAL" });
+        return;
+      }
+      var commandId = callArgs[0];
+      var handler = commandHandlers.get(commandId);
+      if (!handler) {
+        post({ t: "res", rid: data.rid, ok: false, code: "E_NO_HANDLER" });
+        return;
+      }
+      try {
+        // Anything after the command id is the caller's argument: a tree item's
+        // click passes the item id so one command can serve a whole tree. The
+        // palette passes nothing, and a handler that ignores its parameter is
+        // free to declare none.
+        var value = await handler.apply(null, callArgs.slice(1));
+        var plain = value === undefined ? null : value;
+        try {
+          plain = JSON.parse(JSON.stringify(plain));
+        } catch (error) {
+          plain = null;
+        }
+        post({ t: "res", rid: data.rid, ok: true, value: plain });
+      } catch (error) {
+        post({ t: "log", level: "error", args: [describe(error)] });
+        // A rejected host call carries the host's code (`E_PERMISSION_DENIED`,
+        // `E_QUOTA_EXCEEDED`, …). Flattening every failure to `E_INTERNAL`
+        // would make "you revoked this permission" indistinguishable from a
+        // genuine bug, both in the toast and in the log.
+        var code = error && typeof error.code === "string" ? error.code : "E_INTERNAL";
+        post({ t: "res", rid: data.rid, ok: false, code: code });
+      }
+      return;
+    }
+
+    if (data.t === "res") {
+      var entry = pending.get(data.rid);
+      if (!entry) return;
+      pending.delete(data.rid);
+      if (data.ok) entry.resolve(data.value);
+      else entry.reject(makeError(data.code || "E_INTERNAL"));
+      return;
+    }
+
+    if (data.t === "event") {
+      // The CommonJS counterpart of the `activate` call in `start()`. Best
+      // effort by nature: the host terminates the worker right after posting
+      // this event, so a slow `deactivate` may not finish. It is still worth
+      // reaching — an extension that flushes its own storage here gets that
+      // chance, and one that does not loses nothing.
+      if (data.name === "deactivate") {
+        var exported = self.module && self.module.exports;
+        if (exported && typeof exported.deactivate === "function") {
+          callSafely(exported.deactivate);
+        }
+      }
+      var list = listeners[data.name] || [];
+      for (var index = 0; index < list.length; index += 1) {
+        callSafely(list[index]);
+      }
+    }
+  });
+})();

@@ -1,0 +1,40 @@
+{
+  "name": "editor-demo",
+  "publisher": "qing",
+  "displayName": "当前笔记统计（编辑器 API 示例）",
+  "description": "演示 qing.editor：有选区统计选区，否则统计整篇，报字数与词频 Top 5。",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "Qing Notepad",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-editor-demo"
+  },
+  "engines": {
+    "qing": ">=0.7.3 <1.0.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onCommand:qing.editor-demo.report"],
+  "permissions": ["editor:read", "notify"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "qing.editor-demo.report",
+        "title": "统计当前笔记",
+        "category": "示例"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "pack": "node build.mjs && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.8.0"
+  }
+}

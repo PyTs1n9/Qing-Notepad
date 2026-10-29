@@ -1,0 +1,14 @@
+{
+  "name": "qing-hello-headless",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Qing Notepad example plugin: copy the current timestamp.",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --format=esm --platform=browser --target=es2020 --outfile=main.js",
+    "pack": "npm run build && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

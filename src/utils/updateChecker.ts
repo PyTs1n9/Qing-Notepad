@@ -66,17 +66,58 @@ export function isVersionNewer(candidate: string, current: string): boolean {
 }
 
 /**
- * Update checks run through the http plugin in the desktop app.
+ * Compares two versions by their three numeric parts **only**, ignoring any
+ * prerelease suffix.
  *
- * A webview `fetch` here would force `https://api.github.com` into the CSP
- * `connect-src` for a request that happens once per launch. The plugin performs
- * it in Rust (outside the CSP) and its own allowlist already covers `https://**`.
- * `cache` is not part of the plugin's RequestInit subset, and it never caches.
+ * This is the primitive the announcement feed needs for its version windows
+ * (`minAppVersion` inclusive, `maxAppVersionExclusive` exclusive). It exists
+ * because range syntax is the wrong tool here: `semver.satisfies("0.8.0-beta.1",
+ * ">=0.7.0")` is `false` by default, which would hide every notice from beta
+ * users. A triple comparison sidesteps that rule entirely.
+ *
+ * Unparsable input throws instead of collapsing to a value: a silent `0` would
+ * make a typo'd `maxAppVersionExclusive` hide *every* item (0 means "equal",
+ * and equal fails the exclusive bound), and any invented `-1`/`1` would be a
+ * lie. Callers that want "no constraint" semantics must decide it themselves.
  */
-const githubFetch: typeof fetch = isTauri() ? (tauriFetch as unknown as typeof fetch) : fetch;
+export function compareAppVersions(a: string, b: string): -1 | 0 | 1 {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  if (!left || !right) {
+    throw new Error(`Unparsable app version: ${!left ? a : b}`);
+  }
+
+  for (let index = 0; index < left.numbers.length; index += 1) {
+    const difference = left.numbers[index] - right.numbers[index];
+    if (difference !== 0) return difference > 0 ? 1 : -1;
+  }
+  // Prerelease is deliberately not consulted - see the doc comment.
+  return 0;
+}
+
+/**
+ * `1.2.3-beta.1` is a prerelease, `1.2.3` is not. Reuses `parseVersion` so the
+ * accepted grammar stays in one place.
+ */
+export function isPrereleaseVersion(version: string): boolean {
+  const parsed = parseVersion(version);
+  return parsed !== null && parsed.prerelease.length > 0;
+}
+
+/**
+ * Shared remote fetch for every outbound request in the renderer.
+ *
+ * Update checks (and the announcement feed) run through the http plugin in the
+ * desktop app. A webview `fetch` would force the host into the CSP
+ * `connect-src` for requests that are not part of the page's own traffic. The
+ * plugin performs them in Rust (outside the CSP) and its own allowlist already
+ * covers `https://**`. `cache` is not part of the plugin's RequestInit subset,
+ * and it never caches.
+ */
+export const remoteFetch: typeof fetch = isTauri() ? (tauriFetch as unknown as typeof fetch) : fetch;
 
 export async function fetchLatestRelease(): Promise<LatestRelease> {
-  const response = await githubFetch(GITHUB_API_LATEST, {
+  const response = await remoteFetch(GITHUB_API_LATEST, {
     headers: { Accept: "application/vnd.github+json" },
   });
   if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);

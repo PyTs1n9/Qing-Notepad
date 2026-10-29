@@ -4,6 +4,48 @@ export type TranslationKeys = {
   todo: string;
   notepad: string;
   imageHost: string;
+  // Knowledge graph (T06/T07). Every user-visible string on the graph page goes
+  // through `t()`; canvas-drawn labels use node titles, which are data.
+  knowledgeBase: string;
+  graphSearchPlaceholder: string;
+  graphVaults: string;
+  graphAddFolder: string;
+  graphRemoveVault: string;
+  graphRemoveVaultQuestion: string;
+  graphFilters: string;
+  graphClearFilters: string;
+  graphFilterTags: string;
+  graphFilterOrphans: string;
+  graphFilterDangling: string;
+  graphNoTags: string;
+  graphRefresh: string;
+  graphNodesCount: string;
+  graphEdgesCount: string;
+  graphStatusScanning: string;
+  graphStatusError: string;
+  graphLoadingTitle: string;
+  graphLoadingHint: string;
+  graphEmptyTitle: string;
+  graphEmptyHint: string;
+  graphNoSelection: string;
+  graphBacklinks: string;
+  graphNoBacklinks: string;
+  graphOpenInEditor: string;
+  graphSelectedAnnounce: string;
+  graphUnreadable: string;
+  graphParseError: string;
+  graphNodeList: string;
+  graphDanglingNode: string;
+  graphDanglingAmbiguous: string;
+  graphSearchNoResult: string;
+  graphLastScan: string;
+  graphZoom: string;
+  // Collapsible overlay panel on the graph page (§8.4 keeps it inside the
+  // canvas, so collapsing it must never be the only way to reach the vaults).
+  graphPanelTitle: string;
+  graphPanelCollapse: string;
+  graphPanelExpand: string;
+  graphPanelExpandCount: string;
   canvas: string;
   canvasSelect: string;
   canvasPan: string;
@@ -60,6 +102,7 @@ export type TranslationKeys = {
   canvasShapeDiamond: string;
   canvasConnectorStraight: string;
   canvasConnectorOrthogonal: string;
+  canvasConnectorCurve: string;
   canvasDuplicate: string;
   canvasAlignHorizontal: string;
   canvasAlignVertical: string;
@@ -116,6 +159,9 @@ export type TranslationKeys = {
   dragNote: string;
   expandFolder: string;
   collapseFolder: string;
+  expandAllFolders: string;
+  collapseAllFolders: string;
+  bulkFoldDisabledByFilter: string;
   moveNoteToCategoryConfirm: string;
   tags: string;
   all: string;
@@ -765,11 +811,203 @@ export type TranslationKeys = {
   importFailed: string;
   loading: string;
   authSignedOut: string;
+
+  // --- Plugins (L1) ---
+  pluginsTitle: string;
+  pluginsSearchPlaceholder: string;
+  pluginsInstalledSection: string;
+  pluginsAvailableSection: string;
+  pluginsEmptyInstalled: string;
+  pluginsEmptyAvailable: string;
+  pluginsOfflineHint: string;
+  pluginsIndexLoading: string;
+  pluginsInstalledLoading: string;
+  pluginsSearchClear: string;
+  pluginsSearchNoResult: string;
+  pluginsSearchScope: string;
+  pluginsIndexMissing: string;
+  pluginsIndexMissingBody: string;
+  pluginsIndexMissingShort: string;
+  pluginsAvailableAllInstalled: string;
+  /** Footnote for when the index only holds entries that are filtered out. */
+  pluginsListHiddenBySearch: string;
+  pluginsIndexOfflineHintAllInstalled: string;
+  pluginsGoneTitle: string;
+  pluginsGoneBody: string;
+  pluginSelectedAnnounce: string;
+  pluginsInstallFromFile: string;
+  pluginsInstallFromFolder: string;
+  pluginsRefreshIndex: string;
+  pluginsOnline: string;
+  pluginsOffline: string;
+  pluginsSelectHint: string;
+  pluginsSelectHintBody: string;
+  pluginsSidebarFooterHint: string;
+  pluginVersion: string;
+  pluginAuthor: string;
+  pluginRepository: string;
+  pluginLicense: string;
+  pluginPermissions: string;
+  pluginPermissionsNone: string;
+  pluginPermissionsMissing: string;
+  pluginManage: string;
+  pluginRollbackHint: string;
+  pluginCommands: string;
+  pluginNoCommands: string;
+  pluginInstall: string;
+  pluginBusyInstalling: string;
+  pluginUpdate: string;
+  pluginUninstall: string;
+  pluginUninstallTitle: string;
+  pluginUninstallBody: string;
+  pluginUninstallConsequence: string;
+  pluginUninstallKeep: string;
+  pluginUninstallDrop: string;
+  pluginRollback: string;
+  pluginEnable: string;
+  pluginDisable: string;
+  pluginEnabled: string;
+  pluginDisabled: string;
+  pluginRunning: string;
+  pluginNotRunning: string;
+  pluginSourceIndex: string;
+  pluginSource: string;
+  pluginInfo: string;
+  pluginSourceFile: string;
+  pluginViewLog: string;
+  pluginLogSection: string;
+  pluginLogEmpty: string;
+  pluginLogTitle: string;
+  pluginLogLoading: string;
+  pluginLogLoadFailed: string;
+  pluginLogRetry: string;
+  pluginUpdateAvailable: string;
+  pluginPermissionRevoke: string;
+  pluginPermissionNew: string;
+  pluginPermissionGrant: string;
+  pluginPermImplied: string;
+  pluginPermRevokeAlso: string;
+  pluginLockedNote: string;
+  pluginPermPromptInstallTitle: string;
+  pluginPermPromptUpdateTitle: string;
+  pluginPermPromptBody: string;
+  pluginPermPromptAddedBody: string;
+  pluginPermPromptApprove: string;
+  pluginPermPromptUpdate: string;
+  pluginPermPromptCancel: string;
+  pluginPermStorage: string;
+  pluginPermNotesRead: string;
+  pluginPermNotesWrite: string;
+  pluginPermTodoRead: string;
+  pluginPermTodoWrite: string;
+  pluginPermClipboardRead: string;
+  pluginPermClipboardWrite: string;
+  pluginPermNotify: string;
+  pluginPermEditorRead: string;
+  pluginPermEditorWrite: string;
+  pluginPermEditorDecorate: string;
+  pluginPermViews: string;
+  pluginPermEditorSelection: string;
+  pluginPermCanvasRead: string;
+  pluginPermCanvasWrite: string;
+  pluginPermAiSummarize: string;
+  pluginCrashedDisabled: string;
+  pluginPermissionDenied: string;
+  pluginInstalled: string;
+  pluginUpdated: string;
+  pluginUninstalled: string;
+  pluginRolledBack: string;
+  pluginCommandFailed: string;
+  pluginInstallFailed: string;
+  pluginInstallNetwork: string;
+  pluginInstallPackageGone: string;
+  pluginInstallIo: string;
+  pluginHostIncompatible: string;
+  pluginApiIncompatible: string;
+  pluginCommandConflict: string;
+  pluginNativeModule: string;
+  pluginPackageTooLarge: string;
+  pluginManifestMissing: string;
+  pluginManifestInvalid: string;
+  pluginMissingMain: string;
+  pluginTooManyFiles: string;
+  pluginPermissionUnknown: string;
+  pluginEntryNameInvalid: string;
+  pluginIndexPermissionMismatch: string;
+  pluginHostRestarted: string;
+  pluginHostBusy: string;
+  pluginHostFallback: string;
+  commandPaletteTitle: string;
+  commandPalettePlaceholder: string;
+  commandPaletteEmpty: string;
+  commandPaletteHint: string;
+  commandCategoryView: string;
+  commandCategoryNote: string;
+  commandCategoryApp: string;
+  commandCategoryPlugin: string;
+  commandNewNote: string;
+  commandOpenSettings: string;
+  commandToggleAi: string;
+  settingsPlugins: string;
+  pluginsSettingsOpen: string;
+  pluginsSettingsOpenHint: string;
+  pluginsDisableAll: string;
+  pluginsDisableAllHint: string;
+  announcementTitle: string;
+  announcementEmpty: string;
+  announcementRefresh: string;
+  announcementRefreshing: string;
+  announcementUpToDate: string;
+  announcementLoadFailed: string;
+  announcementClose: string;
+  announcementRead: string;
+  announcementButton: string;
+  helpChangelog: string;
+  settingsAnnouncements: string;
+  settingsAnnouncementsHint: string;
 };
 
 const zh: TranslationKeys = {
   explorer: "资源管理器",
   imageHost: "图床",
+  knowledgeBase: "知识库",
+  graphSearchPlaceholder: "搜索标题或路径",
+  graphVaults: "资料库",
+  graphAddFolder: "添加文件夹",
+  graphRemoveVault: "移除",
+  graphRemoveVaultQuestion: "从知识库移除「{name}」？文件夹本身不会被删除。",
+  graphFilters: "筛选",
+  graphClearFilters: "清除筛选",
+  graphFilterTags: "标签",
+  graphFilterOrphans: "只看孤立节点",
+  graphFilterDangling: "只看断链",
+  graphNoTags: "暂无标签",
+  graphRefresh: "刷新索引",
+  graphNodesCount: "{count} 个节点",
+  graphEdgesCount: "{count} 条边",
+  graphStatusScanning: "正在扫描…",
+  graphStatusError: "同步失败",
+  graphLoadingTitle: "正在整理知识图谱",
+  graphLoadingHint: "首次打开要扫一遍文件，之后会走缓存，快很多",
+  graphEmptyTitle: "还没有资料库",
+  graphEmptyHint: "添加一个文件夹作为知识库。文件只读，不会被复制或修改。",
+  graphNoSelection: "点击画布上的节点查看内容",
+  graphBacklinks: "反链",
+  graphNoBacklinks: "没有被引用",
+  graphOpenInEditor: "在编辑器中打开",
+  graphSelectedAnnounce: "已选中《{title}》，引用 {count} 篇",
+  graphUnreadable: "这个文件读不出来",
+  graphParseError: "解析失败",
+  graphNodeList: "节点列表",
+  graphDanglingNode: "断链节点",
+  graphDanglingAmbiguous: "命中 {count} 篇同名笔记，请改写路径",
+  graphSearchNoResult: "没有匹配的节点",
+  graphLastScan: "上次扫描 {time}",
+  graphZoom: "缩放 {value}%",
+  graphPanelTitle: "资料库与筛选",
+  graphPanelCollapse: "收起面板",
+  graphPanelExpand: "展开面板",
+  graphPanelExpandCount: "展开面板，{count} 个节点",
   canvas: "画布",
   canvasSelect: "选择",
   canvasPan: "平移",
@@ -826,6 +1064,7 @@ const zh: TranslationKeys = {
   canvasShapeDiamond: "判断节点",
   canvasConnectorStraight: "直线箭头",
   canvasConnectorOrthogonal: "折线箭头",
+  canvasConnectorCurve: "曲线箭头",
   canvasDuplicate: "复制所选对象",
   canvasAlignHorizontal: "水平居中对齐",
   canvasAlignVertical: "垂直居中对齐",
@@ -883,6 +1122,9 @@ const zh: TranslationKeys = {
   dragNote: "拖动笔记",
   expandFolder: "展开文件夹",
   collapseFolder: "折叠文件夹",
+  expandAllFolders: "全部展开",
+  collapseAllFolders: "全部折叠",
+  bulkFoldDisabledByFilter: "搜索或筛选时目录保持全部展开",
   moveNoteToCategoryConfirm: '是否将"{note}"笔记移动到"{category}"文件夹中？',
   tags: "标签",
   all: "全部",
@@ -1536,11 +1778,200 @@ const zh: TranslationKeys = {
   importFailed: "导入失败：{message}",
   loading: "正在加载…",
   authSignedOut: "未登录",
+  pluginsTitle: "扩展",
+  pluginsSearchPlaceholder: "搜索扩展",
+  pluginsInstalledSection: "已安装",
+  pluginsAvailableSection: "可安装",
+  pluginsEmptyInstalled: "还没有安装扩展",
+  pluginsEmptyAvailable: "暂无可用插件",
+  pluginsOfflineHint: "离线，数据可能是旧的",
+  pluginsIndexLoading: "正在获取扩展索引…",
+  pluginsInstalledLoading: "正在读取已安装扩展…",
+  pluginsSearchClear: "清空搜索",
+  pluginsSearchNoResult: "没有匹配的扩展",
+  pluginsSearchScope: "搜索范围：名称、描述、作者",
+  pluginsIndexMissing: "还没有获取到扩展索引",
+  pluginsIndexMissingBody: "索引由插件作者的仓库提供，目前没有获取到。可以手动刷新重试。",
+  pluginsIndexMissingShort: "暂无索引",
+  pluginsAvailableAllInstalled: "索引里的扩展都已安装",
+  pluginsListHiddenBySearch: "已安装项因搜索隐藏",
+  pluginsIndexOfflineHintAllInstalled: "离线数据，可能漏掉新扩展",
+  pluginsGoneTitle: "这个扩展已从索引中移除",
+  pluginsGoneBody: "它可能被作者下架，或在最近一次刷新时被移出。刷新索引可以再确认一次。",
+  pluginSelectedAnnounce: "已选择 {name}",
+  pluginsInstallFromFile: "从文件安装",
+  pluginsInstallFromFolder: "从文件夹安装",
+  pluginsRefreshIndex: "刷新索引",
+  pluginsOnline: "在线",
+  pluginsOffline: "离线",
+  pluginsSelectHint: "未选择扩展",
+  pluginsSelectHintBody: "在左侧选择一个扩展查看详情。扩展只能往命令面板里加命令，不会改动界面。",
+  pluginsSidebarFooterHint: "扩展代码在独立线程中运行，不能联网。",
+  pluginVersion: "版本",
+  pluginAuthor: "作者",
+  pluginRepository: "仓库",
+  pluginLicense: "许可",
+  pluginPermissions: "权限",
+  pluginPermissionsNone: "不需要任何权限",
+  pluginPermissionsMissing: "未授予",
+  pluginManage: "管理",
+  pluginRollbackHint: "回到 v{version}",
+  pluginCommands: "命令",
+  pluginNoCommands: "没有提供命令",
+  pluginInstall: "安装",
+  pluginBusyInstalling: "正在安装…",
+  pluginUpdate: "更新",
+  pluginUninstall: "卸载",
+  pluginUninstallTitle: "卸载 {name}？",
+  pluginUninstallBody: "扩展文件会被删除。保留设置数据后，重新安装仍可沿用。",
+  pluginUninstallConsequence: "它提供的命令会从命令面板移除，已授予的权限一并收回。",
+  pluginUninstallKeep: "保留数据并卸载",
+  pluginUninstallDrop: "全部删除",
+  pluginRollback: "回滚",
+  pluginEnable: "启用",
+  pluginDisable: "停用",
+  pluginEnabled: "已启用",
+  pluginDisabled: "已停用",
+  pluginRunning: "运行中",
+  pluginNotRunning: "未运行",
+  pluginSourceIndex: "来自扩展索引",
+  pluginSource: "来源",
+  pluginInfo: "信息",
+  pluginSourceFile: "本地文件安装",
+  pluginViewLog: "查看错误日志",
+  pluginLogSection: "错误日志",
+  pluginLogEmpty: "没有错误记录",
+  pluginLogTitle: "最近 100 条",
+  pluginLogLoading: "正在读取日志…",
+  pluginLogLoadFailed: "日志读取失败",
+  pluginLogRetry: "重试",
+  pluginUpdateAvailable: "有可用更新",
+  pluginPermissionRevoke: "撤销",
+  pluginPermissionNew: "新增",
+  pluginPermissionGrant: "授予",
+  pluginPermImplied: "随「{permission}」一起授予",
+  pluginPermRevokeAlso: "同时撤销：{list}",
+  pluginLockedNote: "撤销后，扩展再调用这项能力会被直接拒绝。",
+  pluginPermPromptInstallTitle: "安装 {name}？",
+  pluginPermPromptUpdateTitle: "更新 {name}？",
+  pluginPermPromptBody: "这个扩展将获得以下权限：",
+  pluginPermPromptAddedBody: "新版本需要这些新增权限：",
+  pluginPermPromptApprove: "同意并安装",
+  pluginPermPromptUpdate: "同意并更新",
+  pluginPermPromptCancel: "取消",
+  pluginPermStorage: "保存该扩展的设置",
+  pluginPermNotesRead: "读取你的笔记",
+  pluginPermNotesWrite: "修改你的笔记",
+  pluginPermTodoRead: "读取你的待办",
+  pluginPermTodoWrite: "修改你的待办",
+  pluginPermClipboardRead: "读取剪贴板",
+  pluginPermClipboardWrite: "写入剪贴板",
+  pluginPermNotify: "显示提示消息",
+  pluginPermEditorRead: "读取当前笔记正文",
+  pluginPermEditorWrite: "修改当前笔记",
+  pluginPermEditorDecorate: "在正文上做标记",
+  pluginPermViews: "贡献侧边栏视图",
+  pluginPermEditorSelection: "移动你的光标与滚动位置",
+  pluginPermCanvasRead: "读取画布上引用节点的标识（不含你画的其它内容）",
+  pluginPermCanvasWrite: "在你指定的画布上添加与更新引用节点",
+  pluginPermAiSummarize: "调用你自己的 AI 接口概括笔记（消耗你的额度）",
+  pluginCrashedDisabled: "{name} 连续崩溃，已自动停用",
+  pluginPermissionDenied: "扩展缺少权限：{permission}",
+  pluginInstalled: "已安装 {name}",
+  pluginUpdated: "已更新 {name}",
+  pluginUninstalled: "已卸载 {name}",
+  pluginRolledBack: "已回滚到 {version}",
+  pluginCommandFailed: "命令执行失败：{code}",
+  pluginInstallFailed: "安装失败：{message}",
+  pluginInstallNetwork: "下载失败（网络）：已按 cdn → fastly → gcore 依次尝试，均未连通。{detail}",
+  pluginInstallPackageGone: "安装包不存在：索引指向的文件已被删除或地址失效，重试无用。请刷新索引或联系插件作者。{detail}",
+  pluginInstallIo: "本地文件读写失败：{detail}",
+  pluginHostIncompatible: "该扩展不支持当前应用版本",
+  pluginApiIncompatible: "该扩展的接口版本不受支持",
+  pluginCommandConflict: "命令 ID 已被占用：{ids}",
+  pluginNativeModule: "包内有原生模块，不能安装",
+  pluginPackageTooLarge: "安装包超过 20 MB 上限",
+  pluginManifestMissing: "包里没有清单：根目录需要 package.json（带 main）或 plugin.json",
+  pluginManifestInvalid: "扩展清单有误：{detail}",
+  pluginMissingMain: "清单里的入口文件不在包里：{detail}",
+  pluginTooManyFiles: "包内文件数超过 2000 个上限",
+  pluginPermissionUnknown: "清单声明了未知权限：{detail}",
+  pluginEntryNameInvalid: "包内有非法的文件名，可能是伪装过的压缩包",
+  pluginIndexPermissionMismatch: "索引里写的权限与安装包不一致，已拒绝安装：{detail}",
+  pluginHostRestarted: "插件宿主已重启，刚才的操作没有生效，请重试",
+  pluginHostBusy: "插件宿主正在启动或重启，请稍后重试",
+  pluginHostFallback: "插件宿主反复崩溃，已切回内置模式",
+  commandPaletteTitle: "命令面板",
+  commandPalettePlaceholder: "输入命令名称…",
+  commandPaletteEmpty: "没有匹配的命令",
+  commandPaletteHint: "↑↓ 选择 · Enter 执行 · Esc 关闭",
+  commandCategoryView: "视图",
+  commandCategoryNote: "笔记",
+  commandCategoryApp: "应用",
+  commandCategoryPlugin: "扩展",
+  commandNewNote: "新建笔记",
+  commandOpenSettings: "打开设置",
+  commandToggleAi: "切换 AI 助手",
+  settingsPlugins: "扩展",
+  pluginsSettingsOpen: "打开扩展页",
+  pluginsSettingsOpenHint: "安装、启用、卸载和权限管理都在扩展页完成。",
+  pluginsDisableAll: "禁用所有插件",
+  pluginsDisableAllHint: "临时停用全部扩展，已安装的文件保留。",
+  announcementTitle: "最新通告",
+  announcementEmpty: "暂无通告",
+  announcementRefresh: "刷新",
+  announcementRefreshing: "刷新中…",
+  announcementUpToDate: "已是最新",
+  announcementLoadFailed: "暂时取不到更新日志，请稍后再试",
+  announcementClose: "忽略这条通告",
+  announcementRead: "已读",
+  announcementButton: "查看公告",
+  helpChangelog: "更新日志",
+  settingsAnnouncements: "获取更新通告",
+  settingsAnnouncementsHint: "关闭后不再联网获取通告，只显示随包内容。",
 };
 
 const en: TranslationKeys = {
   explorer: "Explorer",
   imageHost: "Image Host",
+  knowledgeBase: "Knowledge Base",
+  graphSearchPlaceholder: "Search title or path",
+  graphVaults: "Vaults",
+  graphAddFolder: "Add folder",
+  graphRemoveVault: "Remove",
+  graphRemoveVaultQuestion: "Remove \"{name}\" from the knowledge base? The folder itself is not deleted.",
+  graphFilters: "Filters",
+  graphClearFilters: "Clear filters",
+  graphFilterTags: "Tags",
+  graphFilterOrphans: "Only isolated nodes",
+  graphFilterDangling: "Only broken links",
+  graphNoTags: "No tags yet",
+  graphRefresh: "Refresh index",
+  graphNodesCount: "{count} nodes",
+  graphEdgesCount: "{count} edges",
+  graphStatusScanning: "Scanning...",
+  graphStatusError: "Sync failed",
+  graphLoadingTitle: "Building your knowledge graph",
+  graphLoadingHint: "The first open reads every file; later opens use the cache and are much faster",
+  graphEmptyTitle: "No vault yet",
+  graphEmptyHint: "Add a folder as a knowledge base. Files stay read-only: nothing is copied or modified.",
+  graphNoSelection: "Select a node on the canvas to read it",
+  graphBacklinks: "Backlinks",
+  graphNoBacklinks: "Not referenced anywhere",
+  graphOpenInEditor: "Open in editor",
+  graphSelectedAnnounce: "Selected {title}, referenced by {count} notes",
+  graphUnreadable: "This file cannot be read",
+  graphParseError: "Parse failed",
+  graphNodeList: "Node list",
+  graphDanglingNode: "Broken link",
+  graphDanglingAmbiguous: "Matches {count} notes with that name, write a path instead",
+  graphSearchNoResult: "No matching node",
+  graphLastScan: "Last scan {time}",
+  graphZoom: "Zoom {value}%",
+  graphPanelTitle: "Vaults & filters",
+  graphPanelCollapse: "Collapse panel",
+  graphPanelExpand: "Expand panel",
+  graphPanelExpandCount: "Expand panel, {count} nodes",
   canvas: "Canvas",
   canvasSelect: "Select",
   canvasPan: "Pan",
@@ -1597,6 +2028,7 @@ const en: TranslationKeys = {
   canvasShapeDiamond: "Decision node",
   canvasConnectorStraight: "Straight arrow",
   canvasConnectorOrthogonal: "Orthogonal arrow",
+  canvasConnectorCurve: "Curved arrow",
   canvasDuplicate: "Duplicate selection",
   canvasAlignHorizontal: "Align horizontal centers",
   canvasAlignVertical: "Align vertical centers",
@@ -1654,6 +2086,9 @@ const en: TranslationKeys = {
   dragNote: "Drag Note",
   expandFolder: "Expand folder",
   collapseFolder: "Collapse folder",
+  expandAllFolders: "Expand All",
+  collapseAllFolders: "Collapse All",
+  bulkFoldDisabledByFilter: "Folders stay expanded while searching or filtering",
   moveNoteToCategoryConfirm: 'Move "{note}" note to "{category}" folder?',
   tags: "Tags",
   all: "All",
@@ -2310,6 +2745,157 @@ const en: TranslationKeys = {
   importFailed: "Import failed: {message}",
   loading: "Loading…",
   authSignedOut: "Not signed in",
+  pluginsTitle: "Extensions",
+  pluginsSearchPlaceholder: "Search extensions",
+  pluginsInstalledSection: "Installed",
+  pluginsAvailableSection: "Available",
+  pluginsEmptyInstalled: "No extensions installed yet",
+  pluginsEmptyAvailable: "No extensions available",
+  pluginsOfflineHint: "Offline — this list may be out of date",
+  pluginsIndexLoading: "Fetching the extension index…",
+  pluginsInstalledLoading: "Reading installed extensions…",
+  pluginsSearchClear: "Clear search",
+  pluginsSearchNoResult: "No matching extensions",
+  pluginsSearchScope: "Searches name, description and author",
+  pluginsIndexMissing: "The extension index has not been fetched yet",
+  pluginsIndexMissingBody: "The index comes from the plugin repository and has not been fetched yet. Refresh to try again.",
+  pluginsIndexMissingShort: "No index",
+  pluginsAvailableAllInstalled: "Every extension in the index is already installed",
+  pluginsListHiddenBySearch: "Installed entries are hidden by the search",
+  pluginsIndexOfflineHintAllInstalled: "Offline data may miss newer extensions",
+  pluginsGoneTitle: "This extension is no longer in the index",
+  pluginsGoneBody: "It may have been withdrawn, or dropped in the last refresh. Refresh the index to check again.",
+  pluginSelectedAnnounce: "{name} selected",
+  pluginsInstallFromFile: "Install from file",
+  pluginsInstallFromFolder: "Install from folder",
+  pluginsRefreshIndex: "Refresh index",
+  pluginsOnline: "Online",
+  pluginsOffline: "Offline",
+  pluginsSelectHint: "No extension selected",
+  pluginsSelectHintBody: "Pick an extension on the left to see its details. Extensions can only add commands; they cannot change the interface.",
+  pluginsSidebarFooterHint: "Extension code runs in a separate worker with no network access.",
+  pluginVersion: "Version",
+  pluginAuthor: "Author",
+  pluginRepository: "Repository",
+  pluginLicense: "License",
+  pluginPermissions: "Permissions",
+  pluginPermissionsNone: "No permissions required",
+  pluginPermissionsMissing: "Not granted",
+  pluginManage: "Manage",
+  pluginRollbackHint: "Back to v{version}",
+  pluginCommands: "Commands",
+  pluginNoCommands: "Provides no commands",
+  pluginInstall: "Install",
+  pluginBusyInstalling: "Installing…",
+  pluginUpdate: "Update",
+  pluginUninstall: "Uninstall",
+  pluginUninstallTitle: "Uninstall {name}?",
+  pluginUninstallBody: "The extension files will be deleted. Keeping its settings means a reinstall can pick up where it left off.",
+  pluginUninstallConsequence: "Its commands leave the command palette and its granted permissions are withdrawn.",
+  pluginUninstallKeep: "Keep settings and uninstall",
+  pluginUninstallDrop: "Delete everything",
+  pluginRollback: "Roll back",
+  pluginEnable: "Enable",
+  pluginDisable: "Disable",
+  pluginEnabled: "Enabled",
+  pluginDisabled: "Disabled",
+  pluginRunning: "Running",
+  pluginNotRunning: "Not running",
+  pluginSourceIndex: "From the extension index",
+  pluginSource: "Source",
+  pluginInfo: "Details",
+  pluginSourceFile: "Installed from a file",
+  pluginViewLog: "View error log",
+  pluginLogSection: "Error log",
+  pluginLogEmpty: "No errors logged",
+  pluginLogTitle: "Last 100 entries",
+  pluginLogLoading: "Reading the log…",
+  pluginLogLoadFailed: "Could not read the log",
+  pluginLogRetry: "Retry",
+  pluginUpdateAvailable: "Update available",
+  pluginPermissionRevoke: "Revoke",
+  pluginPermissionNew: "New",
+  pluginPermissionGrant: "Grant",
+  pluginPermImplied: "Granted with “{permission}”",
+  pluginPermRevokeAlso: "Also revokes: {list}",
+  pluginLockedNote: "Once revoked, the extension's calls to that capability are refused.",
+  pluginPermPromptInstallTitle: "Install {name}?",
+  pluginPermPromptUpdateTitle: "Update {name}?",
+  pluginPermPromptBody: "This extension will be granted:",
+  pluginPermPromptAddedBody: "The new version asks for these additional permissions:",
+  pluginPermPromptApprove: "Allow and install",
+  pluginPermPromptUpdate: "Allow and update",
+  pluginPermPromptCancel: "Cancel",
+  pluginPermStorage: "Save this extension's settings",
+  pluginPermNotesRead: "Read your notes",
+  pluginPermNotesWrite: "Modify your notes",
+  pluginPermTodoRead: "Read your todos",
+  pluginPermTodoWrite: "Modify your todos",
+  pluginPermClipboardRead: "Read the clipboard",
+  pluginPermClipboardWrite: "Write to the clipboard",
+  pluginPermNotify: "Show notifications",
+  pluginPermEditorRead: "Read the note you have open",
+  pluginPermEditorWrite: "Change the note you have open",
+  pluginPermEditorDecorate: "Mark up the note you have open",
+  pluginPermViews: "Add a panel to the sidebar",
+  pluginPermEditorSelection: "Move your cursor and scroll position",
+  pluginPermCanvasRead: "Read the ids of reference nodes on a canvas (nothing else you drew)",
+  pluginPermCanvasWrite: "Add and refresh reference nodes on a canvas you pick",
+  pluginPermAiSummarize: "Summarise notes through your own AI endpoint (uses your credit)",
+  pluginCrashedDisabled: "{name} crashed repeatedly and was disabled",
+  pluginPermissionDenied: "The extension lacks permission: {permission}",
+  pluginInstalled: "Installed {name}",
+  pluginUpdated: "Updated {name}",
+  pluginUninstalled: "Uninstalled {name}",
+  pluginRolledBack: "Rolled back to {version}",
+  pluginCommandFailed: "Command failed: {code}",
+  pluginInstallFailed: "Install failed: {message}",
+  pluginInstallNetwork: "Download failed (network): cdn, fastly and gcore were all tried and none answered. {detail}",
+  pluginInstallPackageGone: "Package is gone: the file the index points at no longer exists. Retrying will not help — refresh the index or contact the author. {detail}",
+  pluginInstallIo: "Local file access failed: {detail}",
+  pluginHostIncompatible: "This extension does not support the current app version",
+  pluginApiIncompatible: "This extension's API version is not supported",
+  pluginCommandConflict: "Command IDs already taken: {ids}",
+  pluginNativeModule: "The package contains a native module and cannot be installed",
+  pluginPackageTooLarge: "The package exceeds the 20 MB limit",
+  pluginManifestMissing: "No manifest in the package: the root needs package.json (with a main entry) or plugin.json",
+  pluginManifestInvalid: "The extension manifest is invalid: {detail}",
+  pluginMissingMain: "The entry point named by the manifest is not in the package: {detail}",
+  pluginTooManyFiles: "The package has more than 2000 files",
+  pluginPermissionUnknown: "The manifest declares a permission this app does not know: {detail}",
+  pluginEntryNameInvalid: "The package contains an invalid file name; it may be a disguised archive",
+  pluginIndexPermissionMismatch: "The permissions listed in the index do not match the package; the install was refused: {detail}",
+  pluginHostRestarted: "The plugin host restarted, so that operation did not take effect. Please try again",
+  pluginHostBusy: "The plugin host is starting or restarting. Please try again in a moment",
+  pluginHostFallback: "The plugin host kept crashing and has been switched back to the built-in mode",
+  commandPaletteTitle: "Command palette",
+  commandPalettePlaceholder: "Type a command…",
+  commandPaletteEmpty: "No matching commands",
+  commandPaletteHint: "↑↓ to move · Enter to run · Esc to close",
+  commandCategoryView: "View",
+  commandCategoryNote: "Note",
+  commandCategoryApp: "App",
+  commandCategoryPlugin: "Extension",
+  commandNewNote: "New note",
+  commandOpenSettings: "Open settings",
+  commandToggleAi: "Toggle AI assistant",
+  settingsPlugins: "Extensions",
+  pluginsSettingsOpen: "Open the extensions page",
+  pluginsSettingsOpenHint: "Installing, enabling, uninstalling and permissions all live on the extensions page.",
+  pluginsDisableAll: "Disable all plugins",
+  pluginsDisableAllHint: "Temporarily stops every extension. Installed files are kept.",
+  announcementTitle: "What's new",
+  announcementEmpty: "Nothing to announce right now",
+  announcementRefresh: "Refresh",
+  announcementRefreshing: "Refreshing…",
+  announcementUpToDate: "You're up to date",
+  announcementLoadFailed: "Couldn't load the changelog. Try again later.",
+  announcementClose: "Dismiss this announcement",
+  announcementRead: "Read",
+  announcementButton: "Announcements",
+  helpChangelog: "Changelog",
+  settingsAnnouncements: "Fetch announcements",
+  settingsAnnouncementsHint: "When off, no requests are made for announcements; only the copy bundled with the app is shown.",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

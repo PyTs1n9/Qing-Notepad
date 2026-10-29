@@ -1,0 +1,40 @@
+{
+  "name": "wordcount-ts",
+  "publisher": "qing",
+  "displayName": "笔记字数统计（TypeScript）",
+  "description": "用 package.json 声明、TypeScript 编写的插件示例：统计全库字数并用提示消息报告。",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "Qing Notepad",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PyTs1n9/Qing-Notepad/tree/main/examples/qing-wordcount-ts"
+  },
+  "engines": {
+    "qing": ">=0.7.3 <1.0.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": ["onCommand:qing.wordcount-ts.run"],
+  "permissions": ["notes:read", "notify"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "qing.wordcount-ts.run",
+        "title": "统计笔记字数（TS）",
+        "category": "示例"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "pack": "node build.mjs && node ../pack.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0",
+    "typescript": "^5.8.0"
+  }
+}

@@ -13,9 +13,16 @@ const params = new URLSearchParams(window.location.search);
 const isTile = params.get("tile") === "1";
 const stickyNoteId = params.get("sticky");
 const canvasTileId = params.get("canvasTile");
+const wantsProbe = params.get("probe") === "1" && import.meta.env.DEV;
 
 let content: React.ReactNode;
-if (canvasTileId) {
+if (wantsProbe) {
+  // Dev-only: verifies the blob-worker isolation the plugin runtime depends on.
+  // `import.meta.env.DEV` is `false` in a production build, so this branch and
+  // the dynamic import are removed by the bundler.
+  void import("@/probe/workerProbe").then((module) => module.mountProbe());
+  content = <div />;
+} else if (canvasTileId) {
   content = <CanvasTileView />;
 } else if (stickyNoteId) {
   content = <StickyNote noteId={stickyNoteId} />;
