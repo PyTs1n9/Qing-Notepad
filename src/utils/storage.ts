@@ -12,6 +12,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { writeFileAtomic, writeJsonAtomic } from "./atomicWrite";
 import type { Note, NoteCategory, TodoListData } from "@/types";
 import { markKnowledgeDirty, markNoteContentDirty } from "@/utils/ai/knowledgeDirty";
 import { isAiEndpoint, normalizeEndpoint, type AiEndpoint } from "@/utils/ai/chat/endpoints";
@@ -789,7 +790,7 @@ export async function saveTodos<T>(todos: T[]): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, TODOS_FILE);
-    await writeTextFile(path, JSON.stringify(todos, null, 2));
+    await writeJsonAtomic(path, todos);
     markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todos:", e);
@@ -897,7 +898,7 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, TODO_LISTS_FILE);
-    await writeTextFile(path, JSON.stringify(data, null, 2));
+    await writeJsonAtomic(path, data);
     markKnowledgeDirty();
   } catch (e) {
     console.error("Failed to save todo lists:", e);
@@ -1042,7 +1043,7 @@ export async function saveNoteContent(id: string, content: string): Promise<void
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
-    await writeTextFile(path, content);
+    await writeFileAtomic(path, content);
     // Name the note so the knowledge index only re-reads this one body.
     markNoteContentDirty(id);
   } catch (e) {
@@ -1669,7 +1670,7 @@ export async function saveSettings(settings: Record<string, unknown>): Promise<v
   try {
     const base = await ensureDataDir();
     const path = await join(base, SETTINGS_FILE);
-    await writeTextFile(path, JSON.stringify(settings, null, 2));
+    await writeJsonAtomic(path, settings);
   } catch (e) {
     console.error("Failed to save settings:", e);
   }
@@ -1707,7 +1708,7 @@ export async function saveUiState(state: StoredUiState): Promise<void> {
   try {
     const base = await ensureDataDir();
     const path = await join(base, UI_STATE_FILE);
-    await writeTextFile(path, JSON.stringify(state, null, 2));
+    await writeJsonAtomic(path, state);
   } catch (e) {
     console.error("Failed to save ui state:", e);
   }

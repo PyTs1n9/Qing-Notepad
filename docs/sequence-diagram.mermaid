@@ -1,0 +1,40 @@
+%% Qing Notepad 笔记写入链路（现状，含失败分支）
+%% 真源：docs/review-architecture.md §4.4
+sequenceDiagram
+  autonumber
+  participant U as 用户
+  participant NE as NoteEditor.tsx
+  participant ST as utils/storage.ts
+  participant FS as Tauri plugin-fs
+  participant APP as App.tsx（30 个 useEffect）
+  participant B as 下次启动 loadNoteList
+
+  Note("① 正文链：编辑器防抖 / 切 tab")
+  U->>NE: 输入 / 切换标签
+  NE->>ST: saveNoteContent(id, content)  (NE:157/214)
+  ST->>FS: writeTextFile(`notes/${id}.md`)  (ST:1045 非原子)
+  alt 写成功
+    FS-->>ST: ok
+    ST->>ST: markNoteContentDirty(id)
+  else 写失败（磁盘满/只读/盘拔出）
+    FS-->>ST: throw
+    ST->>ST: console.error 并【吞掉】(ST:1048-1050)
+    Note over ST: 调用方无法得知失败
+  end
+  ST-->>NE: resolve（永远 resolve）
+  NE->>NE: markDirty(prevId,false)  ← 失败也清脏标记（NE:217）
+  Note over NE: catch 分支（NE:215-219）是死代码
+
+  Note("② 索引链：独立 effect，与正文链无事务关系")
+  APP->>APP: notes/categories 变化 → noteIndexFingerprint (APP:670-683)
+  APP->>ST: saveNoteIndex(index, categories)
+  ST->>ST: 串到 noteIndexWriteChain (ST:968-978)
+  ST->>FS: writeTextFile(temp) → rename(index)  ← 唯一原子写 (ST:1008)
+  ST-->>APP: reject 可传播（writeNoteIndex 会 throw）
+
+  Note("③ 崩溃/断电窗口")
+  Note over ST,FS: ①与②之间无事务：可能出现<br/>「index 有 title，notes/*.md 是空或截断」
+  U->>B: 重启
+  B->>ST: loadNoteList()
+  ST->>ST: coverage 过滤 fileIdSet (ST:933-936)
+  Note over B: 「索引有、文件无」的条目被静默剔除 → 笔记消失

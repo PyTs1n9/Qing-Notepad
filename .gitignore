@@ -62,6 +62,7 @@ IDEA.md
 
 # headless verification sandbox
 .verify-sandbox/
+src/__arch_probe__/
 
 # manual scratch directory used while testing storage migration
 /d/

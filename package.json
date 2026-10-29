@@ -10,6 +10,8 @@
     "collab:dev": "npm --prefix collab-server run dev",
     "collab:build": "npm --prefix collab-server run build",
     "version:set": "node scripts/set-version.mjs",
+    "verify:architecture": "node scripts/verify-architecture.mjs",
+    "verify:atomic-write": "node scripts/verify-atomic-write.mjs",
     "verify:batch2": "node scripts/verify-batch2/build.mjs --run",
     "verify:batch3": "node scripts/verify-batch3/audit.mjs",
     "verify:batch3:probe": "node scripts/verify-batch3/wasm-eval-probe.mjs",

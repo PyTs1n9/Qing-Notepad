@@ -1,0 +1,38 @@
+%% Qing Notepad 分层契约类图（架构审计快照，2026-10-29）
+%% 真源：docs/review-architecture.md §2.3
+classDiagram
+  class WindowRoot {
+    +App / TileView / StickyNote / CanvasTileView
+    每个窗口独立 React 根，无共享内存
+  }
+  class ZustandStore {
+    +notes / todos / endpoints …
+    动作全部 set(...)，零 I/O
+  }
+  class StorageFacade["utils/storage.ts（84 exports / 1899 行）"] {
+    +saveNoteContent() 吞异常
+    +saveNoteIndex() 抛异常 + 写链 + temp/rename
+    +saveSettings() 吞异常，直写
+    +saveTodos() 吞异常，直写
+    +getDataDirectory() 进程级缓存
+  }
+  class AtomicWrite["utils/atomicWrite.ts（P0 新增）"] {
+    +writeFileAtomic(path, data)
+    +writeJsonAtomic(path, value)
+  }
+  class ModuleSingleton["46 个模块级 let"] {
+    graphSync.indexStore 绑定单一 root
+    chat.providers 隐式全局
+    storage.dataDirectoryPromise
+  }
+  class TauriHost["Rust 38 commands"] {
+    storage_* / vault_* / plugin_* / export_pdf
+  }
+
+  WindowRoot --> ZustandStore : 渲染读
+  WindowRoot --> StorageFacade : 9 个组件直接调用
+  ZustandStore --> StorageFacade : 仅 aiStore / workspaceStore / authStore
+  StorageFacade ..> AtomicWrite : P0 后必须经此
+  StorageFacade --> TauriHost : plugin-fs / invoke
+  ModuleSingleton --> TauriHost
+  StorageFacade ..> ZustandStore : ⚠ storage.ts:642 反读 trashRetentionDays
