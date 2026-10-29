@@ -23,6 +23,8 @@ export type TranslationKeys = {
   graphEdgesCount: string;
   graphStatusScanning: string;
   graphStatusError: string;
+  graphLoadingTitle: string;
+  graphLoadingHint: string;
   graphEmptyTitle: string;
   graphEmptyHint: string;
   graphNoSelection: string;
@@ -960,6 +962,8 @@ const zh: TranslationKeys = {
   graphEdgesCount: "{count} 条边",
   graphStatusScanning: "正在扫描…",
   graphStatusError: "同步失败",
+  graphLoadingTitle: "正在整理知识图谱",
+  graphLoadingHint: "首次打开要扫一遍文件，之后会走缓存，快很多",
   graphEmptyTitle: "还没有资料库",
   graphEmptyHint: "添加一个文件夹作为知识库。文件只读，不会被复制或修改。",
   graphNoSelection: "点击画布上的节点查看内容",
@@ -1898,6 +1902,8 @@ const en: TranslationKeys = {
   graphEdgesCount: "{count} edges",
   graphStatusScanning: "Scanning...",
   graphStatusError: "Sync failed",
+  graphLoadingTitle: "Building your knowledge graph",
+  graphLoadingHint: "The first open reads every file; later opens use the cache and are much faster",
   graphEmptyTitle: "No vault yet",
   graphEmptyHint: "Add a folder as a knowledge base. Files stay read-only: nothing is copied or modified.",
   graphNoSelection: "Select a node on the canvas to read it",

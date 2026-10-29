@@ -34,6 +34,7 @@ import { useTabStore } from "@/stores/tabStore";
 import { confirmDialog } from "@/stores/dialogStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
+import { loadNoteContent } from "@/utils/storage";
 import { createGraphFs } from "@/utils/graph/graphFs";
 import {
   createPositionStore,
@@ -60,6 +61,19 @@ import {
 
 /** §4.3: the zoom readout is throttled to 100 ms instead of driving React per frame. */
 const ZOOM_THROTTLE_MS = 100;
+/**
+ * Two clicks on the same node within this window open it in the editor. The
+ * keyboard path (`NodeListPanel` + Enter, and the backlink rows) already had a
+ * dedicated activate step; the canvas only had "select", so a double click was
+ * the one gesture that did nothing at all.
+ */
+const NODE_DOUBLE_CLICK_MS = 320;
+/**
+ * Stagger between the letters of the loading headline. Long enough that the wave
+ * reads as sequential, short enough that a 6-character title does not take a
+ * full second to finish its first pass.
+ */
+const LOADING_CHAR_STAGGER_MS = 55;
 
 /** Anchors `aria-controls` on the two toggle buttons to the panel itself. */
 const GRAPH_PANEL_ID = "graph-overlay-panel";
@@ -177,6 +191,18 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
   const positionStoreRef = useRef<PositionStore | null>(null);
   const stopSyncRef = useRef<(() => void) | null>(null);
   const lastZoomAtRef = useRef(0);
+  /**
+   * Two clicks inside `NODE_DOUBLE_CLICK_MS` on the same node open it. Kept in a
+   * ref rather than state: the window is 320 ms and a re-render per click would
+   * fight the canvas for the main thread.
+   */
+  const lastNodeClickRef = useRef<{ id: string; at: number } | null>(null);
+  /**
+   * `activateNode` closes over `snapshot`, so listing it in the subscription
+   * effect's deps would tear down and rebuild the subscription on every sync
+   * push. The ref keeps the callback current without re-subscribing.
+   */
+  const activateNodeRef = useRef<(nodeId: string) => void>(() => {});
   /**
    * Mirror of `selection` for the window-level Escape listener below.
    *
@@ -333,9 +359,28 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
 
   /* --------------------------------------------------------- renderer I/O */
 
+  /**
+   * The canvas only exists once there is at least one node to draw, and
+   * `subscribe()` is nothing but a ref write on the child. Subscribing while the
+   * child is absent is therefore a silent no-op that never retries — the click
+   * then dies at the second hop and the panel never opens. Every effect that
+   * reaches into `rendererRef` depends on this flag so the subscription is
+   * (re)made exactly when the canvas appears.
+   */
+  const rendererReady = snapshot !== null && snapshot.nodes.length > 0;
+
   useEffect(() => {
     const unsubscribe = rendererRef.current?.subscribe({
-      onNodeClick: (nodeId) => setSelection(nodeId),
+      onNodeClick: (nodeId) => {
+        setSelection(nodeId);
+        const now = Date.now();
+        const last = lastNodeClickRef.current;
+        lastNodeClickRef.current = { id: nodeId, at: now };
+        if (last !== null && last.id === nodeId && now - last.at <= NODE_DOUBLE_CLICK_MS) {
+          lastNodeClickRef.current = null;
+          activateNodeRef.current(nodeId);
+        }
+      },
       onNodeHover: (nodeId) => setHover(nodeId),
       // 没有 `onBackgroundClick`：渲染层不传它，节点点击才不会被库的「画布拖拽
       // 检测」吞掉（见 `GraphRenderer` 里那一段注释）。取消选中改走 Esc ——
@@ -349,7 +394,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
       onEngineStop: () => persistPositions(),
     });
     return () => unsubscribe?.();
-  }, [persistPositions, setHover, setSelection]);
+  }, [rendererReady, persistPositions, setHover, setSelection]);
 
   /* -------------------------------------------------------------- filters */
 
@@ -402,14 +447,61 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
   /* -------------------------------------------------------- document panel */
 
   useEffect(() => {
-    if (!selectedNode || selectedNode.kind !== "vault" || !selectedNode.path || !selectedNode.vaultKey) {
+    if (!selectedNode) {
+      setDocumentState(null);
+      return;
+    }
+    const nodeId = selectedNode.id;
+    let cancelled = false;
+
+    /*
+     * Native nodes are this app's own notes, and they used to be the one kind
+     * the sheet refused to render: clicking one showed a title, a path and an
+     * "open in editor" button, so the panel looked empty. They are read through
+     * `storage.ts` rather than the vault bridge, which is why they cannot share
+     * the branch below.
+     */
+    if (selectedNode.kind === "native") {
+      const noteId = selectedNode.refId;
+      // Same "keep what is already on screen" rule as the vault branch — the
+      // effect re-runs on every snapshot push with a fresh node object.
+      setDocumentState((current) =>
+        current && current.nodeId === nodeId && current.html !== null
+          ? current
+          : { nodeId, loading: true, html: null, error: null },
+      );
+      void (async () => {
+        try {
+          // `loadNoteContent` yields "" for a note whose file was removed, so a
+          // stale node renders as an empty sheet instead of an error.
+          const text = await loadNoteContent(noteId);
+          const html = await renderMarkdown(text);
+          if (cancelled) return;
+          setDocumentState({ nodeId, loading: false, html, error: null });
+        } catch (error) {
+          if (cancelled) return;
+          if (import.meta.env.DEV) {
+            console.warn("[graph] note fetch failed", error);
+          }
+          setDocumentState({
+            nodeId,
+            loading: false,
+            html: null,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (selectedNode.kind !== "vault" || !selectedNode.path || !selectedNode.vaultKey) {
       setDocumentState(null);
       return;
     }
     const vaultKey = selectedNode.vaultKey;
     const relPath = selectedNode.path;
-    const nodeId = selectedNode.id;
-    let cancelled = false;
     if (import.meta.env.DEV) {
       console.info("[graph] doc fetch", { nodeId, vaultKey, relPath });
     }
@@ -480,6 +572,12 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
     },
     [snapshot, setCurrentView, setSelection],
   );
+
+  // Publish the latest `activateNode` for the canvas double-click handler, which
+  // is registered once and must not capture a stale `snapshot`.
+  useEffect(() => {
+    activateNodeRef.current = activateNode;
+  }, [activateNode]);
 
   const handleSelect = useCallback(
     (nodeId: string) => {
@@ -625,6 +723,13 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
     : "";
 
   const showEmptyState = records.length === 0;
+  /*
+   * Vaults are configured but the first snapshot has not landed: the scan is
+   * still running. Before this, that window showed the bare "click a node"
+   * hint on an empty canvas, which reads as "nothing here" rather than
+   * "still loading".
+   */
+  const isGraphLoading = !rendererReady && !showEmptyState && status !== "error";
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -692,7 +797,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        {snapshot && snapshot.nodes.length > 0 ? (
+        {rendererReady ? (
           <GraphRenderer
             ref={rendererRef}
             snapshot={snapshot}
@@ -720,6 +825,37 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                   <FolderPlus size={14} strokeWidth={1.8} />
                   {t(lang, "graphAddFolder")}
                 </button>
+              </div>
+            ) : isGraphLoading ? (
+              <div
+                className="flex flex-col items-center gap-2 text-center"
+                role="status"
+                aria-live="polite"
+              >
+                {/*
+                  Split into per-character spans for the wave. The whole title is
+                  carried by `aria-label`, so a screen reader says the sentence
+                  once instead of spelling it out; the spans themselves are
+                  decoration and are hidden from the accessibility tree.
+                */}
+                <p
+                  className="text-sm font-medium text-text-primary"
+                  aria-label={t(lang, "graphLoadingTitle")}
+                >
+                  {[...t(lang, "graphLoadingTitle")].map((char, index) => (
+                    <span
+                      key={`${char}-${index}`}
+                      aria-hidden="true"
+                      className="graph-loading-char"
+                      style={{ animationDelay: `${index * LOADING_CHAR_STAGGER_MS}ms` }}
+                    >
+                      {char === " " ? "\u00a0" : char}
+                    </span>
+                  ))}
+                </p>
+                <p className="max-w-xs text-xs leading-relaxed text-text-muted">
+                  {t(lang, "graphLoadingHint")}
+                </p>
               </div>
             ) : (
               <p className="text-xs text-text-muted">{t(lang, "graphNoSelection")}</p>
@@ -1001,7 +1137,7 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                 </p>
               ) : null}
 
-              {selectedNode.kind === "vault" ? (
+              {selectedNode.kind === "vault" || selectedNode.kind === "native" ? (
                 documentState?.nodeId === selectedNode.id ? (
                   documentState.loading ? (
                     <p className="text-xs text-text-muted">{t(lang, "loading")}</p>

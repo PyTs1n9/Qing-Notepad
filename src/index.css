@@ -2529,6 +2529,34 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   }
 }
 
+/*
+ * 知识库加载态：逐字上跳。
+ * 整句一起跳会像故障，错开 55ms 才有一列字「依次起身」的观感；周期从
+ * `--dur-slow` 推导，换主题时动效节奏仍然一致。
+ */
+.graph-loading-char {
+  display: inline-block;
+  animation: graph-loading-jump calc(var(--dur-slow) * 3.2) var(--ease-out) infinite;
+  will-change: transform;
+}
+
+@keyframes graph-loading-jump {
+  0%,
+  62%,
+  100% {
+    transform: translateY(0);
+  }
+  28% {
+    transform: translateY(-0.26em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-loading-char {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Plugin decorations (`qing.editor.setDecorations`)                   */
 /*                                                                     */
