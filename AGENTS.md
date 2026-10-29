@@ -68,6 +68,20 @@ npm run tauri build   # Windows installer build through Tauri/NSIS
 
 On Windows PowerShell, `npx tsc --noEmit` may be blocked by the local script execution policy because it resolves through `npx.ps1`. If this is the only type-check failure and the requested change does not otherwise depend on type-check output, do not keep retrying or escalate just for this; skip type checking and mention the policy block in the final response.
 
+## Git Remotes
+
+`origin` is GitHub and nothing else — a plain `git push origin` must never reach Gitee.
+Gitee is a separate remote named `gitee`. Do not reintroduce a `remote.origin.pushurl`
+pointing at Gitee; that made one command write to two hosts and mixed their errors together.
+
+- **Everyday commits still go to both platforms.** Use `git pushall` (a repo alias:
+  `git push origin HEAD && git push gitee HEAD`) instead of two hand-written pushes, so a
+  branch cannot land on one host and stay missing on the other.
+- **Tags go to GitHub first.** Releases are built only by GitHub Actions; push the `v*` tag
+  to `origin` to trigger the run, then push the same tag to `gitee` to keep the mirror equal.
+- **`main` is the only long-lived branch.** Feature branches are merged and then deleted on
+  both remotes, not kept around.
+
 ## Windows Build Environment
 
 Rust/Tauri builds on Windows require the MSVC linker. Before `npm run tauri dev` or `npm run tauri build`, load the environment:
