@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   FileUp,
   FolderPlus,
   PanelLeftOpen,
@@ -10,6 +12,7 @@ import {
 import NoteTree from "@/components/Layout/NoteTree";
 import PluginViewSections from "@/components/Layout/PluginViewSections";
 import ModalShell from "@/components/Layout/ModalShell";
+import { collectExplorerFolderIds } from "@/components/Layout/noteTreeModel";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
 import { TRASH_RETENTION_FOREVER, useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
@@ -50,6 +53,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const {
     notes,
+    categories,
+    searchQuery,
     filterTag,
     setFilterTag,
     addCategory,
@@ -57,6 +62,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   } = useNoteStore();
   const activeCategoryId = useNoteStore((s) => s.activeCategoryId);
   const lang = useSettingsStore((s) => s.lang);
+  const expandedFolderIds = useSettingsStore((s) => s.expandedFolderIds);
+  const setExpandedFolderIds = useSettingsStore((s) => s.setExpandedFolderIds);
   const trashRetentionDays = useSettingsStore((s) => s.trashRetentionDays);
   const trashEnabled = trashRetentionDays !== 0;
   const trashRetentionLabel = t(
@@ -71,8 +78,27 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const allTags = Array.from(new Set(notes.flatMap((note) => note.tags)));
 
+  // Bulk fold actions cover the whole explorer, so they are judged against every
+  // folder row - filter-independent. `expandedFolderIds === null` still means
+  // "nothing collapsed yet", i.e. everything is already open.
+  const explorerFolderIds = useMemo(() => collectExplorerFolderIds(categories), [categories]);
+  const treeFilterActive = searchQuery.trim().length > 0 || Boolean(filterTag);
+  const everyFolderExpanded =
+    expandedFolderIds === null
+    || explorerFolderIds.every((folderId) => expandedFolderIds.includes(folderId));
+  const everyFolderCollapsed =
+    expandedFolderIds !== null
+    && explorerFolderIds.every((folderId) => !expandedFolderIds.includes(folderId));
+
+  const expandAllFolders = () => setExpandedFolderIds(explorerFolderIds);
+  const collapseAllFolders = () => setExpandedFolderIds([]);
+
   const actionBase = "flex items-center justify-center rounded-lg transition-colors cursor-pointer";
   const actionCollapsed = "w-10 h-10 shrink-0";
+  // Explorer header icons: 24px targets inside the 36px title row, quiet until
+  // hovered. The fold pair greys out instead of acting when it would be a no-op.
+  const headerActionButton =
+    "flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors cursor-pointer enabled:hover:bg-bg-hover enabled:hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
   const actionSecondary =
     "border border-border text-text-secondary hover:bg-bg-hover hover:text-text-primary";
   const renderRailDivider = () => <div className="my-1 h-px w-8 bg-border" aria-hidden="true" />;
@@ -122,12 +148,32 @@ const Sidebar: React.FC<SidebarProps> = ({
             {t(lang, "explorer")}
           </h2>
           <div className="flex items-center gap-0.5">
+            {/* A filter forces every branch open in NoteTree, so neither fold
+                action can change what is on screen - both stay disabled. */}
+            <button
+              onClick={expandAllFolders}
+              disabled={treeFilterActive || everyFolderExpanded}
+              className={headerActionButton}
+              title={treeFilterActive ? t(lang, "bulkFoldDisabledByFilter") : t(lang, "expandAllFolders")}
+              aria-label={t(lang, "expandAllFolders")}
+            >
+              <ChevronsUpDown size={14} />
+            </button>
+            <button
+              onClick={collapseAllFolders}
+              disabled={treeFilterActive || everyFolderCollapsed}
+              className={headerActionButton}
+              title={treeFilterActive ? t(lang, "bulkFoldDisabledByFilter") : t(lang, "collapseAllFolders")}
+              aria-label={t(lang, "collapseAllFolders")}
+            >
+              <ChevronsDownUp size={14} />
+            </button>
             <button
               onClick={() => {
                 onNewNote();
                 onViewChange("note");
               }}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className={headerActionButton}
               title={t(lang, "newNote")}
               aria-label={t(lang, "newNote")}
             >
@@ -135,7 +181,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               onClick={() => handleCreateCategory(newFolderParentId)}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className={headerActionButton}
               title={t(lang, "newCategory")}
               aria-label={t(lang, "newCategory")}
             >
@@ -143,7 +189,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
             <button
               onClick={onImportTextNotes}
-              className="flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors hover:bg-bg-hover hover:text-text-primary cursor-pointer"
+              className={headerActionButton}
               title={t(lang, "importNote")}
               aria-label={t(lang, "importNote")}
             >

@@ -1,8 +1,19 @@
 import { useState } from "react";
-import { BookOpen, Bug, CircleHelp, Info, Keyboard, MousePointer2, RefreshCw, Settings } from "lucide-react";
+import {
+  BookOpen,
+  Bug,
+  CircleHelp,
+  Info,
+  Keyboard,
+  Megaphone,
+  MousePointer2,
+  RefreshCw,
+  Settings,
+} from "lucide-react";
 import DropdownMenu, { type DropdownEntry } from "@/components/Layout/DropdownMenu";
 import HelpCenterModal, { type HelpTab } from "@/components/Help/HelpCenterModal";
 import UpdateCheckModal from "@/components/Help/UpdateCheckModal";
+import ChangelogModal from "@/components/Help/ChangelogModal";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
@@ -28,6 +39,7 @@ export default function HelpMenu({ onOpenSettings, onOpenAbout }: HelpMenuProps)
   const lang = useSettingsStore((state) => state.lang);
   const [tab, setTab] = useState<HelpTab | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
 
   const entries: DropdownEntry[] = [
     {
@@ -62,6 +74,15 @@ export default function HelpMenu({ onOpenSettings, onOpenAbout }: HelpMenuProps)
       label: t(lang, "checkUpdate"),
       icon: RefreshCw,
       onSelect: () => setUpdateOpen(true),
+    },
+    {
+      // Sits next to "check for updates" because it answers the same question
+      // ("what changed?"), and it is the only announcement surface a user who
+      // never signs in will ever reach.
+      id: "changelog",
+      label: t(lang, "helpChangelog"),
+      icon: Megaphone,
+      onSelect: () => setChangelogOpen(true),
     },
     {
       id: "report-issue",
@@ -99,6 +120,7 @@ export default function HelpMenu({ onOpenSettings, onOpenAbout }: HelpMenuProps)
         onClose={() => setTab(null)}
       />
       <UpdateCheckModal open={updateOpen} onClose={() => setUpdateOpen(false)} />
+      <ChangelogModal open={changelogOpen} onClose={() => setChangelogOpen(false)} />
     </>
   );
 }

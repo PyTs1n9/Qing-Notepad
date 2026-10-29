@@ -712,11 +712,79 @@ fn copy_package_directory(source: &Path, target: &Path) -> Result<(), String> {
     walk(source, target, &mut budget)
 }
 
+/// Sibling hosts that serve the same jsDelivr path.
+///
+/// The market index pins every package to `cdn.jsdelivr.net`, which is also the
+/// one jsDelivr host that is unreachable from some networks — measured on a CN
+/// line: `cdn.` failed the TLS handshake while `fastly.` and `gcore.` answered
+/// 200 for the same pinned commit, and the bytes hashed to exactly the value the
+/// index records. Re-fetching from a sibling cannot weaken anything: the archive
+/// is still verified against `sha256` before a single entry is inspected, so a
+/// hostile mirror can only fail the install, not alter it.
+const JSDELIVR_MIRRORS: [&str; 2] = ["fastly.jsdelivr.net", "gcore.jsdelivr.net"];
+
+/// Per-host, not per-download: three hosts must not mean three minutes of wait.
+const DOWNLOAD_ATTEMPT_TIMEOUT_SECS: u64 = 30;
+
+/// The URL to try first, then its jsDelivr siblings.
+///
+/// Only `cdn.jsdelivr.net` is rewritten. Any other host (a Release asset, a LAN
+/// mirror the user typed) is tried exactly once and left alone — inventing
+/// alternates for hosts we do not know would be guessing.
+fn download_candidates(url: &str) -> Vec<String> {
+    let mut candidates = vec![url.to_string()];
+    if let Some(path) = url.strip_prefix("https://cdn.jsdelivr.net/") {
+        for host in JSDELIVR_MIRRORS {
+            candidates.push(format!("https://{host}/{path}"));
+        }
+    }
+    candidates
+}
+
+/// How a non-success HTTP status is reported to the user.
+///
+/// A missing asset is not a network problem: retrying, waiting, or trying the
+/// CDN's sibling hosts cannot bring back a file the index points at but the CDN
+/// does not have. Only the statuses that mean exactly that get their own code,
+/// because the advice is different — "tell the author / refresh the index"
+/// instead of "check your network". Everything else (`403` from a rate limiter,
+/// `5xx` from an edge node, `429`) stays retryable.
+fn http_status_error(status: u16) -> String {
+    match status {
+        404 | 410 => format!("E_PACKAGE_GONE: HTTP {status}"),
+        _ => format!("E_NETWORK: HTTP {status}"),
+    }
+}
+
 async fn download_archive(url: &str) -> Result<Vec<u8>, String> {
     let client = tauri_plugin_http::reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(DOWNLOAD_ATTEMPT_TIMEOUT_SECS))
         .build()
         .map_err(|error| format!("E_NETWORK: {error}"))?;
+
+    let mut failures: Vec<String> = Vec::new();
+    for candidate in download_candidates(url) {
+        match download_once(&client, &candidate).await {
+            Ok(bytes) => return Ok(bytes),
+            // A size refusal or a missing asset is the package's fault, not the
+            // route's: trying two more hosts would just tell the user the same
+            // thing three times, slowly.
+            Err(error)
+                if error.starts_with("E_TOO_LARGE") || error.starts_with("E_PACKAGE_GONE") =>
+            {
+                return Err(error)
+            }
+            Err(error) => failures.push(format!("{candidate} → {error}")),
+        }
+    }
+
+    Err(format!("E_NETWORK: every mirror failed ({})", failures.join("; ")))
+}
+
+async fn download_once(
+    client: &tauri_plugin_http::reqwest::Client,
+    url: &str,
+) -> Result<Vec<u8>, String> {
     let response = client
         .get(url)
         .header("User-Agent", USER_AGENT)
@@ -724,7 +792,7 @@ async fn download_archive(url: &str) -> Result<Vec<u8>, String> {
         .await
         .map_err(|error| format!("E_NETWORK: {error}"))?;
     if !response.status().is_success() {
-        return Err(format!("E_NETWORK: HTTP {}", response.status()));
+        return Err(http_status_error(response.status().as_u16()));
     }
     if let Some(length) = response.content_length() {
         if length > MAX_ARCHIVE_BYTES {
@@ -1338,6 +1406,13 @@ pub struct IndexEntry {
     pub author: Option<String>,
     #[serde(default)]
     pub repo: Option<String>,
+    /// The same source directory on Gitee.
+    ///
+    /// `repo` holds the GitHub URL, which is unreachable from some networks;
+    /// the detail pane therefore shows a second link. Optional: an entry that
+    /// predates the field simply renders one link.
+    #[serde(default)]
+    pub repo_gitee: Option<String>,
     #[serde(default)]
     pub version: String,
     #[serde(default)]
@@ -1898,6 +1973,48 @@ mod tests {
         // copier (only build output directories are), so the entry has to be
         // found next to them rather than assuming a clean tree.
         assert!(staged.join("src/extension.ts").is_file());
+    }
+
+    #[test]
+    fn a_missing_asset_is_not_reported_as_a_network_fault() {
+        // The distinction decides what the user is told: "check your network" is
+        // useless advice when the index points at a file that is not there, and
+        // it sends them into a retry loop that can never succeed.
+        assert!(http_status_error(404).starts_with("E_PACKAGE_GONE"));
+        assert!(http_status_error(410).starts_with("E_PACKAGE_GONE"));
+        // Everything else stays retryable — 403 can be a rate limiter, 5xx an
+        // edge node, 429 a shared quota.
+        for status in [403, 429, 500, 502, 503] {
+            assert!(
+                http_status_error(status).starts_with("E_NETWORK"),
+                "{status} was classified as non-retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn download_candidates_are_the_pinned_host_then_its_jsdelivr_siblings() {        // The market index pins `cdn.jsdelivr.net`, and that is the host measured
+        // to be unreachable from at least one network while its siblings answered
+        // 200 for the same commit. Three candidates, same path, in a fixed order.
+        let pinned =
+            "https://cdn.jsdelivr.net/gh/PyTs1n9/Qing-Notepad-Plugins@94e30d0/examples/a.qnp";
+        let candidates = download_candidates(pinned);
+        assert_eq!(candidates.len(), 3, "{candidates:?}");
+        assert_eq!(candidates[0], pinned);
+        assert_eq!(
+            candidates[1],
+            "https://fastly.jsdelivr.net/gh/PyTs1n9/Qing-Notepad-Plugins@94e30d0/examples/a.qnp"
+        );
+        assert!(candidates[2].starts_with("https://gcore.jsdelivr.net/gh/"));
+
+        // A Release asset has no sibling we could guess, so it is tried once.
+        let release = "https://github.com/o/r/releases/download/v1/x.qnp";
+        assert_eq!(download_candidates(release), vec![release.to_string()]);
+
+        // And a lookalike host must not be rewritten: the rewrite is anchored on
+        // the exact prefix, not on "contains jsdelivr".
+        let lookalike = "https://cdn.jsdelivr.net.evil.test/gh/o/r@1/x.qnp";
+        assert_eq!(download_candidates(lookalike), vec![lookalike.to_string()]);
     }
 
     #[test]
@@ -2465,5 +2582,86 @@ mod tests {
         );
         let cache = read_index_cache(&path).expect("a schema-1 cache is still usable");
         assert_eq!(cache.document.plugins.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Live network, opt-in.
+    //
+    // These reach the real market and the real CDN, which is the only way to see
+    // what this build's TLS stack does on a given network — Node's fetch and
+    // curl's schannel disagree with reqwest often enough that a green E2E run is
+    // not evidence about the app. `#[ignore]` keeps CI offline-safe; run them
+    // deliberately with `cargo test --lib -- --ignored --nocapture`.
+    // -----------------------------------------------------------------------
+
+    const PINNED_PACKAGE: &str = "https://cdn.jsdelivr.net/gh/PyTs1n9/Qing-Notepad-Plugins@94e30d07662719b9ec8af9ec5cdb60e20d43fc76/examples/qing.hello-headless-1.0.0.qnp";
+    const PINNED_SHA256: &str = "8911d8370b8f300964cf0c534696878bdd6dcbba8d2241ed62ad9ab78964c859";
+
+    #[test]
+    #[ignore = "live network: fetches the market index"]
+    fn live_index_reports_which_source_answered() {
+        match tauri::async_runtime::block_on(fetch_index_document()) {
+            Ok((document, source)) => {
+                println!(
+                    "[index] source={source} schema={} plugins={}",
+                    document.schema,
+                    document.plugins.len()
+                );
+                assert!(!document.plugins.is_empty(), "the index answered but listed nothing");
+            }
+            Err(error) => panic!("[index] every source failed: {error}"),
+        }
+    }
+
+    /// Per-candidate diagnostics: which host this build can actually reach.
+    ///
+    /// Printed rather than asserted per host — a mirror being unreachable is not
+    /// a bug as long as one of them answers, and the fallback test below is the
+    /// one that decides pass/fail.
+    #[test]
+    #[ignore = "live network: fetches the pinned package from every mirror"]
+    fn live_download_prints_each_candidate() {
+        let client = tauri_plugin_http::reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(
+                DOWNLOAD_ATTEMPT_TIMEOUT_SECS,
+            ))
+            .build()
+            .expect("client");
+        for candidate in download_candidates(PINNED_PACKAGE) {
+            let host = candidate
+                .trim_start_matches("https://")
+                .split('/')
+                .next()
+                .unwrap_or("?")
+                .to_string();
+            match tauri::async_runtime::block_on(download_once(&client, &candidate)) {
+                Ok(bytes) => println!("[candidate] {host} OK {}B", bytes.len()),
+                Err(error) => println!("[candidate] {host} ERR {error}"),
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "live network: asks the CDN for a package that does not exist"]
+    fn live_missing_package_reports_package_gone() {
+        let url = "https://cdn.jsdelivr.net/gh/PyTs1n9/Qing-Notepad-Plugins@main/examples/does-not-exist.qnp";
+        let error = tauri::async_runtime::block_on(download_archive(url))
+            .expect_err("a 404 must not be reported as success");
+        println!("[missing] {error}");
+        assert!(error.starts_with("E_PACKAGE_GONE"), "{error}");
+        // One status is one answer: a missing file is not retried across hosts.
+        assert!(
+            !error.contains(';'),
+            "a missing asset was retried across mirrors: {error}"
+        );
+    }
+
+    #[test]
+    #[ignore = "live network: fetches the pinned package"]
+    fn live_download_reaches_the_pinned_package_through_the_fallback() {
+        let bytes = tauri::async_runtime::block_on(download_archive(PINNED_PACKAGE))
+            .unwrap_or_else(|error| panic!("[download] {error}"));
+        println!("[download] {} bytes", bytes.len());
+        assert_eq!(sha256_hex(&bytes), PINNED_SHA256);
     }
 }

@@ -1,6 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import TurndownService from "turndown";
-import { gfm } from "turndown-plugin-gfm";
 import { emit, listen } from "@tauri-apps/api/event";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -27,12 +25,7 @@ import { registerNoteFlusher } from "@/utils/noteFlush";
 import { setActiveEditor } from "@/utils/editorHandle";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
 import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
-
-// TipTap stores WYSIWYG documents as HTML internally. User-authored HTML in
-// Markdown mode is still treated as plain text.
-function isStoredEditorHtml(content: string): boolean {
-  return /<\/?(p|h[1-6]|ul|ol|li|blockquote|pre|div|img|hr|br)\b[\s\S]*>/i.test(content);
-}
+import { htmlToMarkdown, isStoredEditorHtml } from "@/utils/htmlToMarkdown";
 
 // Configure marked
 /** Extension for an image selected in the dialog or pasted from the clipboard. */
@@ -40,46 +33,6 @@ function imageExtensionOf(nameOrMime: string): string {
   if (nameOrMime.includes("/")) return nameOrMime.split("/")[1] || "png";
   const extension = nameOrMime.split(".").pop();
   return extension && extension.length <= 5 ? extension : "png";
-}
-
-// Configure turndown for HTML → Markdown
-const turndownService = new TurndownService({
-  headingStyle: "atx",
-  codeBlockStyle: "fenced",
-  emDelimiter: "*",
-  bulletListMarker: "-",
-  hr: "---",
-});
-// GFM plugin: turns pasted <table> markup back into a Markdown table instead
-// of flattening it to plain lines. It only filters table/strikethrough/
-// task-list nodes, so the two rules below keep their behaviour.
-turndownService.use(gfm);
-// contentEditable creates a <div> for a normal Enter press. Turndown treats
-// block elements as paragraphs by default, which turns one Enter into two
-// Markdown newlines. Keep normal div lines single-spaced while preserving an
-// intentionally empty div as a blank line.
-turndownService.addRule("contentEditableLine", {
-  filter: "div",
-  replacement: (content, node) => {
-    const element = node as HTMLElement;
-    const isEmptyLine = !element.textContent && element.querySelector("br");
-    return isEmptyLine ? "\n\n" : `\n${content}\n`;
-  },
-});
-// Keep images as markdown
-turndownService.addRule("img", {
-  filter: "img",
-  replacement: (_content, node) => {
-    const el = node as HTMLImageElement;
-    const source = el.dataset.attachmentSrc || el.src;
-    return `![${el.alt || "image"}](${source})`;
-  },
-});
-
-function htmlToMarkdown(html: string): string {
-  return turndownService
-    .turndown(html)
-    .replace(/\\([\\`*{}[\]()#+\-.!_>])/g, "$1");
 }
 
 const DERIVED_TITLE_MAX_LENGTH = 40;

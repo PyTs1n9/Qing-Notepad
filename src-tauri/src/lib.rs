@@ -13,6 +13,7 @@ mod plugin;
 mod plugin_host;
 mod plugin_manifest;
 mod storage;
+mod vault;
 mod window_bg;
 
 // Global flag: whether we are truly quitting the app
@@ -165,6 +166,11 @@ pub fn run() {
             plugin::plugin_append_log,
             plugin_host::plugin_ext_host_send,
             plugin_host::plugin_ext_host_open,
+            vault::vault_register,
+            vault::vault_list,
+            vault::vault_remove,
+            vault::vault_scan,
+            vault::vault_read_file,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -176,6 +182,12 @@ pub fn run() {
             // `fs:scope` is deliberately narrow, so the directory the app will
             // read from has to be allowed explicitly before the first frame.
             storage::register_startup_roots(app.handle());
+
+            // Vault whitelist + directory watchers. Runs after the data root is
+            // known (it stores `vaults.json` under `<data>/graph/`). The
+            // watcher thread is started here so a folder edited in another
+            // application shows up in the graph without a manual refresh.
+            vault::init(app.handle());
 
             // A crash during an install must not leave a staging tree behind;
             // it is scratch space, so clearing it unconditionally is safe.

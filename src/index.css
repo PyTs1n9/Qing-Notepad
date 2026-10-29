@@ -220,6 +220,20 @@
      An ink-brown foreground is the only direction that works: #3d2c00 clears
      4.5 against all four grounds (6.89 worst case, yellow theme). */
   --color-on-warning: #3d2c00;
+  /* 小青's mark, taken from `src-tauri/icons/icon.png`: a circular haze-blue
+     ground with a warm paper book on it. Two deliberate departures from the icon
+     - see `docs/decisions-ai-mark.md`:
+     1. The ground is the icon's #a8c2ca **pressed dark** to #2c4a57. Its own
+        32x32 build is the evidence: at that size the pale ground and pale paper
+        melt into one blob, so the mark inverts the value instead of copying it.
+     2. The drawn shape is the book alone; the laptop base is what disappears
+        first at 32px and would only add noise at 20.
+     Ratios measured 2026-10-28: paper on ground 8.07, ground on the light
+     sidebar 7.35, ground on the dark sidebar 1.74 - hence the light rim in the
+     component, which is what keeps the disc off the night ground. */
+  --color-qing-mark-bg: #2c4a57;
+  --color-qing-mark-page: #faf4e6;
+  --color-qing-mark-fold: #16333f;
 }
 
 /* Dark Theme */
@@ -617,6 +631,113 @@
   }
 }
 
+/* The canvas toolbar is its own query container for the same reason as a shell
+   strip: the width it gets is whatever the explorer, the AI panel and the split
+   panes leave behind, so a viewport media query kept the labels visible long
+   after the row had run out of room — the row then fell back to a horizontal
+   scrollbar, which is why the toolbar could be dragged sideways.
+
+   Labels step down by information value, not by order: the two trailing actions
+   first (their glyphs are unambiguous and the tooltip keeps the name), then the
+   menu names and the save state, the canvas title next, the zoom readout last —
+   its icon alone still says "this is a canvas".
+
+   Every threshold is a *content-box* width, because that is what a container
+   query measures: subtract the 24px of `px-3` to get the card width. The values
+   come from measuring the rendered row, not from adding up estimates, and each
+   one leaves 12-20px of slack before the row actually collides. */
+.canvas-toolbar {
+  container-type: inline-size;
+  container-name: canvas-toolbar;
+}
+
+/* A canvas name is user text up to 80 chars; without a ceiling the title block
+   would starve the tools before any breakpoint below fires. */
+.canvas-toolbar-title-label {
+  max-width: 15rem;
+}
+
+/* "Open canvas tile" and "Export" are the longest strings in the row and the
+   only pair whose meaning survives as an icon alone. */
+@container canvas-toolbar (max-width: 1050px) {
+  .canvas-toolbar-action-label {
+    display: none;
+  }
+}
+
+/* The menu-name threshold is per locale, and that is deliberate: a Chinese
+   label is roughly two thirds the width of its English counterpart at 12px, so
+   one English-sized breakpoint made the Chinese UI drop to bare icons ~65px
+   earlier than it had to — at the default 1200px window that meant no words at
+   all, for no reason. English keeps the more conservative number.
+
+   `:not([data-lang="zh"])` rather than `[data-lang="en"]` so a toolbar rendered
+   without the attribute still gets the wider, safe threshold. */
+@container canvas-toolbar (max-width: 920px) {
+  .canvas-toolbar:not([data-lang="zh"]) :is(
+    .canvas-toolbar-menu-label,
+    .canvas-toolbar-menu-chevron,
+    .canvas-toolbar-status
+  ) {
+    display: none;
+  }
+
+  /* Every trigger collapses to the same 32px square, so the row reads as one
+     grid of icons instead of buttons of two different widths. The chevron goes
+     with the label: two glyphs in a 32px box read as two unrelated buttons. */
+  .canvas-toolbar:not([data-lang="zh"]) .canvas-toolbar-trigger {
+    width: 2rem;
+    gap: 0;
+    padding-inline: 0;
+  }
+}
+
+@container canvas-toolbar (max-width: 855px) {
+  .canvas-toolbar[data-lang="zh"] :is(
+    .canvas-toolbar-menu-label,
+    .canvas-toolbar-menu-chevron,
+    .canvas-toolbar-status
+  ) {
+    display: none;
+  }
+
+  .canvas-toolbar[data-lang="zh"] .canvas-toolbar-trigger {
+    width: 2rem;
+    gap: 0;
+    padding-inline: 0;
+  }
+}
+
+@container canvas-toolbar (max-width: 620px) {
+  .canvas-toolbar-title-label {
+    display: none;
+  }
+}
+
+/* Below this the row is already all icons; the last thing with words is the
+   zoom readout, and `title` still carries it. */
+@container canvas-toolbar (max-width: 500px) {
+  .canvas-toolbar-zoom {
+    display: none;
+  }
+}
+
+/* Floor: thirteen controls at 28px plus gaps is ~400px, and that is as far as
+   this row goes. The menu triggers are repeated here because their per-locale
+   rule above is more specific than a bare `button` and would otherwise keep
+   them at 32px, leaving a row of mixed widths. Narrower than this the tail is
+   clipped rather than scrolled — at the 480px window minimum this only bites
+   with the explorer, the AI panel and a split pane all open at once. */
+@container canvas-toolbar (max-width: 426px) {
+  .canvas-toolbar button,
+  .canvas-toolbar[data-lang="zh"] .canvas-toolbar-trigger,
+  .canvas-toolbar:not([data-lang="zh"]) .canvas-toolbar-trigger {
+    width: 1.75rem;
+    min-width: 1.75rem;
+    padding-inline: 0;
+  }
+}
+
 /* The AI panel is its own query container for the same reason as the shell
    strip: its width is dragged by the user, so the viewport says nothing about
    how much room the transcript actually has.
@@ -698,6 +819,65 @@
 
 .ai-avatar--brand > .ai-brand {
   font-size: calc(var(--ai-avatar-size) * 0.8);
+}
+
+/* 小青's mark reuses the same container-query variable as the tile it replaces,
+   so a bubble avatar and a header avatar stay in step without either one passing
+   a size. An explicit `size` prop wins through an inline style, which outranks
+   both this class and the width/height presentation attributes. */
+.xq-mark {
+  display: block;
+  flex-shrink: 0;
+  width: var(--ai-avatar-size, 24px);
+  height: var(--ai-avatar-size, 24px);
+}
+
+/* The rail entry. Opacity and transform only - the mark is on screen for the
+   whole session, so it must not carry a per-frame `filter`. The open state gets
+   a static glow, not a breathing animation: an idle rail has nothing to say. */
+.xq-entry {
+  border-radius: 7px;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* Closed, it steps back to the weight of its neighbours without going grey:
+   0.72 keeps the face readable, full opacity on hover is the invite. */
+.xq-entry[data-dim="true"] {
+  opacity: 0.72;
+}
+
+/* Hover is read off the 44px button, not the 24px mark: the padding around the
+   mark belongs to the same target, so the glow must not flicker as the pointer
+   crosses the gap between them. */
+.group:hover .xq-entry,
+.xq-entry[data-open="true"] {
+  opacity: 1;
+}
+
+.group:hover .xq-entry {
+  transform: scale(1.06);
+}
+
+.xq-entry[data-open="true"] {
+  /* Two-part glow because the two themes need different halves: the 1px ring is
+     the only thing visible on light backgrounds, the soft paper bloom is the only
+     thing visible on the night sidebar. */
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-qing-mark-bg) 55%, transparent),
+    0 0 12px color-mix(in srgb, var(--color-qing-mark-page) 26%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xq-entry {
+    transition: none;
+  }
+
+  .group:hover .xq-entry {
+    transform: none;
+  }
 }
 
 /* Vendor marks are authored at `1em`, so they track the type size around them
@@ -838,9 +1018,11 @@
   }
 
   /* Scroll containers clip a positive offset, so the ring goes inward there.
-     Same reason for the tab strip: it is a 36px horizontal scroller. */
+     Same reason for the tab strip: it is a 36px horizontal scroller, and for
+     the canvas toolbar, which clips its own overflow once the labels drop. */
   [role="treeitem"]:focus-visible,
-  .note-tab-strip button:focus-visible {
+  .note-tab-strip button:focus-visible,
+  .canvas-toolbar button:focus-visible {
     outline-offset: -2px;
   }
 }
@@ -1674,6 +1856,34 @@ body.sticky-body {
   padding-left: 1.5em;
 }
 
+/* Announcement board body copy.
+   `.markdown-preview` zeroes block margins on purpose (the editor preview draws
+   its own spacing), which in a 300px column runs consecutive paragraphs
+   together. This adds a hairline back and nothing else: it is unlayered, so it
+   wins over the utilities the component would otherwise need for the same job -
+   that is the whole reason it exists instead of another `[&_p]:` class. */
+.announcement-body.markdown-preview p,
+.announcement-body.markdown-preview ul,
+.announcement-body.markdown-preview ol,
+.announcement-body.markdown-preview blockquote {
+  margin-block: 0.35em;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.announcement-body.markdown-preview ul,
+.announcement-body.markdown-preview ol {
+  padding-left: 1.1em;
+}
+
+.announcement-body.markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.announcement-body.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
 /* Markdown tables. `display: block` turns the table into its own scroll
    container, so a wide table scrolls sideways instead of stretching the pane.
    Colors come from theme variables only, so every preset stays readable. */
@@ -2290,9 +2500,31 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   }
 }
 
+/* Graph overlay panel: one short entrance so the canvas never gains a
+   hard-edged pop-in when the panel is expanded again. Collapsing swaps the
+   panel for a rail button in the same corner, and *both* states are absolutely
+   positioned — nothing here animates width or height, because a box transition
+   would resize the canvas and make the force layout re-heat for a purely
+   cosmetic change. */
+.graph-panel-in {
+  animation: graph-panel-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes graph-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app-toast,
-  .command-palette {
+  .command-palette,
+  .graph-panel-in {
     animation: none;
   }
 }

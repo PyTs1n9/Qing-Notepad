@@ -18,6 +18,12 @@
     "verify:plugin-e2e": "node scripts/verify-plugin-e2e/run.mjs",
     "verify:plugin-snippet": "node scripts/verify-plugin-snippet.mjs",
     "verify:plugin-note-tree": "node scripts/verify-plugin-note-tree.mjs",
+    "verify:plugin-api": "node scripts/verify-plugin-api-surface.mjs",
+    "verify:graph-scan": "node scripts/verify-graph-scan.mjs",
+    "verify:graph-title": "node scripts/verify-graph-title.mjs",
+    "verify:graph-index": "node scripts/verify-graph-index.mjs",
+    "verify:graph-layout": "node scripts/verify-graph-layout.mjs",
+    "verify:graph-sync": "node scripts/verify-graph-sync.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
   },
   "dependencies": {
@@ -53,6 +59,7 @@
     "motion": "^14.5.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-force-graph-2d": "^1.29.2",
     "semver": "^6.3.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",

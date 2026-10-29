@@ -1,16 +1,19 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
 import HelpMenu from "@/components/Help/HelpMenu";
+import ChangelogModal from "@/components/Help/ChangelogModal";
 import UserAvatar from "@/components/UserAvatar";
 import LoadingText from "@/components/LoadingText";
+import { getSnapshotAnnouncements, loadSeenAnnouncements } from "@/utils/announcements";
 import {
   LogIn,
   LogOut,
   Mail,
   Maximize2,
+  Megaphone,
   Minus,
   Power,
   Square,
@@ -51,6 +54,8 @@ export default function TitleBar({
   const [isMaximized, setIsMaximized] = useState(false);
   const [isProfilePreviewOpen, setIsProfilePreviewOpen] = useState(false);
   const [isQuitConfirmOpen, setIsQuitConfirmOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [hasUnreadAnnouncements, setHasUnreadAnnouncements] = useState(false);
   const appWindow = getCurrentWindow();
 
   useEffect(() => {
@@ -76,6 +81,22 @@ export default function TitleBar({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, [isProfilePreviewOpen, isQuitConfirmOpen]);
+
+  /**
+   * The unread dot means "some announcement visible in the bundled snapshot has
+   * no id in the read table". The snapshot is synchronous and I/O-free, and the
+   * read table is read once per call through the shared module cache, so this
+   * never touches the disk on every render.
+   */
+  const refreshUnread = useCallback(async () => {
+    const seen = await loadSeenAnnouncements();
+    const visible = getSnapshotAnnouncements(lang);
+    setHasUnreadAnnouncements(visible.some((item) => !seen[item.id]));
+  }, [lang]);
+
+  useEffect(() => {
+    void refreshUnread();
+  }, [refreshUnread]);
 
   /** Window commands must never fail silently: a swallowed rejection looks like a dead button. */
   const runWindowCommand = async (label: string, run: () => Promise<void>) => {
@@ -112,6 +133,16 @@ export default function TitleBar({
     } catch (error) {
       console.error("Quit failed:", error);
     }
+  };
+
+  /**
+   * Closing re-reads the read table so the dot disappears once the board has
+   * marked the rendered items seen; `loadSeenAnnouncements` hits the shared
+   * module cache, not the disk, so this is cheap.
+   */
+  const handleChangelogClose = () => {
+    setIsChangelogOpen(false);
+    void refreshUnread();
   };
 
   return (
@@ -154,6 +185,22 @@ export default function TitleBar({
 
         {/* Profile & Window Controls */}
         <div className="flex h-full items-center gap-0.5 pr-1.5" onDoubleClick={(e) => e.stopPropagation()}>
+          <button
+            className="group mr-1 flex h-8 w-8 items-center justify-center rounded-md transition-all duration-150 hover:bg-bg-hover"
+            onClick={() => setIsChangelogOpen(true)}
+            title={t(lang, "announcementButton")}
+            aria-label={t(lang, "announcementButton")}
+          >
+            <span className="relative flex h-4 w-4 items-center justify-center">
+              <Megaphone size={14} strokeWidth={2} className="text-text-muted transition-colors group-hover:text-text-primary" />
+              {hasUnreadAnnouncements && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-danger"
+                />
+              )}
+            </span>
+          </button>
           <button
             className="group mr-1 flex h-7 min-w-0 max-w-[164px] items-center gap-2 rounded-full border border-border/80 bg-bg-primary/55 px-1.5 pr-2.5 shadow-sm transition-all duration-150 hover:border-accent/45 hover:bg-bg-primary"
             onClick={handleProfileClick}
@@ -361,6 +408,8 @@ export default function TitleBar({
           </div>
         </div>
       )}
+
+      <ChangelogModal open={isChangelogOpen} onClose={handleChangelogClose} />
     </>
   );
 }

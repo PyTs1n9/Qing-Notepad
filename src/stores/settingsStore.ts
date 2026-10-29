@@ -194,7 +194,13 @@ interface SettingsState {
   glassSaturateBg: number;
   /** Temporary kill switch: every plugin is refused while this is true. */
   pluginsDisabled: boolean;
+  /**
+   * Announcement feed (D4/D7). When off, no request is made at all; the board
+   * still renders the copy bundled with the build.
+   */
+  announcementsEnabled: boolean;
   setPluginsDisabled: (disabled: boolean) => void;
+  setAnnouncementsEnabled: (enabled: boolean) => void;
   setTheme: (theme: ThemeType) => void;
   setLang: (lang: LangType) => void;
   setCustomColors: (colors: CustomColors) => void;
@@ -241,6 +247,7 @@ interface SettingsState {
     glassTintBg?: number;
     glassSaturateBg?: number;
     pluginsDisabled?: boolean;
+    announcementsEnabled?: boolean;
   }) => void;
 }
 
@@ -267,6 +274,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   glassTintBg: DEFAULT_GLASS_TINT_BG,
   glassSaturateBg: DEFAULT_GLASS_SATURATE_BG,
   pluginsDisabled: false,
+  announcementsEnabled: true,
 
   setTheme: (theme) => {
     // Sync custom palette when clicking a preset
@@ -313,6 +321,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setAlwaysOnTop: (alwaysOnTop) => set({ alwaysOnTop }),
 
   setPluginsDisabled: (pluginsDisabled) => set({ pluginsDisabled }),
+
+  setAnnouncementsEnabled: (announcementsEnabled) => set({ announcementsEnabled }),
 
   setUpdateReminderDisabledForVersion: (updateReminderDisabledForVersion) => set({ updateReminderDisabledForVersion }),
 
@@ -366,5 +376,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       glassTintBg: normalizeGlassNumber(settings.glassTintBg, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT_BG),
       glassSaturateBg: normalizeGlassNumber(settings.glassSaturateBg, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE_BG),
       pluginsDisabled: settings.pluginsDisabled === true,
+      // Opt-out flag: only an explicit `false` disables the feed.
+      announcementsEnabled: settings.announcementsEnabled !== false,
     }),
 }));

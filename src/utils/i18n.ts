@@ -4,6 +4,46 @@ export type TranslationKeys = {
   todo: string;
   notepad: string;
   imageHost: string;
+  // Knowledge graph (T06/T07). Every user-visible string on the graph page goes
+  // through `t()`; canvas-drawn labels use node titles, which are data.
+  knowledgeBase: string;
+  graphSearchPlaceholder: string;
+  graphVaults: string;
+  graphAddFolder: string;
+  graphRemoveVault: string;
+  graphRemoveVaultQuestion: string;
+  graphFilters: string;
+  graphClearFilters: string;
+  graphFilterTags: string;
+  graphFilterOrphans: string;
+  graphFilterDangling: string;
+  graphNoTags: string;
+  graphRefresh: string;
+  graphNodesCount: string;
+  graphEdgesCount: string;
+  graphStatusScanning: string;
+  graphStatusError: string;
+  graphEmptyTitle: string;
+  graphEmptyHint: string;
+  graphNoSelection: string;
+  graphBacklinks: string;
+  graphNoBacklinks: string;
+  graphOpenInEditor: string;
+  graphSelectedAnnounce: string;
+  graphUnreadable: string;
+  graphParseError: string;
+  graphNodeList: string;
+  graphDanglingNode: string;
+  graphDanglingAmbiguous: string;
+  graphSearchNoResult: string;
+  graphLastScan: string;
+  graphZoom: string;
+  // Collapsible overlay panel on the graph page (§8.4 keeps it inside the
+  // canvas, so collapsing it must never be the only way to reach the vaults).
+  graphPanelTitle: string;
+  graphPanelCollapse: string;
+  graphPanelExpand: string;
+  graphPanelExpandCount: string;
   canvas: string;
   canvasSelect: string;
   canvasPan: string;
@@ -117,6 +157,9 @@ export type TranslationKeys = {
   dragNote: string;
   expandFolder: string;
   collapseFolder: string;
+  expandAllFolders: string;
+  collapseAllFolders: string;
+  bulkFoldDisabledByFilter: string;
   moveNoteToCategoryConfirm: string;
   tags: string;
   all: string;
@@ -883,11 +926,59 @@ export type TranslationKeys = {
   pluginsSettingsOpenHint: string;
   pluginsDisableAll: string;
   pluginsDisableAllHint: string;
+  announcementTitle: string;
+  announcementEmpty: string;
+  announcementRefresh: string;
+  announcementRefreshing: string;
+  announcementUpToDate: string;
+  announcementLoadFailed: string;
+  announcementClose: string;
+  announcementRead: string;
+  announcementButton: string;
+  helpChangelog: string;
+  settingsAnnouncements: string;
+  settingsAnnouncementsHint: string;
 };
 
 const zh: TranslationKeys = {
   explorer: "资源管理器",
   imageHost: "图床",
+  knowledgeBase: "知识库",
+  graphSearchPlaceholder: "搜索标题或路径",
+  graphVaults: "资料库",
+  graphAddFolder: "添加文件夹",
+  graphRemoveVault: "移除",
+  graphRemoveVaultQuestion: "从知识库移除「{name}」？文件夹本身不会被删除。",
+  graphFilters: "筛选",
+  graphClearFilters: "清除筛选",
+  graphFilterTags: "标签",
+  graphFilterOrphans: "只看孤立节点",
+  graphFilterDangling: "只看断链",
+  graphNoTags: "暂无标签",
+  graphRefresh: "刷新索引",
+  graphNodesCount: "{count} 个节点",
+  graphEdgesCount: "{count} 条边",
+  graphStatusScanning: "正在扫描…",
+  graphStatusError: "同步失败",
+  graphEmptyTitle: "还没有资料库",
+  graphEmptyHint: "添加一个文件夹作为知识库。文件只读，不会被复制或修改。",
+  graphNoSelection: "点击画布上的节点查看内容",
+  graphBacklinks: "反链",
+  graphNoBacklinks: "没有被引用",
+  graphOpenInEditor: "在编辑器中打开",
+  graphSelectedAnnounce: "已选中《{title}》，引用 {count} 篇",
+  graphUnreadable: "这个文件读不出来",
+  graphParseError: "解析失败",
+  graphNodeList: "节点列表",
+  graphDanglingNode: "断链节点",
+  graphDanglingAmbiguous: "命中 {count} 篇同名笔记，请改写路径",
+  graphSearchNoResult: "没有匹配的节点",
+  graphLastScan: "上次扫描 {time}",
+  graphZoom: "缩放 {value}%",
+  graphPanelTitle: "资料库与筛选",
+  graphPanelCollapse: "收起面板",
+  graphPanelExpand: "展开面板",
+  graphPanelExpandCount: "展开面板，{count} 个节点",
   canvas: "画布",
   canvasSelect: "选择",
   canvasPan: "平移",
@@ -1002,6 +1093,9 @@ const zh: TranslationKeys = {
   dragNote: "拖动笔记",
   expandFolder: "展开文件夹",
   collapseFolder: "折叠文件夹",
+  expandAllFolders: "全部展开",
+  collapseAllFolders: "全部折叠",
+  bulkFoldDisabledByFilter: "搜索或筛选时目录保持全部展开",
   moveNoteToCategoryConfirm: '是否将"{note}"笔记移动到"{category}"文件夹中？',
   tags: "标签",
   all: "全部",
@@ -1770,11 +1864,59 @@ const zh: TranslationKeys = {
   pluginsSettingsOpenHint: "安装、启用、卸载和权限管理都在扩展页完成。",
   pluginsDisableAll: "禁用所有插件",
   pluginsDisableAllHint: "临时停用全部扩展，已安装的文件保留。",
+  announcementTitle: "最新通告",
+  announcementEmpty: "暂无通告",
+  announcementRefresh: "刷新",
+  announcementRefreshing: "刷新中…",
+  announcementUpToDate: "已是最新",
+  announcementLoadFailed: "暂时取不到更新日志，请稍后再试",
+  announcementClose: "忽略这条通告",
+  announcementRead: "已读",
+  announcementButton: "查看公告",
+  helpChangelog: "更新日志",
+  settingsAnnouncements: "获取更新通告",
+  settingsAnnouncementsHint: "关闭后不再联网获取通告，只显示随包内容。",
 };
 
 const en: TranslationKeys = {
   explorer: "Explorer",
   imageHost: "Image Host",
+  knowledgeBase: "Knowledge Base",
+  graphSearchPlaceholder: "Search title or path",
+  graphVaults: "Vaults",
+  graphAddFolder: "Add folder",
+  graphRemoveVault: "Remove",
+  graphRemoveVaultQuestion: "Remove \"{name}\" from the knowledge base? The folder itself is not deleted.",
+  graphFilters: "Filters",
+  graphClearFilters: "Clear filters",
+  graphFilterTags: "Tags",
+  graphFilterOrphans: "Only isolated nodes",
+  graphFilterDangling: "Only broken links",
+  graphNoTags: "No tags yet",
+  graphRefresh: "Refresh index",
+  graphNodesCount: "{count} nodes",
+  graphEdgesCount: "{count} edges",
+  graphStatusScanning: "Scanning...",
+  graphStatusError: "Sync failed",
+  graphEmptyTitle: "No vault yet",
+  graphEmptyHint: "Add a folder as a knowledge base. Files stay read-only: nothing is copied or modified.",
+  graphNoSelection: "Select a node on the canvas to read it",
+  graphBacklinks: "Backlinks",
+  graphNoBacklinks: "Not referenced anywhere",
+  graphOpenInEditor: "Open in editor",
+  graphSelectedAnnounce: "Selected {title}, referenced by {count} notes",
+  graphUnreadable: "This file cannot be read",
+  graphParseError: "Parse failed",
+  graphNodeList: "Node list",
+  graphDanglingNode: "Broken link",
+  graphDanglingAmbiguous: "Matches {count} notes with that name, write a path instead",
+  graphSearchNoResult: "No matching node",
+  graphLastScan: "Last scan {time}",
+  graphZoom: "Zoom {value}%",
+  graphPanelTitle: "Vaults & filters",
+  graphPanelCollapse: "Collapse panel",
+  graphPanelExpand: "Expand panel",
+  graphPanelExpandCount: "Expand panel, {count} nodes",
   canvas: "Canvas",
   canvasSelect: "Select",
   canvasPan: "Pan",
@@ -1889,6 +2031,9 @@ const en: TranslationKeys = {
   dragNote: "Drag Note",
   expandFolder: "Expand folder",
   collapseFolder: "Collapse folder",
+  expandAllFolders: "Expand All",
+  collapseAllFolders: "Collapse All",
+  bulkFoldDisabledByFilter: "Folders stay expanded while searching or filtering",
   moveNoteToCategoryConfirm: 'Move "{note}" note to "{category}" folder?',
   tags: "Tags",
   all: "All",
@@ -2660,6 +2805,18 @@ const en: TranslationKeys = {
   pluginsSettingsOpenHint: "Installing, enabling, uninstalling and permissions all live on the extensions page.",
   pluginsDisableAll: "Disable all plugins",
   pluginsDisableAllHint: "Temporarily stops every extension. Installed files are kept.",
+  announcementTitle: "What's new",
+  announcementEmpty: "Nothing to announce right now",
+  announcementRefresh: "Refresh",
+  announcementRefreshing: "Refreshing…",
+  announcementUpToDate: "You're up to date",
+  announcementLoadFailed: "Couldn't load the changelog. Try again later.",
+  announcementClose: "Dismiss this announcement",
+  announcementRead: "Read",
+  announcementButton: "Announcements",
+  helpChangelog: "Changelog",
+  settingsAnnouncements: "Fetch announcements",
+  settingsAnnouncementsHint: "When off, no requests are made for announcements; only the copy bundled with the app is shown.",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };

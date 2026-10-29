@@ -144,7 +144,11 @@ fn write_pointer(app: &AppHandle, root: Option<&Path>) -> Result<(), String> {
 /// That form is unusable as a stored value: `@tauri-apps/api/path` joins it into
 /// asset URLs the webview then fails to encode, and the scopes match on strings.
 /// The plain form is what every other tool expects.
-fn plain_path(path: &Path) -> PathBuf {
+///
+/// `pub(crate)`: `vault.rs` stores vault roots the same way, and it derives a
+/// vault key from the stored spelling — two implementations would drift and
+/// hand the same folder two different keys.
+pub(crate) fn plain_path(path: &Path) -> PathBuf {
     let raw = path.to_string_lossy();
     if let Some(rest) = raw.strip_prefix(r"\\?\UNC\") {
         return PathBuf::from(format!(r"\\{rest}"));

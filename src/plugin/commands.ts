@@ -35,6 +35,7 @@ export interface CommandItem {
 export const BUILTIN_COMMAND_IDS = [
   "qing.view.note",
   "qing.view.todo",
+  "qing.view.graph",
   "qing.view.canvas",
   "qing.view.workspace",
   "qing.view.plugins",
@@ -55,6 +56,7 @@ export function buildHostCommands(actions: HostCommandActions, lang: LangType): 
   return [
     view("qing.view.note", t(lang, "notepad"), "note"),
     view("qing.view.todo", t(lang, "todo"), "todo"),
+    view("qing.view.graph", t(lang, "knowledgeBase"), "graph"),
     view("qing.view.canvas", t(lang, "canvas"), "canvas"),
     view("qing.view.workspace", t(lang, "workspace"), "workspace"),
     view("qing.view.plugins", t(lang, "pluginsTitle"), "plugins"),

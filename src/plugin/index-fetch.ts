@@ -24,6 +24,7 @@ function normalizeEntry(raw: RawIndexEntry): PluginIndexEntry | null {
     description: typeof raw.description === "string" ? raw.description : "",
     author: typeof raw.author === "string" ? raw.author : null,
     repo: typeof raw.repo === "string" ? raw.repo : null,
+    repoGitee: typeof raw.repoGitee === "string" ? raw.repoGitee : null,
     version: typeof raw.version === "string" ? raw.version : "",
     apiVersion: typeof raw.apiVersion === "number" ? raw.apiVersion : null,
     engines: raw.engines && typeof raw.engines === "object" ? raw.engines : null,

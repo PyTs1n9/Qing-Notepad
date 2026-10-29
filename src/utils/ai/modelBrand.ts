@@ -10,8 +10,9 @@
  *   2. the host       — reliable on a dedicated endpoint (api.deepseek.com)
  *   3. the endpoint's display name — the user often types the vendor there
  *
- * An unrecognised row keeps the app's own Sparkles mark. A wrong logo is worse
- * than no logo: it tells the user they are talking to a service they are not.
+ * An unrecognised row keeps the app's own book mark (`XiaoQingMark`, the icon's
+ * open book). A wrong logo is worse than no logo: it tells the user they are
+ * talking to a service they are not.
  *
  * Artwork: @lobehub/icons-static-svg v1.98.0, MIT licensed. Imported as raw
  * markup rather than through <img>, because the mono marks are authored with
@@ -197,7 +198,7 @@ export interface BrandLookup {
 
 /**
  * Resolve the vendor mark for one model row. Returns `null` when nothing
- * matches — callers fall back to the Sparkles mark rather than guessing.
+ * matches — callers fall back to the app's book mark rather than guessing.
  */
 export function resolveModelBrand({ modelId, baseUrl, endpointName }: BrandLookup): ModelBrand | null {
   const host = hostOf(baseUrl ?? "");

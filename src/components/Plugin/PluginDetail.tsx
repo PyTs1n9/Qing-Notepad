@@ -100,7 +100,20 @@ const PluginDetailBody: React.FC = () => {
   const description = manifest?.description ?? entry?.description ?? "";
   const author = manifest ? authorName(manifest) : entry?.author ?? "";
   const version = record?.version ?? entry?.version ?? "";
-  const repository = manifest?.repository ?? entry?.repo ?? null;
+  // The index wins over the manifest here. An installed package carries the
+  // URL it was packed with, so trusting `manifest.repository` first kept the
+  // pane pointing at a path that had already moved out of the source repo.
+  const repoLinks = useMemo(() => {
+    const links: { label: string; url: string }[] = [];
+    if (entry?.repo) links.push({ label: "GitHub", url: entry.repo });
+    if (entry?.repoGitee) links.push({ label: "Gitee", url: entry.repoGitee });
+    // Third-party plugins installed from a file have no index entry: their
+    // manifest is the only address there is.
+    if (links.length === 0 && manifest?.repository) {
+      links.push({ label: t(lang, "pluginRepository"), url: manifest.repository });
+    }
+    return links;
+  }, [entry, manifest, lang]);
   const declared = useMemo(
     () => (manifest ? manifestPermissions(manifest) : (entry?.permissions ?? [])),
     [manifest, entry],
@@ -335,16 +348,24 @@ const PluginDetailBody: React.FC = () => {
             {manifest?.license && (
               <MetaRow label={t(lang, "pluginLicense")}>{manifest.license}</MetaRow>
             )}
-            {repository && (
+            {repoLinks.length > 0 && (
               <MetaRow label={t(lang, "pluginRepository")}>
-                <button
-                  type="button"
-                  onClick={() => void openInDefaultBrowser(repository)}
-                  className="inline-flex max-w-full items-center gap-1 truncate text-accent-text hover:underline"
-                >
-                  <span className="truncate">{repository}</span>
-                  <ExternalLink size={10} className="flex-shrink-0" />
-                </button>
+                <span className="flex flex-col items-start gap-1">
+                  {repoLinks.map((link) => (
+                    <button
+                      key={link.url}
+                      type="button"
+                      onClick={() => void openInDefaultBrowser(link.url)}
+                      className="inline-flex max-w-full items-center gap-1 text-accent-text hover:underline"
+                    >
+                      {repoLinks.length > 1 && (
+                        <span className="w-12 flex-shrink-0 text-left text-text-muted">{link.label}</span>
+                      )}
+                      <span className="min-w-0 truncate">{link.url}</span>
+                      <ExternalLink size={10} className="flex-shrink-0" />
+                    </button>
+                  ))}
+                </span>
               </MetaRow>
             )}
           </div>

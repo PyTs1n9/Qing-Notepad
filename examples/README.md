@@ -11,7 +11,7 @@
 | `qing-wordcount-ts/` | `qing.wordcount-ts` | `package.json` | `notes:read`、`notify` |
 | `qing-editor-demo/` | `qing.editor-demo` | `package.json` | `editor:read`、`notify` |
 | `qing-outline/` | `qing.outline` | `package.json` | `editor:read`、`editor:selection`、`views`、`notify` |
-| `qing-snippet/` | `qing.snippet` | `package.json` | `storage`、`views`、`editor:read`、`editor:write`、`editor:selection` |
+| `qing-snippet/` | `qing.snippet` | `package.json` | `storage`、`views`、`notify`、`editor:read`、`editor:write`、`editor:selection` |
 | `qing-note-tree/` | `qing.note-tree` | `package.json` | `notes:read`、`canvas:read`、`canvas:write`、`ai:summarize`、`storage`、`notify` |
 
 `qing-wordcount-ts` 与 `qing-note-wordcount` 功能完全相同，区别只在清单格式和源语言：
@@ -44,7 +44,7 @@ examples/qing.isolation-probe-1.0.0.qnp
 examples/qing.wordcount-ts-1.0.0.qnp
 examples/qing.editor-demo-1.0.0.qnp
 examples/qing.outline-1.0.0.qnp
-examples/qing.snippet-1.0.0.qnp
+examples/qing.snippet-1.0.1.qnp
 examples/qing.note-tree-1.0.0.qnp
 ```
 

@@ -35,6 +35,12 @@ tauri-plugin-http = "2.8.3"
 # other codecs would just be dead weight in the installer.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
+# Vault (knowledge base) module: `notify` watches a user folder from the Rust
+# side so the renderer needs no `fs` scope for it. `encoding_rs` is already in
+# the tree as a transitive dependency (0.8.42), so declaring it here adds no new
+# crate — it is used for the GB18030 fallback when a note is not valid UTF-8.
+notify = "8"
+encoding_rs = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_DataExchange", "Win32_System_Memory"] }

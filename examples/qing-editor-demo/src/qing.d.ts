@@ -37,7 +37,7 @@ interface QingNoteSummary {
   tags: string[];
 }
 
-/** A single note, with its body already converted to plain text. */
+/** A single note, with its body as Markdown (HTML-era notes are converted). */
 interface QingNote {
   id: string;
   title: string;

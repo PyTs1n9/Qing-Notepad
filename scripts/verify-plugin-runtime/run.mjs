@@ -514,6 +514,44 @@ section("The write path: a plugin edit must stay a normal, saveable change");
 }
 
 // ---------------------------------------------------------------------------
+section("The read path: notes.get hands a plugin Markdown, not tag-stripped text");
+
+{
+  const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+  const strip = (source) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const bridgeSource = read(path.join("src", "plugin", "bridge.ts"));
+  const appSource = read(path.join("src", "App.tsx"));
+  const editorSource = read(path.join("src", "components", "Editor", "NoteEditor.tsx"));
+  const sharedSource = read(path.join("src", "utils", "htmlToMarkdown.ts"));
+
+  // A plugin is promised Markdown. `textContent` would hand back plain text, and
+  // a read-modify-write round trip would then delete every heading, list and
+  // link — silently, and only visible after the note is reopened.
+  check(
+    "notes.get converts the body through the shared HTML→Markdown converter",
+    /storedContentToMarkdown\(raw\)/.test(strip(bridgeSource)) &&
+      /from "@\/utils\/htmlToMarkdown"/.test(bridgeSource),
+  );
+  check(
+    "no plugin-facing reader strips tags instead of converting",
+    !strip(bridgeSource).includes(".textContent"),
+  );
+  // One converter, three call sites: the editor's load path, the export path and
+  // the bridge. A second turndown configuration is how the rules drift apart.
+  check(
+    "exactly one turndown configuration exists in the renderer",
+    (strip(sharedSource).match(/new TurndownService/g) ?? []).length === 1 &&
+      !strip(appSource).includes("new TurndownService") &&
+      !strip(editorSource).includes("new TurndownService"),
+    [
+      (strip(sharedSource).match(/new TurndownService/g) ?? []).length,
+      (strip(appSource).match(/new TurndownService/g) ?? []).length,
+      (strip(editorSource).match(/new TurndownService/g) ?? []).length,
+    ],
+  );
+}
+
+// ---------------------------------------------------------------------------
 section("Declarative views (P1a-2): providers answer getChildren, unknown views do not");
 
 {

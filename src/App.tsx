@@ -75,6 +75,7 @@ import { alertDialog } from "@/stores/dialogStore";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
+import { refreshAnnouncements } from "@/utils/announcements";
 import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
 import type { LatestRelease } from "@/utils/updateChecker";
 import { renderStoredNoteContentForExport } from "@/utils/markdown";
@@ -96,6 +97,12 @@ const loadWorkspaceView = () => import("@/components/Workspace/WorkspaceView");
 const loadWorkspaceSidebar = () => import("@/components/Workspace/WorkspaceSidebar");
 const WorkspaceView = lazy(loadWorkspaceView);
 const WorkspaceSidebar = lazy(loadWorkspaceSidebar);
+// The graph page pulls in `react-force-graph-2d` (~250 kB) and only the graph
+// view needs it, so it must not be in the first chunk: a note-taking app that
+// pays for a force-directed graph on cold start would be a regression for every
+// user who never opens it.
+const loadGraphPage = () => import("@/components/Graph/GraphPage");
+const GraphPage = lazy(loadGraphPage);
 type ResizableSidebar = "notebook" | "ai";
 const handledPasswordRecoveryUrls = new Set<string>();
 
@@ -218,6 +225,7 @@ export default function App() {
   const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
   const pluginsDisabled = useSettingsStore((s) => s.pluginsDisabled);
+  const announcementsEnabled = useSettingsStore((s) => s.announcementsEnabled);
   const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
@@ -558,6 +566,7 @@ export default function App() {
         glassTintBg,
         glassSaturateBg,
         pluginsDisabled,
+        announcementsEnabled,
       });
     }
   }, [
@@ -583,6 +592,7 @@ export default function App() {
     glassTintBg,
     glassSaturateBg,
     pluginsDisabled,
+    announcementsEnabled,
     initialized,
   ]);
 
@@ -614,6 +624,18 @@ export default function App() {
     const timer = window.setTimeout(cleanup, 5_000);
     return () => window.clearTimeout(timer);
   }, [initialized]);
+
+  // Announcement feed, idle pass - trigger (2) of decision D4: one attempt three
+  // seconds after the first paint, never part of `init()`. The login dialog is
+  // trigger (1) and shares the same single-flight, cooldown and TTL, so whichever
+  // runs first performs the request and the other one is a no-op.
+  useEffect(() => {
+    if (!initialized || !announcementsEnabled) return;
+    const timer = window.setTimeout(() => {
+      void refreshAnnouncements(lang);
+    }, 3_000);
+    return () => window.clearTimeout(timer);
+  }, [initialized, announcementsEnabled, lang]);
 
   // Auto-save todos
   useEffect(() => {
@@ -1104,10 +1126,12 @@ export default function App() {
   }, [lang]);
 
   // One left column for every view: the same width and the same collapsed flag
-  // follow you from notes to todos to the workspace. Only the canvas has no
-  // explorer, and a signed-out workspace keeps the rail alone because there is
-  // nothing to list.
+  // follow you from notes to todos to the workspace. The canvas and the graph
+  // have no explorer: the graph's vault list and filters live in an overlay
+  // inside the canvas instead (§8.4), because the note tree cannot represent
+  // vault nodes without inventing ghost notes (§2.1).
   const leftSidebarListVisible = currentView !== "canvas"
+    && currentView !== "graph"
     && (currentView !== "workspace" || Boolean(authUser));
   const toggleActiveSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -1284,6 +1308,12 @@ export default function App() {
                   <PanelErrorBoundary lang={lang}>
                     <PluginDetail />
                   </PanelErrorBoundary>
+                )
+                : currentView === "graph"
+                ? (
+                  <Suspense fallback={<div className="flex flex-1 items-center justify-center text-sm text-text-muted"><LoadingText label={t(lang, "loading")} /></div>}>
+                    <GraphPage setCurrentView={setCurrentView} />
+                  </Suspense>
                 )
                 : currentView === "canvas"
                 ? <CanvasView />

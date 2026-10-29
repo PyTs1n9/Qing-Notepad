@@ -174,6 +174,13 @@
       list: function () {
         return rpc("notes", "list", []);
       },
+      /**
+       * The folder tree plus note placement. `list()` deliberately carries no
+       * `categoryId`, so it cannot describe a structure; this can.
+       */
+      tree: function () {
+        return rpc("notes", "tree", []);
+      },
       get: function (id) {
         return rpc("notes", "get", [id]);
       },
@@ -182,6 +189,46 @@
       },
       update: function (id, patch) {
         return rpc("notes", "update", [id, patch]);
+      },
+    },
+
+    /**
+     * Reference nodes on a canvas.
+     *
+     * The plugin never sees a canvas item id and never touches a board file:
+     * writes are keyed by a reference (`note:<id>` / `folder:<id>` / `root`),
+     * and `upsert` keeps the geometry of a node that already exists so a re-run
+     * cannot undo a drag.
+     *
+     * `boardId` is optional everywhere: omitting it means "the canvas the user
+     * is looking at", which is how a command run from the canvas gets a target
+     * without a picker. Outside the canvas view the host answers `E_NO_CANVAS`.
+     */
+    canvas: {
+      listRefKeys: function (input) {
+        return rpc("canvas", "listRefKeys", input === undefined || input === null ? [] : [input]);
+      },
+      upsertRefNodes: function (input) {
+        return rpc("canvas", "upsertRefNodes", [input]);
+      },
+      upsertRefConnectors: function (input) {
+        return rpc("canvas", "upsertRefConnectors", [input]);
+      },
+      setNodesHidden: function (input) {
+        return rpc("canvas", "setNodesHidden", [input]);
+      },
+      removeRefNodes: function (input) {
+        return rpc("canvas", "removeRefNodes", [input]);
+      },
+    },
+
+    /**
+     * One summary, on the user's own endpoint. Costs their API credit, so call
+     * it only from an explicit command — never on activate.
+     */
+    ai: {
+      summarize: function (noteId) {
+        return rpc("ai", "summarize", [noteId]);
       },
     },
 

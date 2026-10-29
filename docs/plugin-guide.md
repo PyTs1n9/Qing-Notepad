@@ -33,11 +33,12 @@ npm run verify:ui-polish         # 15 条 UI 静态审计 + 152 组对比度
 
 最后一条是**联网探针**：用宿主真实的 reqwest/TLS 栈去取索引与包，逐域名打印结果。它默认 `#[ignore]`，因为“CDN 挂了导致 CI 红”比“没有检查”更糟；但在排查网络类安装失败时，它给出的是**应用视角**的答案——Node 的 `fetch` 与 curl 的 schannel 经常和 reqwest 不一致，端到端脚本绿了不代表应用里也绿。
 
-### 2.2 三个最容易踩的坑
+### 2.2 四个最容易踩的坑
 
 1. **权限码在 Rust 侧**（`plugin_manifest.rs::KNOWN_PERMISSIONS`）。改了必须**重编译**，只跑 `npm run dev` 会看到假的 `unknown permission`——症状和真 bug 一模一样。
 2. **扩展宿主页的脚本必须外链**（`<script src=...>`）。全局 CSP 的 `script-src` 是 `'self' 'wasm-unsafe-eval'`、没有 `unsafe-inline`，内联脚本会被**静默**拦掉：页面加载成功、零报错、什么都不执行。注意 CSP 由宿主在打包产物里注入，`devUrl` 走 Vite（`localhost:8787`）时不注入——所以这个坑通常在 `tauri build` 之后才现形，别用 dev 的正常表现否定它。
 3. **权限白名单有第二份，而且在另一个仓库。** `Qing-Notepad-Plugins/scripts/validate-index.mjs` 的 `KNOWN_PERMISSIONS` 必须跟着改——漏了的后果不是报错，而是「插件装得上、市场校验器过不去、于是永远上不了架」。2026-10-28 它停在 8 个码（P1a 之前），`qing.outline` 一直上不去就是卡在这里；补到 13 个之后 `qing.snippet` 才能上架。
+4. **`ui.toast` 要 `notify`，漏了会静默失败。** 这是最坏的失败形态：面板能渲染、数据能落盘、命令里的插入逻辑也对，唯独最后一句提示抛 `E_PERMISSION_DENIED`，用户的观感是"点了没反应"。`qing.snippet` 1.0.0 就这样发了出去，详情页错误日志里 7 条拒绝、其余全部正常。**写清单时逐条过 `bridge.ts::REQUIREMENTS`，不要按"我要什么能力"凭意图列。**
 
 ### 2.3 加一个新权限码：6 处同步点
 
@@ -56,7 +57,7 @@ npm run verify:ui-polish         # 15 条 UI 静态审计 + 152 组对比度
 
 两个远端（GitHub `PyTs1n9` / Gitee `PyTs1N9`）的 `main` 必须指向同一个 commit，`git push` 一次推两端。
 
-- `index.json` 顶层是 `schema`（=1）/ `updatedAt` / `plugins[]`；条目字段 `id` / `name` / `description` / `author` / `repo` / `version` / `apiVersion` / `engines.host` / `download` / `sha256` / `permissions` / `updatedAt`
+- `index.json` 顶层是 `schema`（=1）/ `updatedAt` / `plugins[]`；条目字段 `id` / `name` / `description` / `author` / `repo` / `repoGitee` / `version` / `apiVersion` / `engines.host` / `download` / `sha256` / `permissions` / `updatedAt`（`repo` 是 GitHub 地址，`repoGitee` 是同一路径的 Gitee 镜像，详情页分两行显示；缺 `repoGitee` 时只显示一条）
 - 改动后先本地跑 `npm run validate`（零依赖校验器 `scripts/validate-index.mjs`，约 195 次规则检查：字段形态、id/权限白名单、semver、sha256 格式、示例孤儿包、可变引用、BOM…）。CI 跑的是同一条命令，所以「本地过 = CI 过」
 - **`download` 必须钉 commit SHA**（`https://cdn.jsdelivr.net/gh/<owner>/<repo>@<40位SHA>/examples/<file>`）。宿主自己不检查引用是否可变，这条靠市场仓库校验器的 `download.mutable` **警告**兜住；`@main` / 未固定版本的 jsDelivr 地址同样命中，因为包一重打包 sha256 就会失配
 - **重打包 = 同时改 `sha256` 与 URL 里的 SHA**，否则 `E_SHA256_MISMATCH` 拒装（故意 fail closed）
@@ -144,6 +145,8 @@ await build({ entryPoints: ["src/extension.ts"], bundle: true, format: "esm",
 > **两条硬约束**：① 产物**不能有顶层 `import`/`export`**（宿主把正文包进 `self.__qing_main`）；② 不支持多文件包、`require()`（宿主提供 shim，只会抛 `E_REQUIRE_UNSUPPORTED`）、原生模块、wasm——都按安装错误拒绝。
 
 ### 4.4 API 速查
+
+> **新增一个 API 要同时改两处**：`src/plugin/worker-boot.js`（插件真正调用的那个对象）与 `src/plugin/bridge.ts`（宿主的权限表与应答）。两者互不 import，漏掉任何一处都不会编译报错，而是插件拿到 `undefined`、被传输层压成一句没有上下文的 `E_INTERNAL`。`npm run verify:plugin-api` 专门比对这两张表，并检查每个示例插件实际调用的方法都已暴露——加 API 后先跑它。
 
 所有方法都通过 `postMessage` 转发，**每次往返都有 5 秒上限**（见 §4.6）；纯本地注册（`commands.register`、`views.registerTreeDataProvider`、`log`、`on`）不产生往返。
 

@@ -22,6 +22,7 @@
 | `user-faq.md` | 「小青」问答语料，`## Qn｜question` 即分块边界 | 改 AI 检索语料、加用户问答 | 6.0 KB |
 | `online-workspace.md` | Supabase 初始化步骤与工作台部署顺序 | 要摆在线工作台 / 跑 migration 时 | 3.3 KB |
 | `release-notes-titlebar.md` | 顶栏改版的用户侧迁移对照表（旧入口 → 新入口） | 写发布说明、或被问"某个功能去哪了" | 3.6 KB |
+| `team-collaboration-spec.md` | 开发团队协作规范：工作流路由、RACI、交接物格式、DoR/DoD、本仓库专属检查清单、文档与记忆规范 | 接手任何非 trivial 需求前；或要判断"这该走哪条流程"时 | 32.7 KB |
 
 ## 2. 日常开发（决策记录 = 结论真源）
 
@@ -58,6 +59,7 @@
 | `decisions-plugin-system.md` | 插件机制 D1–D7：双轨运行、A 档贡献点、中央索引、手动更新、`apiVersion` | 动插件机制的任何决策 | 6.2 KB |
 | `decisions-canvas-note-tree.md` | 笔记文件树 → 画布结构图：`ref` 引用节点、曲线连线、`hidden`、`canvas:write` 四个方法、幂等语义 | 动画布条目类型 / 连线样式 / 画布插件 API | 13.4 KB |
 | `decisions-plugin-snippet.md` | 片段库插件 D1–D8：只插入不做模板、四个占位符、**无输入 UI 时的交互设计**、权限压到 5 条、删除快照 | 写第二个插件 / 需要"最小权限面"范例 / 改 `examples/qing-snippet` | 5.5 KB |
+| `decisions-announcements.md` | 更新日志/通告栏 D1–D10：远程结构化 JSON（Gitee raw 单源）+ 包内快照兜底、三层降级、版本区间、不做签名 | 动告示牌、`announcements.json`、或想换数据源 | 7.0 KB |
 
 ## 3. 专题（分析与评审）
 

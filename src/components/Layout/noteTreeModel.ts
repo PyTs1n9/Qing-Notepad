@@ -204,6 +204,19 @@ export function collectFolderIds(folders: NoteTreeFolder[], into: string[] = [])
   return into;
 }
 
+/**
+ * Every folder row the explorer can fold while no filter is active: all real
+ * categories plus the virtual uncategorized bucket, which the tree renders even
+ * when it holds no notes.
+ *
+ * Folder-level bulk actions ("expand all" / "collapse all") cover the whole
+ * explorer, so this list deliberately ignores the active search / tag filter:
+ * a filter only hides rows, it never creates or removes a folder.
+ */
+export function collectExplorerFolderIds(categories: NoteCategory[]): string[] {
+  return [...categories.map((category) => category.id), UNCATEGORIZED_CATEGORY_ID];
+}
+
 export function isFolderExpanded(expandedIds: string[] | null, id: string): boolean {
   // `null` means the user never collapsed anything, so everything starts open.
   if (expandedIds === null) return true;

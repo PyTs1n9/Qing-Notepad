@@ -110,7 +110,7 @@ export function CanvasToolbarMenu({
       <button
         ref={triggerRef}
         type="button"
-        className={`inline-flex h-8 flex-shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        className={`canvas-toolbar-trigger inline-flex h-8 flex-shrink-0 items-center justify-center gap-0.5 whitespace-nowrap rounded-md px-2 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
           active
             ? "bg-accent text-on-accent hover:bg-accent-hover"
             : open
@@ -126,8 +126,8 @@ export function CanvasToolbarMenu({
         aria-controls={open ? panelId : undefined}
       >
         {icon}
-        <span>{label}</span>
-        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="canvas-toolbar-menu-label">{label}</span>
+        <ChevronDown size={12} className={`canvas-toolbar-menu-chevron transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && createPortal(
         <MenuCloseContext.Provider value={close}>

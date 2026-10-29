@@ -9,8 +9,9 @@
  * internal manifest, so the two packages behave the same once installed.
  *
  * Only `notes:read` is used, and only through the documented API. Note bodies
- * arrive as plain text — the host strips the editor's HTML before handing them
- * over — so the counter does not have to understand markup.
+ * arrive as Markdown — HTML-era notes are converted, not stripped — so the
+ * counter sees the same text the editor shows, minus the markup characters it
+ * itself ignores.
  *
  * `apiVersion: 1` has no "which note is open" call, so the count covers the
  * whole library ("N notes · M characters") rather than the note in the editor.

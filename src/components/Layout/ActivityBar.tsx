@@ -1,7 +1,8 @@
 import React from "react";
-import { CheckSquare, FileText, Images, PanelLeftClose, PanelLeftOpen, Pin, Puzzle, Settings, Sparkles, Users } from "lucide-react";
+import { CheckSquare, FileText, Images, Network, PanelLeftClose, PanelLeftOpen, Pin, Puzzle, Settings, Users } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { ViewType } from "@/types";
+import XiaoQingMark from "@/components/AI/XiaoQingMark";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAiStore } from "@/stores/aiStore";
 import { countUpdates, usePluginStore } from "@/plugin/store";
@@ -37,6 +38,10 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
   const items: Array<{ view?: ViewType; label: string; icon: React.ReactNode; disabled?: boolean; badge?: number }> = [
     { view: "note", label: t(lang, "notepad"), icon: <FileText size={22} strokeWidth={1.7} /> },
     { view: "todo", label: t(lang, "todo"), icon: <CheckSquare size={22} strokeWidth={1.7} /> },
+    // Order is fixed by docs/decisions-knowledge-graph.md §8.4: the knowledge
+    // base sits between the two "my own content" views and the workspace, so the
+    // rail reads note -> todo -> graph -> workspace -> canvas -> plugins.
+    { view: "graph", label: t(lang, "knowledgeBase"), icon: <Network size={22} strokeWidth={1.7} /> },
     { view: "workspace", label: t(lang, "workspace"), icon: <Users size={22} strokeWidth={1.7} /> },
     { view: "canvas", label: t(lang, "canvas"), icon: <Images size={22} strokeWidth={1.7} /> },
     // Fifth page, not a bottom toggle: the plugin page is a destination like the
@@ -111,14 +116,23 @@ const ActivityBar: React.FC<ActivityBarProps> = ({
           title={t(lang, "aiAssistant")}
           aria-label={t(lang, "aiAssistant")}
           aria-pressed={aiSidebarOpen}
-          className={`relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover hover:text-text-primary ${
+          className={`group relative flex h-10 w-11 items-center justify-center rounded-lg transition-colors hover:bg-bg-hover ${
             aiSidebarOpen ? "text-accent-text" : "text-text-muted"
           }`}
         >
           {/* A toggle is not a page: it gets the same capsule but never joins the
               sliding indicator, otherwise the two would fight over one element. */}
           {aiSidebarOpen && <span className="activity-capsule absolute inset-0 rounded-lg" />}
-          <Sparkles size={20} strokeWidth={1.7} className="relative" />
+          {/* A mark, not a glyph. The other four entries are 22px line icons;
+              小青 is the app's own book disc, and that difference in kind - not
+              just in size - is what keeps it from reading as a sixth page. */}
+          <span
+            className="xq-entry relative inline-flex"
+            data-dim={!aiSidebarOpen}
+            data-open={aiSidebarOpen}
+          >
+            <XiaoQingMark size={24} />
+          </span>
         </button>
         <button
           type="button"

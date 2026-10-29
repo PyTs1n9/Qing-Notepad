@@ -15,6 +15,7 @@ import {
   LogIn,
   LogOut,
   Mail,
+  Megaphone,
   Palette,
   Pencil,
   Puzzle,
@@ -181,6 +182,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setGlassSaturateBg,
     pluginsDisabled,
     setPluginsDisabled,
+    announcementsEnabled,
+    setAnnouncementsEnabled,
   } = useSettingsStore();
   const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
   const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
@@ -955,6 +958,46 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                       <span className="truncate">{t(lang, "openImageCache")}</span>
                       <FolderOpen size={14} className="flex-shrink-0 text-accent-text" />
                     </button>
+                  </div>
+
+                  {/* Sits with the other app-level switches rather than in a
+                      section of its own: it is a network permission, not a view
+                      or document setting, and `basic` is the only section that
+                      holds those. */}
+                  <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+                        <Megaphone size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-text-primary">
+                          {t(lang, "settingsAnnouncements")}
+                        </span>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-text-muted">
+                          {t(lang, "settingsAnnouncementsHint")}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-start sm:justify-end">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={announcementsEnabled}
+                        aria-label={t(lang, "settingsAnnouncements")}
+                        onClick={() => setAnnouncementsEnabled(!announcementsEnabled)}
+                        className={`relative h-5 w-9 flex-shrink-0 rounded-full transition-colors cursor-pointer ${
+                          announcementsEnabled ? "bg-accent" : "bg-bg-active"
+                        }`}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-[left] duration-150 ${
+                            announcementsEnabled ? "left-[1.125rem]" : "left-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

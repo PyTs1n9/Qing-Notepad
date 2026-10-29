@@ -326,6 +326,16 @@ export function describeInstallError(error: unknown): string {
       return t(current, "pluginHostIncompatible");
     case "E_API_VERSION":
       return t(current, "pluginApiIncompatible");
+    case "E_NETWORK":
+      // The line the user actually hits when a CDN is blocked: say what was
+      // tried, not just "network error", or the retry looks like a fresh bug.
+      return tWithParams(current, "pluginInstallNetwork", { detail });
+    case "E_PACKAGE_GONE":
+      // "Check your network" is useless advice here: the index points at a file
+      // the CDN does not have, and no amount of retrying changes that.
+      return tWithParams(current, "pluginInstallPackageGone", { detail });
+    case "E_IO":
+      return tWithParams(current, "pluginInstallIo", { detail });
     case "E_COMMAND_CONFLICT":
       return tWithParams(current, "pluginCommandConflict", { ids: pluginError.message });
     case "E_NATIVE_MODULE":

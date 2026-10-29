@@ -331,7 +331,9 @@ function readCanvasClipboard(clipboardData: DataTransfer | null): { raw: string;
   }
 }
 
-const toolbarButton = "inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-md px-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
+/* `shrink-0` because the row clips instead of scrolling: a squeezed icon button
+   would collapse to its padding and lose the glyph entirely. */
+const toolbarButton = "inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
 
 export default function CanvasView() {
   const lang = useSettingsStore((state) => state.lang);
@@ -360,7 +362,7 @@ export default function CanvasView() {
   } = useCanvasStore();
   const svgRef = useRef<SVGSVGElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
-  const lastTextClickRef = useRef<{
+  const lastNodeClickRef = useRef<{
     id: string;
     time: number;
     clientX: number;
@@ -1342,7 +1344,12 @@ export default function CanvasView() {
       return;
     }
     if (tool !== "select") return;
-    if (item.type !== "text" && item.type !== "shape") lastTextClickRef.current = null;
+    // Only these three kinds carry a double-click gesture: text and shape open
+    // the editor, ref opens the note. Anything else resets the click memory so
+    // a stray click on an image cannot pair with a later one on a text node.
+    if (item.type !== "text" && item.type !== "shape" && item.type !== "ref") {
+      lastNodeClickRef.current = null;
+    }
     if (event.shiftKey) {
       toggleSelectedId(item.id);
       if (selectedIds.includes(item.id)) return;
@@ -1432,7 +1439,7 @@ export default function CanvasView() {
       );
       if (distance < DRAG_START_THRESHOLD_PX) return;
       interaction.moved = true;
-      lastTextClickRef.current = null;
+      lastNodeClickRef.current = null;
     }
     const point = getWorldPoint(event.clientX, event.clientY);
     if (interaction.kind === "drag") {
@@ -1461,6 +1468,18 @@ export default function CanvasView() {
       interaction.updates = { [interaction.id]: { width, height } };
     }
     setDraftItems((current) => ({ ...current, ...interaction.updates }));
+  };
+
+  /**
+   * A reference node is read-only: opening it hands the note id back to the
+   * shell, which owns view routing. A folder or root node has nothing to open,
+   * so it stays inert.
+   */
+  const openRefNode = (item: CanvasRefItem) => {
+    if (item.ref.kind !== "note") return;
+    useNoteStore.getState().setActiveNoteId(item.ref.id);
+    useTabStore.getState().openTab(item.ref.id, { preview: false });
+    requestOpenNoteFromCanvas(item.ref.id);
   };
 
   const handlePointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -1502,6 +1521,7 @@ export default function CanvasView() {
       return;
     }
     let textItemToEdit: CanvasRichTextItem | null = null;
+    let refToOpen: CanvasRefItem | null = null;
     if (interaction.kind !== "pan" && Object.keys(interaction.updates).length > 0) {
       updateItems(interaction.updates);
       setDraftItems((current) => {
@@ -1511,12 +1531,17 @@ export default function CanvasView() {
       });
     }
     if (interaction.kind === "drag" && !interaction.moved) {
-      const item = board.items.find((candidate): candidate is CanvasRichTextItem => (
-        candidate.id === interaction.id && (candidate.type === "text" || candidate.type === "shape")
+      // A reference node opens on the same gesture a text node uses to start
+      // editing. React's `onDoubleClick` is not an option here: the canvas runs
+      // its own double-click detection because pointer capture would swallow
+      // the click sequence the DOM needs to synthesise one.
+      const item = board.items.find((candidate) => (
+        candidate.id === interaction.id
+        && (candidate.type === "text" || candidate.type === "shape" || candidate.type === "ref")
       ));
       if (item) {
         const now = performance.now();
-        const previous = lastTextClickRef.current;
+        const previous = lastNodeClickRef.current;
         const closeToPrevious = previous
           ? Math.hypot(event.clientX - previous.clientX, event.clientY - previous.clientY)
             <= TEXT_DOUBLE_CLICK_DISTANCE_PX
@@ -1526,10 +1551,11 @@ export default function CanvasView() {
           && now - previous.time <= TEXT_DOUBLE_CLICK_INTERVAL_MS
           && closeToPrevious
         ) {
-          textItemToEdit = item;
-          lastTextClickRef.current = null;
+          if (item.type === "ref") refToOpen = item;
+          else if (item.type === "text" || item.type === "shape") textItemToEdit = item;
+          lastNodeClickRef.current = null;
         } else {
-          lastTextClickRef.current = {
+          lastNodeClickRef.current = {
             id: item.id,
             time: now,
             clientX: event.clientX,
@@ -1538,18 +1564,19 @@ export default function CanvasView() {
         }
       }
     } else if (interaction.kind !== "pan") {
-      lastTextClickRef.current = null;
+      lastNodeClickRef.current = null;
     }
     setAlignmentGuides({});
     interactionRef.current = null;
     if (svgRef.current?.hasPointerCapture(event.pointerId)) svgRef.current.releasePointerCapture(event.pointerId);
     if (textItemToEdit) startEditingText(textItemToEdit);
+    if (refToOpen) openRefNode(refToOpen);
   };
 
   const handleRootPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     const point = getWorldPoint(event.clientX, event.clientY);
     setLastPointer(point);
-    lastTextClickRef.current = null;
+    lastNodeClickRef.current = null;
     if (editingTextId) finishEditingText();
     if (event.button === 1 || tool === "pan" || spaceHeldRef.current) {
       startPan(event);
@@ -1652,18 +1679,6 @@ export default function CanvasView() {
     );
   };
 
-  /**
-   * Reference nodes are read-only: double-clicking hands the note id back to
-   * the shell, which owns view routing. A folder or root node has nothing to
-   * open, so it stays inert.
-   */
-  const openRefNode = (item: CanvasRefItem) => {
-    if (item.ref.kind !== "note") return;
-    useNoteStore.getState().setActiveNoteId(item.ref.id);
-    useTabStore.getState().openTab(item.ref.id, { preview: false });
-    requestOpenNoteFromCanvas(item.ref.id);
-  };
-
   const renderItem = (rawItem: CanvasItem) => {
     const item = getDisplayItem(rawItem);
     if (item.hidden) return null;
@@ -1734,7 +1749,7 @@ export default function CanvasView() {
       const body = item.summary || item.excerpt || "";
       const isNote = item.ref.kind === "note";
       return (
-        <g key={item.id} transform={transform} onPointerDown={(event) => startItemDrag(event, item)} onDoubleClick={() => openRefNode(item)}>
+        <g key={item.id} transform={transform} onPointerDown={(event) => startItemDrag(event, item)}>
           <rect width={item.width} height={item.height} rx={10} fill="var(--color-bg-secondary)" stroke="var(--color-border)" strokeWidth={1} />
           <rect width={3} height={Math.max(1, item.height - 8)} y={4} rx={1.5} fill="var(--color-accent)" opacity={isNote ? 0.35 : 1} />
           <foreignObject x={12} y={10} width={Math.max(1, item.width - 24)} height={Math.max(1, item.height - 20)} pointerEvents="none">
@@ -1801,12 +1816,12 @@ export default function CanvasView() {
 
   return (
     <section className="canvas-surface flex min-h-0 flex-1 flex-col bg-bg-primary">
-      <div className="flex h-11 flex-shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-bg-secondary px-3">
-        <div className="mr-2 flex items-center gap-2 text-sm font-semibold text-text-primary">
-          <ImagePlus size={16} className="text-accent-text" />
-          <span>{activeCanvas?.name || t(lang, "canvas")}</span>
+      <div className="canvas-toolbar flex h-11 flex-shrink-0 items-center gap-1 overflow-hidden border-b border-border bg-bg-secondary px-3" data-lang={lang}>
+        <div className="mr-1.5 flex min-w-0 shrink items-center gap-2 text-sm font-semibold text-text-primary">
+          <ImagePlus size={16} className="shrink-0 text-accent-text" />
+          <span className="canvas-toolbar-title-label truncate">{activeCanvas?.name || t(lang, "canvas")}</span>
         </div>
-        <div className="h-5 w-px bg-border" />
+        <div className="h-5 w-px shrink-0 bg-border" />
         <button type="button" className={`${toolbarButton} ${tool === "select" ? "bg-accent text-on-accent hover:bg-accent-hover hover:text-on-accent" : ""}`} onClick={() => setTool("select")} title={toolTitle(t(lang, "canvasSelect"))} aria-label={t(lang, "canvasSelect")}>
           <MousePointer2 size={15} />
         </button>
@@ -1975,19 +1990,19 @@ export default function CanvasView() {
             </div>
           </CanvasToolbarMenu>
         )}
-        <div className="mx-1 h-5 w-px bg-border" />
+        <div className="mx-0.5 h-5 w-px shrink-0 bg-border" />
         <button type="button" className={toolbarButton} onClick={undo} disabled={!hasUndo} title={t(lang, "undo")}><Undo2 size={15} /></button>
         <button type="button" className={toolbarButton} onClick={redo} disabled={!hasRedo} title={t(lang, "redo")}><Redo2 size={15} /></button>
-        <span className="inline-flex h-8 min-w-12 items-center justify-center rounded-md px-2 text-xs tabular-nums text-text-secondary" title={zoomLabel}>{zoomLabel}</span>
+        <span className="canvas-toolbar-zoom inline-flex h-8 min-w-10 items-center justify-center rounded-md px-1.5 text-xs tabular-nums text-text-secondary" title={zoomLabel}>{zoomLabel}</span>
         <div className="flex-1" />
-        <span className="mr-1 hidden whitespace-nowrap text-xs text-text-muted sm:inline">{saveState === "saving" ? t(lang, "canvasSaving") : <><Check size={12} className="mr-1 inline text-success" />{t(lang, "canvasSaved")}</>}</span>
+        <span className="canvas-toolbar-status mr-1 flex items-center whitespace-nowrap text-xs text-text-muted">{saveState === "saving" ? t(lang, "canvasSaving") : <><Check size={12} className="mr-1 inline shrink-0 text-success" />{t(lang, "canvasSaved")}</>}</span>
         <button type="button" className={toolbarButton} onClick={() => void handleOpenCanvasTile()} disabled={!activeCanvasId} title={t(lang, "canvasOpenTile")}>
           <Pin size={15} />
-          <span className="hidden xl:inline">{t(lang, "canvasOpenTile")}</span>
+          <span className="canvas-toolbar-action-label">{t(lang, "canvasOpenTile")}</span>
         </button>
         <button type="button" className={toolbarButton} onClick={() => void handleExport()} disabled={board.items.length === 0 || exporting} title={t(lang, "canvasExport")} aria-busy={exporting}>
           <Download size={15} />
-          <span className="hidden sm:inline">{exporting ? t(lang, "canvasExporting") : t(lang, "canvasExport")}</span>
+          <span className="canvas-toolbar-action-label">{exporting ? t(lang, "canvasExporting") : t(lang, "canvasExport")}</span>
         </button>
       </div>
       <div className="app-work-area-overlay relative min-h-0 flex-1 overflow-hidden">

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-28T12:00:00Z",
+  "items": [
+    {
+      "id": "2026-10-28-v0-7-3",
+      "kind": "update",
+      "publishedAt": "2026-10-28T09:00:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.7.3：磨砂修复与对比度整改",
+        "en": "v0.7.3: glass fix and contrast pass"
+      },
+      "body": {
+        "zh": "修复 v0.7.2 引入的磨砂回归：安装包里模糊完全不生效的问题已解决，模糊强度与饱和度恢复正常。没有背景图时磨砂滑块也能看出变化，主卡不透明度重新按侧栏派生。\n\n全站正文对比度整改完成，四个主题下正文与弱化文字均达到 4.5:1。AI 会话改为按接口隔离，切换接口不再串会话。",
+        "en": "Fixed the frosted-glass regression from v0.7.2: blur works again in installed builds, with strength and saturation back to normal. The glass sliders now visibly change without a wallpaper, because the main card's opacity is derived from the sidebar again.\n\nBody-text contrast was reworked across all four themes, so body and muted text now clear 4.5:1. AI conversations are isolated per endpoint, so switching endpoints no longer mixes sessions."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    }
+  ]
+}

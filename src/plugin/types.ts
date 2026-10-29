@@ -153,7 +153,10 @@ export interface PluginIndexEntry {
   name: string;
   description: string;
   author: string | null;
+  /** GitHub source URL. */
   repo: string | null;
+  /** The same source directory on Gitee; absent on entries that predate it. */
+  repoGitee: string | null;
   version: string;
   apiVersion: number | null;
   engines: { host: string } | null;
