@@ -2950,7 +2950,7 @@ dependencies = [
 
 [[package]]
 name = "qing-notepad"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "encoding_rs",
  "notify",
