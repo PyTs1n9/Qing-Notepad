@@ -1,0 +1,11 @@
+{
+  "name": "qing-fragment-wall",
+  "private": true,
+  "type": "module",
+  "description": "青记 · 碎片墙 — 零构建的网页小工具，随手记碎片，一键整理成待办清单",
+  "scripts": {
+    "test": "node --test tidy.test.js",
+    "serve": "node serve.mjs",
+    "smoke": "node smoke.mjs"
+  }
+}
