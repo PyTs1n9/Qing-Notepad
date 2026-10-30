@@ -256,12 +256,113 @@ try {
   await send("Runtime.evaluate", { expression: "document.getElementById('panel-close').click()" });
   await sleep(320);
 
+  const notesScenario = `(async () => {
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const out = {};
+    const click = (selector) => document.querySelector(selector).click();
+
+    click('[data-surface="notes"]');
+    await sleep(120);
+    out.notesVisible = !document.getElementById("notes-view").hidden;
+    out.wallHidden = document.getElementById("wall-view").hidden;
+    out.listCount = document.querySelectorAll(".note-item").length;
+    out.firstTitle = document.getElementById("note-title").textContent;
+    out.previewHeading = document.querySelector("#note-preview h1")?.textContent ?? "";
+    out.previewCode = Boolean(document.querySelector("#note-preview pre code"));
+    out.previewTasks = document.querySelectorAll("#note-preview li.is-task").length;
+
+    click('.view-button[data-view="preview"]');
+    await sleep(80);
+    out.editorHiddenInPreview = document.getElementById("note-editor").offsetParent === null;
+    click('.view-button[data-view="split"]');
+    await sleep(80);
+    out.splitShowsBoth =
+      document.getElementById("note-editor").offsetParent !== null &&
+      document.getElementById("note-preview").offsetParent !== null;
+
+    click("#new-note-button");
+    await sleep(120);
+    out.afterCreate = document.querySelectorAll(".note-item").length;
+    out.newTitle = document.getElementById("note-title").textContent;
+
+    const editor = document.getElementById("note-editor");
+    editor.value = "# 测试笔记\\n\\n- 一条要点\\n- [ ] 一件待办\\n";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(460);
+    const store = JSON.parse(localStorage.getItem("qing-notes:v1") || "{}");
+    out.persisted = Boolean(store.notes?.some((note) => note.body.includes("一条要点")));
+    out.titleAfterTyping = document.getElementById("note-title").textContent;
+
+    const search = document.getElementById("search");
+    search.value = "卡片";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(100);
+    out.searchCount = document.querySelectorAll(".note-item").length;
+    out.searchHit = document.querySelector(".note-item-title")?.textContent ?? "";
+    search.value = "";
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(80);
+
+    click('[data-surface="wall"]');
+    await sleep(80);
+    click("#tidy-button");
+    await sleep(140);
+    click("#panel-save-note");
+    await sleep(160);
+    out.surfaceAfterSave = !document.getElementById("notes-view").hidden;
+    out.afterSaveNote = document.querySelectorAll(".note-item").length;
+    out.savedNoteTitle = document.getElementById("note-title").textContent;
+    return out;
+  })()`;
+
+  const notesRun = await send("Runtime.evaluate", {
+    expression: notesScenario,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  const notes = notesRun.result?.value ?? {};
+
+  assert("切到笔记面", notes.notesVisible === true && notes.wallHidden === true);
+  assert("示例笔记已就位", notes.listCount === 2, `${notes.listCount} 篇`);
+  assert("笔记标题取首行", notes.firstTitle === "周会记录", String(notes.firstTitle));
+  assert("预览渲染标题与代码块", notes.previewHeading === "周会记录" && notes.previewCode === true);
+  assert("任务列表渲染成勾选框", notes.previewTasks === 2, `${notes.previewTasks} 条`);
+  assert("预览视图隐藏编辑器", notes.editorHiddenInPreview === true);
+  assert("分屏同时显示两栏", notes.splitShowsBoth === true);
+  assert("新建笔记进入列表", notes.afterCreate === 3 && notes.newTitle === "新笔记", `${notes.afterCreate} 篇`);
+  assert("输入 320ms 后落盘", notes.persisted === true);
+  assert("标题跟随首行", notes.titleAfterTyping === "测试笔记", String(notes.titleAfterTyping));
+  assert("笔记搜索命中", notes.searchCount === 1 && String(notes.searchHit).includes("卡片"), `${notes.searchCount} 篇`);
+  assert("整理结果存为笔记", notes.surfaceAfterSave === true && notes.afterSaveNote === 4, `${notes.afterSaveNote} 篇`);
+  assert("存下的笔记可取标题", String(notes.savedNoteTitle).startsWith("碎片整理"), String(notes.savedNoteTitle));
+
+  await shoot("notes");
+
   await send("Emulation.setDeviceMetricsOverride", {
     width: 390,
     height: 844,
     deviceScaleFactor: 2,
     mobile: true,
   });
+  await sleep(240);
+  await shoot("notes-mobile");
+
+  await send("Runtime.evaluate", { expression: 'document.getElementById("note-back").click()' });
+  await sleep(240);
+  const listMode = await send("Runtime.evaluate", {
+    expression:
+      '({ mainHidden: getComputedStyle(document.querySelector(".pane-main")).display === "none", explorerShown: getComputedStyle(document.querySelector(".explorer")).display !== "none", items: document.querySelectorAll(".note-item").length })',
+    returnByValue: true,
+  });
+  const mobileList = listMode.result?.value ?? {};
+  assert(
+    "手机端返回笔记列表",
+    mobileList.mainHidden === true && mobileList.explorerShown === true && mobileList.items === 4,
+    JSON.stringify(mobileList),
+  );
+  await shoot("notes-list-mobile");
+
+  await send("Runtime.evaluate", { expression: 'document.querySelector(\'[data-surface="wall"]\').click()' });
   await sleep(240);
   await shoot("mobile");
 

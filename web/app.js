@@ -1,13 +1,16 @@
 /**
  * 碎片墙 — the browser entry point.
  *
- * Everything the reviewer touches lives here: the composer, the wall, filters
- * and the "一键整理" drawer. Storage is localStorage, so the whole tool works
- * offline and never leaves the browser; `tidy.js` owns the text pipeline.
+ * Two surfaces share one page: the wall catches fragments, the notebook lets
+ * them grow into Markdown notes. Storage is localStorage, so everything works
+ * offline and never leaves the browser; `tidy.js` and `md.js` own the text
+ * pipelines and are unit-tested on their own.
  */
+import { deriveTitle, parseInline, parseMarkdown } from "./md.js";
 import { extractTags, matchDue, tidy } from "./tidy.js";
 
 const STORAGE_KEY = "qing-fragment-wall:v1";
+const NOTES_KEY = "qing-notes:v1";
 const GUIDE_KEY = "qing-fragment-wall:guide-seen";
 
 const ICONS = {
@@ -24,6 +27,10 @@ const els = {
   save: document.getElementById("composer-save"),
   search: document.getElementById("search"),
   tidyButton: document.getElementById("tidy-button"),
+  newNoteButton: document.getElementById("new-note-button"),
+  surfaceButtons: Array.from(document.querySelectorAll("[data-surface]")),
+  wallView: document.getElementById("wall-view"),
+  notesView: document.getElementById("notes-view"),
   guide: document.getElementById("guide"),
   guideClose: document.getElementById("guide-close"),
   tabs: Array.from(document.querySelectorAll("[data-status]")),
@@ -33,24 +40,53 @@ const els = {
   wall: document.getElementById("wall"),
   empty: document.getElementById("empty"),
   emptyFocus: document.getElementById("empty-focus"),
-  scrim: document.getElementById("scrim"),
+  explorerWall: document.getElementById("explorer-wall"),
+  explorerNotes: document.getElementById("explorer-notes"),
+  explorerNewNote: document.getElementById("explorer-new-note"),
+  titlebarView: document.getElementById("titlebar-view"),
+  folderList: document.getElementById("folder-list"),
+  folderAdd: document.getElementById("folder-add"),
+  folderForm: document.getElementById("folder-form"),
+  folderName: document.getElementById("folder-name"),
+  noteList: document.getElementById("note-list"),
+  notesEmptyHint: document.getElementById("notes-empty-hint"),
+  noteHeadEl: document.querySelector(".note-head"),
+  noteBodyEl: document.getElementById("note-body"),
+  noteBack: document.getElementById("note-back"),
+  noteTitle: document.getElementById("note-title"),
+  noteStatus: document.getElementById("note-status"),
+  noteEditor: document.getElementById("note-editor"),
+  notePreview: document.getElementById("note-preview"),
+  notePlaceholder: document.getElementById("note-placeholder"),
+  noteFolder: document.getElementById("note-folder"),
+  noteDelete: document.getElementById("note-delete"),
+  /* `.view-button` only: `#note-body` also carries data-view for the layout. */
+  viewButtons: Array.from(document.querySelectorAll(".view-button")),
   panel: document.getElementById("panel"),
   panelSummary: document.getElementById("panel-summary"),
   panelMarkdown: document.getElementById("panel-markdown"),
   panelClose: document.getElementById("panel-close"),
   panelCopy: document.getElementById("panel-copy"),
+  panelSaveNote: document.getElementById("panel-save-note"),
   panelDownload: document.getElementById("panel-download"),
   panelClear: document.getElementById("panel-clear"),
   toast: document.getElementById("toast"),
 };
 
 const state = {
+  surface: "wall",
   items: [],
   status: "open",
   tag: null,
   query: "",
   sort: "smart",
   editingId: null,
+  notes: [],
+  folders: [],
+  activeNoteId: null,
+  folderFilter: null,
+  noteQuery: "",
+  noteView: "edit",
 };
 
 /** Ids already painted once, so the entry animation only plays for new cards. */
@@ -164,6 +200,99 @@ function loadItems() {
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+  } catch {
+    if (!storageBroken) {
+      storageBroken = true;
+      showToast("浏览器不允许写入本地存储，本次修改只在当前页面有效");
+    }
+  }
+}
+
+/* ------------------------------------------------------------ notes storage */
+
+function seedNotes() {
+  const now = Date.now();
+  const work = { id: createId(), name: "工作" };
+  const reading = { id: createId(), name: "读书" };
+  return {
+    folders: [work, reading],
+    notes: [
+      {
+        id: createId(),
+        folderId: work.id,
+        body: [
+          "# 周会记录",
+          "",
+          "## 本周进展",
+          "",
+          "- 碎片墙的整理算法改成按标签分组",
+          "- [x] 把 `tidy.js` 拆成纯函数，方便单测",
+          "- [ ] 下周补上笔记的搜索与文件夹",
+          "",
+          "> 先保证「打开就能用」，再谈花活。",
+          "",
+          "```ts",
+          "export function tidy(fragments: Fragment[], now = new Date()) { … }",
+          "```",
+        ].join("\n"),
+        createdAt: now - 1000 * 60 * 60 * 20,
+        updatedAt: now - 1000 * 60 * 34,
+      },
+      {
+        id: createId(),
+        folderId: reading.id,
+        body: [
+          "# 《卡片笔记写作法》摘记",
+          "",
+          "**核心**：不要给笔记分类，给笔记建立联系。",
+          "",
+          "1. 闪念笔记 → 永久笔记",
+          "2. 一条只写一个想法",
+          "3. 用自己的话重写",
+          "",
+          "参考 [Zettelkasten](https://zettelkasten.de/introduction/)。",
+        ].join("\n"),
+        createdAt: now - 1000 * 60 * 60 * 50,
+        updatedAt: now - 1000 * 60 * 60 * 5,
+      },
+    ],
+  };
+}
+
+function toNote(raw) {
+  return {
+    id: typeof raw.id === "string" && raw.id ? raw.id : createId(),
+    folderId: typeof raw.folderId === "string" ? raw.folderId : null,
+    body: String(raw.body ?? ""),
+    createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now(),
+  };
+}
+
+function loadNotesStore() {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    if (raw === null) return { ...seedNotes(), seeded: true };
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return { folders: [], notes: [], seeded: false };
+    const folders = Array.isArray(parsed.folders)
+      ? parsed.folders
+          .filter((entry) => entry && typeof entry.name === "string")
+          .map((entry) => ({ id: typeof entry.id === "string" && entry.id ? entry.id : createId(), name: entry.name }))
+      : [];
+    const notes = Array.isArray(parsed.notes)
+      ? parsed.notes.filter((entry) => entry && typeof entry.body === "string").map(toNote)
+      : [];
+    return { folders, notes, seeded: false };
+  } catch {
+    storageBroken = true;
+    return { folders: [], notes: [], seeded: false };
+  }
+}
+
+function saveNotes() {
+  try {
+    localStorage.setItem(NOTES_KEY, JSON.stringify({ folders: state.folders, notes: state.notes }));
   } catch {
     if (!storageBroken) {
       storageBroken = true;
@@ -464,6 +593,391 @@ function clearFilters() {
   render();
 }
 
+/* ------------------------------------------------------------------- notes */
+
+let noteEditorId = null;
+let noteSaveTimer = 0;
+let noteSavePending = false;
+
+function activeNote() {
+  return state.notes.find((note) => note.id === state.activeNoteId) ?? null;
+}
+
+function folderName(id) {
+  return state.folders.find((folder) => folder.id === id)?.name ?? "未分类";
+}
+
+function filteredNotes() {
+  const query = state.noteQuery.trim().toLowerCase();
+  return state.notes
+    .filter((note) => {
+      if (state.folderFilter && note.folderId !== state.folderFilter) return false;
+      if (!query) return true;
+      return `${deriveTitle(note.body)}\n${note.body}`.toLowerCase().includes(query);
+    })
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function renderNotes() {
+  renderFolders();
+  renderNoteList();
+  renderNotePane();
+}
+
+function renderFolders() {
+  els.folderList.textContent = "";
+  const chips = [{ id: null, name: "全部", count: state.notes.length }].concat(
+    state.folders.map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      count: state.notes.filter((note) => note.folderId === folder.id).length,
+    })),
+  );
+
+  for (const chip of chips) {
+    const active = state.folderFilter === chip.id;
+    els.folderList.append(
+      el(
+        "button",
+        {
+          class: `folder${active ? " is-active" : ""}`,
+          type: "button",
+          "aria-pressed": String(active),
+          onclick: () => {
+            state.folderFilter = chip.id;
+            renderNotes();
+          },
+        },
+        `${chip.name}`,
+        el("span", { text: String(chip.count) }),
+      ),
+    );
+  }
+}
+
+function renderNoteList() {
+  const notes = filteredNotes();
+  els.noteList.textContent = "";
+
+  for (const note of notes) {
+    els.noteList.append(
+      el(
+        "button",
+        {
+          class: `note-item${note.id === state.activeNoteId ? " is-active" : ""}`,
+          type: "button",
+          "aria-current": note.id === state.activeNoteId ? "true" : "false",
+          onclick: () => selectNote(note.id),
+        },
+        el("span", { class: "note-item-title", text: deriveTitle(note.body) }),
+        el("span", {
+          class: "note-item-meta",
+          text: `${timeLabel(note.updatedAt)} · ${folderName(note.folderId)}`,
+        }),
+      ),
+    );
+  }
+
+  const filtered = Boolean(state.noteQuery.trim() || state.folderFilter);
+  els.notesEmptyHint.hidden = notes.length > 0;
+  if (!notes.length) {
+    els.notesEmptyHint.textContent = filtered
+      ? "这个范围里没有笔记，换个文件夹或关键词试试。"
+      : "还没有笔记。点右上角「新建笔记」，或者把整理结果存成笔记。";
+  }
+
+  if (!notes.length) {
+    state.activeNoteId = null;
+  } else if (!notes.some((note) => note.id === state.activeNoteId)) {
+    state.activeNoteId = notes[0].id;
+  }
+}
+
+/* ---------------------------------------------------- markdown → DOM nodes */
+
+function inlineNodes(text) {
+  return parseInline(text).map((token) => {
+    switch (token.type) {
+      case "strong":
+        return el("strong", {}, ...inlineNodes(token.text));
+      case "em":
+        return el("em", {}, ...inlineNodes(token.text));
+      case "code":
+        return el("code", { text: token.text });
+      case "link":
+        return el(
+          "a",
+          { href: token.href, target: "_blank", rel: "noopener noreferrer" },
+          ...inlineNodes(token.text),
+        );
+      default:
+        return document.createTextNode(token.text);
+    }
+  });
+}
+
+function withBreaks(text) {
+  const nodes = [];
+  String(text ?? "")
+    .split("\n")
+    .forEach((line, index) => {
+      if (index > 0) nodes.push(document.createElement("br"));
+      nodes.push(...inlineNodes(line));
+    });
+  return nodes;
+}
+
+function blockNode(block) {
+  switch (block.type) {
+    case "heading":
+      return el(`h${Math.min(block.level, 4)}`, {}, ...inlineNodes(block.text));
+    case "paragraph":
+      return el("p", {}, ...withBreaks(block.text));
+    case "list": {
+      const list = el(block.ordered ? "ol" : "ul", {});
+      for (const item of block.items) {
+        const li = el("li", {});
+        if (item.checked === null) {
+          li.append(...withBreaks(item.text));
+        } else {
+          li.className = `is-task${item.checked ? " is-done" : ""}`;
+          li.append(
+            el("span", { class: "task-box", text: item.checked ? "☑" : "☐" }),
+            el("span", {}, ...withBreaks(item.text)),
+          );
+        }
+        list.append(li);
+      }
+      return list;
+    }
+    case "code":
+      return el("pre", {}, el("code", { text: block.code }));
+    case "quote":
+      return el("blockquote", {}, ...withBreaks(block.text));
+    case "hr":
+      return el("hr", {});
+    default:
+      return el("p", {});
+  }
+}
+
+function renderNotePreview(body) {
+  els.notePreview.textContent = "";
+  for (const block of parseMarkdown(body)) els.notePreview.append(blockNode(block));
+}
+
+function noteStatusText(note) {
+  return `已保存 · ${timeLabel(note.updatedAt)}`;
+}
+
+function renderNotePane() {
+  const note = activeNote();
+  const hasNote = Boolean(note);
+
+  els.noteHeadEl.hidden = !hasNote;
+  els.noteBodyEl.hidden = !hasNote;
+  els.notePlaceholder.hidden = hasNote;
+
+  if (!note) {
+    els.noteTitle.textContent = "还没有打开笔记";
+    els.noteStatus.textContent = "";
+    els.noteEditor.value = "";
+    els.notePreview.textContent = "";
+    noteEditorId = null;
+    return;
+  }
+
+  els.noteTitle.textContent = deriveTitle(note.body);
+  els.noteStatus.textContent = noteStatusText(note);
+
+  if (noteEditorId !== note.id) {
+    els.noteEditor.value = note.body;
+    noteEditorId = note.id;
+  }
+  renderNotePreview(note.body);
+
+  els.noteFolder.textContent = "";
+  els.noteFolder.append(el("option", { value: "", text: "未分类" }));
+  for (const folder of state.folders) {
+    els.noteFolder.append(el("option", { value: folder.id, text: folder.name }));
+  }
+  els.noteFolder.value = note.folderId ?? "";
+}
+
+function setNoteView(view) {
+  state.noteView = view;
+  els.noteBodyEl.dataset.view = view;
+  for (const button of els.viewButtons) {
+    const active = button.dataset.view === view;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+}
+
+function scheduleNoteSave() {
+  const note = activeNote();
+  if (!note) return;
+
+  note.body = els.noteEditor.value;
+  note.updatedAt = Date.now();
+  noteSavePending = true;
+  els.noteStatus.textContent = "正在保存…";
+
+  clearTimeout(noteSaveTimer);
+  noteSaveTimer = window.setTimeout(() => {
+    noteSavePending = false;
+    saveNotes();
+    els.noteStatus.textContent = noteStatusText(note);
+    els.noteTitle.textContent = deriveTitle(note.body);
+    renderNoteList();
+    renderNotePreview(note.body);
+  }, 320);
+}
+
+function flushNoteSave() {
+  if (!noteSavePending) return;
+  clearTimeout(noteSaveTimer);
+  noteSavePending = false;
+  saveNotes();
+}
+
+function setNoteMode(mode) {
+  document.body.dataset.noteMode = mode;
+}
+
+function selectNote(id) {
+  flushNoteSave();
+  state.activeNoteId = id;
+  setNoteMode("read");
+  renderNotePane();
+  renderNoteList();
+}
+
+function createNote() {
+  flushNoteSave();
+  const now = Date.now();
+  const note = {
+    id: createId(),
+    folderId: state.folderFilter,
+    body: "# 新笔记\n\n",
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.notes.unshift(note);
+  state.activeNoteId = note.id;
+  state.noteQuery = "";
+  els.search.value = "";
+  saveNotes();
+
+  if (state.surface !== "notes") setSurface("notes");
+  setNoteMode("read");
+  renderNotes();
+
+  els.noteEditor.focus();
+  els.noteEditor.setSelectionRange(note.body.length, note.body.length);
+  showToast("新笔记已建好，直接写就行");
+}
+
+function deleteNote() {
+  const note = activeNote();
+  if (!note) return;
+  const backup = state.notes.map((entry) => ({ ...entry }));
+  state.notes = state.notes.filter((entry) => entry.id !== note.id);
+  state.activeNoteId = null;
+  noteEditorId = null;
+  saveNotes();
+  renderNotes();
+  showToast("已删除这篇笔记", {
+    label: "撤销",
+    run: () => {
+      state.notes = backup;
+      state.activeNoteId = note.id;
+      saveNotes();
+      renderNotes();
+    },
+  });
+}
+
+function assignFolder(folderId) {
+  const note = activeNote();
+  if (!note) return;
+  note.folderId = folderId || null;
+  note.updatedAt = Date.now();
+  saveNotes();
+  renderNoteList();
+  showToast(`已移到「${folderName(note.folderId)}」`);
+}
+
+function commitFolder(event) {
+  event.preventDefault();
+  const name = els.folderName.value.trim().slice(0, 12);
+  els.folderForm.hidden = true;
+  els.folderName.value = "";
+  if (!name) return;
+  state.folders.push({ id: createId(), name });
+  saveNotes();
+  renderNotes();
+  showToast(`已新建文件夹「${name}」`);
+}
+
+/* ------------------------------------------------------------- surface swap */
+
+function setSurface(surface) {
+  flushNoteSave();
+  state.surface = surface;
+  const isNotes = surface === "notes";
+
+  els.wallView.hidden = isNotes;
+  els.notesView.hidden = !isNotes;
+  els.tidyButton.hidden = isNotes;
+  els.newNoteButton.hidden = !isNotes;
+  els.explorerWall.hidden = isNotes;
+  els.explorerNotes.hidden = !isNotes;
+  /* The folder form lives in the notes explorer, so its trigger goes with it. */
+  els.folderAdd.hidden = !isNotes;
+  els.titlebarView.textContent = isNotes ? "笔记" : "碎片墙";
+  document.body.dataset.surface = surface;
+
+  for (const button of els.surfaceButtons) {
+    const active = button.dataset.surface === surface;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+
+  els.search.placeholder = isNotes ? "搜索标题与正文" : "搜索碎片";
+  els.search.value = isNotes ? state.noteQuery : state.query;
+
+  if (isNotes) {
+    if (!document.body.dataset.noteMode) document.body.dataset.noteMode = "list";
+    renderNotes();
+  } else {
+    render();
+  }
+}
+
+function saveMarkdownAsNote() {
+  if (!lastMarkdown) return;
+  const now = Date.now();
+  const note = {
+    id: createId(),
+    folderId: state.folderFilter,
+    body: `${lastMarkdown}`.trimEnd() + "\n",
+    createdAt: now,
+    updatedAt: now,
+  };
+  state.notes.unshift(note);
+  state.activeNoteId = note.id;
+  state.noteQuery = "";
+  els.search.value = "";
+  saveNotes();
+  closePanel();
+  setSurface("notes");
+  setNoteMode("read");
+  renderNotes();
+  els.noteEditor.focus();
+  showToast("已存为笔记，接着往下写就行");
+}
+
 /* -------------------------------------------------------------------- edits */
 
 function snapshot() {
@@ -558,19 +1072,17 @@ function runTidy() {
 
 function openPanel() {
   focusBeforePanel = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  els.panel.hidden = false;
   els.panel.classList.add("is-open");
   els.panel.setAttribute("aria-hidden", "false");
-  els.scrim.hidden = false;
-  document.body.classList.add("is-locked");
   els.panelClose.focus();
 }
 
 function closePanel() {
-  if (!els.panel.classList.contains("is-open")) return;
+  if (els.panel.hidden) return;
   els.panel.classList.remove("is-open");
+  els.panel.hidden = true;
   els.panel.setAttribute("aria-hidden", "true");
-  els.scrim.hidden = true;
-  document.body.classList.remove("is-locked");
   if (focusBeforePanel && document.contains(focusBeforePanel)) focusBeforePanel.focus();
   focusBeforePanel = null;
 }
@@ -714,6 +1226,11 @@ function bindEvents() {
   els.save.addEventListener("click", submitFragment);
 
   els.search.addEventListener("input", () => {
+    if (state.surface === "notes") {
+      state.noteQuery = els.search.value;
+      renderNotes();
+      return;
+    }
     state.query = els.search.value;
     render();
   });
@@ -755,10 +1272,45 @@ function bindEvents() {
 
   els.tidyButton.addEventListener("click", runTidy);
   els.panelClose.addEventListener("click", closePanel);
-  els.scrim.addEventListener("click", closePanel);
   els.panelCopy.addEventListener("click", copyMarkdown);
+  els.panelSaveNote.addEventListener("click", saveMarkdownAsNote);
   els.panelDownload.addEventListener("click", downloadMarkdown);
   els.panelClear.addEventListener("click", clearDone);
+
+  for (const button of els.surfaceButtons) {
+    button.addEventListener("click", () => setSurface(button.dataset.surface));
+  }
+
+  els.newNoteButton.addEventListener("click", createNote);
+  els.explorerNewNote.addEventListener("click", createNote);
+  els.noteEditor.addEventListener("input", scheduleNoteSave);
+  els.noteDelete.addEventListener("click", deleteNote);
+  els.noteFolder.addEventListener("change", () => assignFolder(els.noteFolder.value));
+  els.noteBack.addEventListener("click", () => {
+    flushNoteSave();
+    setNoteMode("list");
+  });
+  for (const button of els.viewButtons) {
+    button.addEventListener("click", () => setNoteView(button.dataset.view));
+  }
+
+  els.folderAdd.addEventListener("click", () => {
+    els.folderForm.hidden = false;
+    els.folderName.focus();
+  });
+  els.folderForm.addEventListener("submit", commitFolder);
+  els.folderName.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      els.folderForm.hidden = true;
+      els.folderName.value = "";
+    }
+  });
+  els.folderName.addEventListener("blur", () => {
+    if (!els.folderName.value.trim()) {
+      els.folderForm.hidden = true;
+      els.folderName.value = "";
+    }
+  });
 
   els.guideClose.addEventListener("click", () => {
     els.guide.hidden = true;
@@ -784,10 +1336,16 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
-      runTidy();
+      if (state.surface === "wall") runTidy();
+      else flushNoteSave();
       return;
     }
     if (event.key === "Escape") {
+      if (!els.folderForm.hidden) {
+        els.folderForm.hidden = true;
+        els.folderName.value = "";
+        return;
+      }
       if (state.editingId) {
         state.editingId = null;
         render();
@@ -808,7 +1366,12 @@ function bindEvents() {
       els.search.focus();
     } else if (event.key.toLowerCase() === "n") {
       event.preventDefault();
-      els.composer.focus();
+      if (state.surface === "notes") {
+        if (activeNote()) els.noteEditor.focus();
+        else createNote();
+      } else {
+        els.composer.focus();
+      }
     }
   });
 }
@@ -820,9 +1383,16 @@ function boot() {
   state.items = loaded.items;
   if (loaded.seeded) save();
 
+  const notebook = loadNotesStore();
+  state.folders = notebook.folders;
+  state.notes = notebook.notes;
+  if (notebook.seeded) saveNotes();
+
   bindEvents();
   autosize();
-  render();
+  setNoteMode("list");
+  setNoteView(state.noteView);
+  setSurface("wall");
 
   try {
     if (!localStorage.getItem(GUIDE_KEY)) els.guide.hidden = false;

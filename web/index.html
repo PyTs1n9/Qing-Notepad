@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>碎片墙 · 想到就丢进来，回头再整理</title>
+    <title>青记 QingNotepad · 网页版</title>
     <meta
       name="description"
-      content="一屏便签墙：随手写下零碎念头，回车即存，一键整理成待办清单。数据只留在你自己的浏览器里，不上传服务器。"
+      content="青记网页版：左侧资源管理器、中间编辑区，把零碎念头先接住，一键整理成待办清单，再长成 Markdown 笔记。数据只留在浏览器里。"
     />
-    <meta name="theme-color" content="#101114" />
+    <meta name="theme-color" content="#0b0c0e" />
     <meta name="color-scheme" content="dark" />
     <link
       rel="icon"
@@ -17,140 +17,243 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#wall">跳到碎片墙</a>
-
-    <header class="topbar">
-      <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <rect width="24" height="24" rx="7" fill="#2c4a57" />
-          <path d="M6.6 7h4.2c.9 0 1.3.5 1.3 1.2v9.4c-.4-.6-.9-.9-1.6-.9H6.6z" fill="#faf4e6" />
-          <path d="M17.4 7h-4.2c-.9 0-1.3.5-1.3 1.2v9.4c.4-.6.9-.9 1.6-.9h3.9z" fill="#e8dcc4" />
-          <path d="M12 7.6v10" stroke="#16333f" stroke-width="1" stroke-linecap="round" />
-        </svg>
-        <div class="brand-copy">
-          <span class="brand-name">碎片墙</span>
-          <span class="brand-sub">青记 · 网页版</span>
-        </div>
-      </div>
-
-      <div class="topbar-tools">
-        <label class="search" for="search">
-          <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
-            <circle cx="8.8" cy="8.8" r="5.4" fill="none" stroke="currentColor" stroke-width="1.6" />
-            <path d="M12.9 12.9 17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+    <div class="app-root">
+      <header class="titlebar">
+        <div class="titlebar-left">
+          <svg class="app-mark" viewBox="0 0 24 24" aria-hidden="true">
+            <rect width="24" height="24" rx="7" fill="#2c4a57" />
+            <path d="M6.6 7h4.2c.9 0 1.3.5 1.3 1.2v9.4c-.4-.6-.9-.9-1.6-.9H6.6z" fill="#faf4e6" />
+            <path d="M17.4 7h-4.2c-.9 0-1.3.5-1.3 1.2v9.4c.4-.6.9-.9 1.6-.9h3.9z" fill="#e8dcc4" />
+            <path d="M12 7.6v10" stroke="#16333f" stroke-width="1" stroke-linecap="round" />
           </svg>
-          <input
-            id="search"
-            type="search"
-            placeholder="搜索碎片"
-            autocomplete="off"
-            spellcheck="false"
-            aria-label="搜索碎片"
-          />
-          <kbd class="search-kbd">/</kbd>
-        </label>
-
-        <button id="tidy-button" class="button button-primary" type="button">
-          一键整理
-          <kbd>Ctrl ↵</kbd>
-        </button>
-      </div>
-    </header>
-
-    <main class="page">
-      <section class="composer" aria-labelledby="composer-label">
-        <label id="composer-label" class="visually-hidden" for="composer-input">记下一条碎片</label>
-        <textarea
-          id="composer-input"
-          rows="1"
-          placeholder="想到什么就先丢进来…"
-          aria-describedby="composer-hint"
-        ></textarea>
-        <div class="composer-bar">
-          <p id="composer-hint" class="composer-hint">
-            回车存下 · Shift + 回车换行 · <code>#标签</code> 自动归类
-          </p>
-          <button id="composer-save" class="button button-quiet" type="button">存下</button>
-        </div>
-      </section>
-
-      <section id="guide" class="guide" aria-label="三步上手" hidden>
-        <ol class="guide-steps">
-          <li><span class="guide-index">1</span>想到什么先丢进来，不用管格式</li>
-          <li><span class="guide-index">2</span>顺手写个 <code>#标签</code>，比如 <code>#工作</code></li>
-          <li><span class="guide-index">3</span>攒够了点「一键整理」，碎片变成清单</li>
-        </ol>
-        <button id="guide-close" class="guide-close" type="button" aria-label="关闭上手提示">知道了</button>
-      </section>
-
-      <section class="filters" aria-label="筛选与排序">
-        <div class="tabs" role="tablist" aria-label="按状态筛选">
-          <button class="tab is-active" type="button" role="tab" aria-selected="true" data-status="open">
-            未处理
-          </button>
-          <button class="tab" type="button" role="tab" aria-selected="false" data-status="all">全部</button>
-          <button class="tab" type="button" role="tab" aria-selected="false" data-status="done">已完成</button>
+          <span class="app-name">青记</span>
+          <span class="titlebar-divider" aria-hidden="true"></span>
+          <span id="titlebar-view" class="titlebar-view">碎片墙</span>
         </div>
 
-        <div id="tag-list" class="tag-list" aria-label="按标签筛选"></div>
+        <div class="titlebar-center" aria-hidden="true">
+          <span class="brand-face">Qing Notepad</span>
+        </div>
 
-        <div class="filters-tail">
-          <span id="counter" class="counter">共 0 条</span>
-          <label class="sort">
-            <span class="visually-hidden">排序方式</span>
-            <select id="sort">
-              <option value="smart">置顶优先</option>
-              <option value="new">最新在前</option>
-              <option value="old">最早在前</option>
-            </select>
+        <div class="titlebar-right">
+          <label class="search" for="search">
+            <svg class="search-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="8.8" cy="8.8" r="5.4" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <path d="M12.9 12.9 17 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <input
+              id="search"
+              type="search"
+              placeholder="搜索"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="搜索"
+            />
+            <kbd class="search-kbd">/</kbd>
           </label>
+          <button id="tidy-button" class="button button-primary" type="button">一键整理</button>
+          <button id="new-note-button" class="button button-primary" type="button" hidden>新建笔记</button>
         </div>
-      </section>
-
-      <section id="wall" class="wall" aria-label="碎片墙"></section>
-
-      <section id="empty" class="empty" hidden>
-        <p class="empty-title">墙上还是空的</p>
-        <p class="empty-copy">写下第一句，回车就存下来了。</p>
-        <button id="empty-focus" class="button button-primary" type="button">开始写</button>
-      </section>
-
-      <footer class="page-foot">
-        <p>
-          碎片只保存在这台设备的浏览器里，不上传服务器；清理浏览器数据会一并清除。整理出的清单可以复制或导出为
-          Markdown，直接粘进笔记里。
-        </p>
-      </footer>
-    </main>
-
-    <div id="scrim" class="scrim" hidden></div>
-
-    <aside id="panel" class="panel" aria-labelledby="panel-title" aria-hidden="true">
-      <header class="panel-head">
-        <div>
-          <h2 id="panel-title">整理结果</h2>
-          <p id="panel-summary" class="panel-summary"></p>
-        </div>
-        <button id="panel-close" class="icon-button" type="button" aria-label="关闭整理结果">
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
-        </button>
       </header>
-      <div class="panel-body">
-        <pre id="panel-markdown" class="markdown" tabindex="0"></pre>
+
+      <div class="shell">
+        <aside class="pane pane-left" aria-label="资源管理器">
+          <nav class="rail" aria-label="主导航">
+            <button class="rail-button is-active" type="button" data-surface="wall" aria-pressed="true" title="碎片墙" aria-label="碎片墙">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <rect x="3" y="3" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" />
+                <rect x="11" y="3" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" />
+                <rect x="3" y="11" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" />
+                <rect x="11" y="11" width="6" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5" />
+              </svg>
+            </button>
+            <button class="rail-button" type="button" data-surface="notes" aria-pressed="false" title="笔记" aria-label="笔记">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M5 3.2h7.2L15 6v10.8H5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+                <path d="M12 3.4V6.2h2.9M7.6 9.4h4.8M7.6 12.2h4.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+              </svg>
+            </button>
+            <div class="rail-spacer"></div>
+            <span class="rail-badge" title="数据只存在本机浏览器">本地</span>
+          </nav>
+
+          <div class="explorer">
+            <div class="explorer-head">
+              <span class="explorer-title">资源管理器</span>
+              <div class="explorer-actions">
+                <button id="folder-add" class="icon-button" type="button" title="新建文件夹" aria-label="新建文件夹">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M2 4.2h3.4l1.1 1.4H14v6.6H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                    <path d="M8 8v3M6.5 9.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                  </svg>
+                </button>
+                <button class="icon-button" type="button" title="新建笔记" aria-label="新建笔记" id="explorer-new-note">
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M4 2.4h5l3 3v8.2H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                    <path d="M9 2.6v3h2.8M8 8v3.4M6.3 9.7h3.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="explorer-body">
+              <div id="explorer-wall">
+                <p class="side-label">标签</p>
+                <div id="tag-list" class="tag-list" aria-label="按标签筛选"></div>
+                <p class="side-label">说明</p>
+                <p class="side-hint">回车存一条，写 <code>#标签</code> 自动归类；攒够了点「一键整理」。</p>
+              </div>
+
+              <div id="explorer-notes" hidden>
+                <p class="side-label">文件夹</p>
+                <div id="folder-list" class="folder-list"></div>
+                <form id="folder-form" class="folder-form" hidden>
+                  <input id="folder-name" type="text" maxlength="12" placeholder="文件夹名，回车确定" />
+                </form>
+                <p class="side-label">笔记</p>
+                <div id="note-list" class="note-list"></div>
+                <p id="notes-empty-hint" class="notes-empty-hint" hidden>
+                  还没有笔记。点右上角「新建笔记」，或者把整理结果存成笔记。
+                </p>
+              </div>
+            </div>
+
+            <p class="explorer-foot">内容只存在这台设备的浏览器里，不上传服务器。</p>
+          </div>
+        </aside>
+
+        <section class="pane pane-main">
+          <div id="wall-view" class="view">
+            <div class="view-strip">
+              <div class="tabs" role="tablist" aria-label="按状态筛选">
+                <button class="tab is-active" type="button" role="tab" aria-selected="true" data-status="open">未处理</button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-status="all">全部</button>
+                <button class="tab" type="button" role="tab" aria-selected="false" data-status="done">已完成</button>
+              </div>
+              <div class="strip-tail">
+                <span id="counter" class="counter">共 0 条</span>
+                <label class="sort">
+                  <span class="visually-hidden">排序方式</span>
+                  <select id="sort">
+                    <option value="smart">置顶优先</option>
+                    <option value="new">最新在前</option>
+                    <option value="old">最早在前</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="view-body">
+              <section class="composer" aria-labelledby="composer-label">
+                <label id="composer-label" class="visually-hidden" for="composer-input">记下一条碎片</label>
+                <textarea
+                  id="composer-input"
+                  rows="1"
+                  placeholder="想到什么就先丢进来… 回车存下，Shift + 回车换行"
+                  aria-describedby="composer-hint"
+                ></textarea>
+                <div class="composer-bar">
+                  <p id="composer-hint" class="composer-hint">
+                    <kbd>#标签</kbd> 自动归类 · <kbd>Ctrl ↵</kbd> 一键整理
+                  </p>
+                  <button id="composer-save" class="button button-quiet" type="button">存下</button>
+                </div>
+              </section>
+
+              <section id="guide" class="guide" aria-label="三步上手" hidden>
+                <ol class="guide-steps">
+                  <li><span class="guide-index">1</span>想到什么先丢进来，不用管格式</li>
+                  <li><span class="guide-index">2</span>顺手写个 <code>#标签</code></li>
+                  <li><span class="guide-index">3</span>点「一键整理」，碎片变成清单</li>
+                </ol>
+                <button id="guide-close" class="guide-close" type="button" aria-label="关闭上手提示">知道了</button>
+              </section>
+
+              <section id="wall" class="wall" aria-label="碎片墙"></section>
+
+              <section id="empty" class="empty" hidden>
+                <p class="empty-title">墙上还是空的</p>
+                <p class="empty-copy">写下第一句，回车就存下来了。</p>
+                <button id="empty-focus" class="button button-primary" type="button">开始写</button>
+              </section>
+            </div>
+          </div>
+
+          <div id="notes-view" class="view" hidden aria-label="笔记">
+            <header class="note-head">
+              <button id="note-back" class="icon-button note-back" type="button" aria-label="返回笔记列表">←</button>
+              <div class="note-title-wrap">
+                <h2 id="note-title" class="note-title">还没有打开笔记</h2>
+                <p id="note-status" class="note-status"></p>
+              </div>
+              <div class="view-toggle" role="group" aria-label="视图切换">
+                <button class="view-button is-active" type="button" data-view="edit">编辑</button>
+                <button class="view-button" type="button" data-view="preview">预览</button>
+                <button class="view-button" type="button" data-view="split">分屏</button>
+              </div>
+              <label class="note-folder-wrap">
+                <span class="visually-hidden">所属文件夹</span>
+                <select id="note-folder" class="note-folder"></select>
+              </label>
+              <button id="note-delete" class="icon-button is-danger" type="button" aria-label="删除这篇笔记">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M3.2 4.5h9.6M6.3 4.5V3.1h3.4v1.4M4.7 4.5l.5 8.2c0 .5.4.8.9.8h3.8c.5 0 .9-.3.9-.8l.5-8.2"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+            </header>
+
+            <div id="note-body" class="note-body" data-view="edit">
+              <textarea
+                id="note-editor"
+                class="note-editor"
+                spellcheck="false"
+                aria-label="笔记正文"
+                placeholder="# 标题&#10;&#10;- 一条要点&#10;- [ ] 一件待办"
+              ></textarea>
+              <div id="note-preview" class="note-preview"></div>
+            </div>
+
+            <p id="note-placeholder" class="note-placeholder" hidden>
+              左侧还没有笔记。新建一篇，或者回到碎片墙，把整理结果存成笔记。
+            </p>
+          </div>
+        </section>
+
+        <aside id="panel" class="pane pane-right" aria-labelledby="panel-title" hidden>
+          <header class="panel-head">
+            <div>
+              <h2 id="panel-title">整理结果</h2>
+              <p id="panel-summary" class="panel-summary"></p>
+            </div>
+            <button id="panel-close" class="icon-button" type="button" aria-label="关闭整理结果">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+            </button>
+          </header>
+          <div class="panel-body">
+            <pre id="panel-markdown" class="markdown" tabindex="0"></pre>
+          </div>
+          <footer class="panel-foot">
+            <button id="panel-copy" class="button button-primary" type="button">复制清单</button>
+            <button id="panel-save-note" class="button" type="button">存为笔记</button>
+            <button id="panel-download" class="button" type="button">下载 .md</button>
+            <button id="panel-clear" class="button button-quiet" type="button">清空已完成</button>
+          </footer>
+        </aside>
       </div>
-      <footer class="panel-foot">
-        <button id="panel-copy" class="button button-primary" type="button">复制清单</button>
-        <button id="panel-download" class="button" type="button">下载 .md</button>
-        <button id="panel-clear" class="button button-quiet" type="button">清空已完成</button>
-      </footer>
-    </aside>
+    </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <noscript>
-      <p class="noscript">碎片墙需要 JavaScript 才能运行：所有内容都存在你自己的浏览器里，不会有任何上传。</p>
+      <p class="noscript">青记网页版需要 JavaScript 才能运行：所有内容都存在你自己的浏览器里，不会有任何上传。</p>
     </noscript>
 
     <script type="module" src="./app.js"></script>
