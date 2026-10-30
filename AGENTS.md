@@ -81,6 +81,21 @@ pointing at Gitee; that made one command write to two hosts and mixed their erro
   to `origin` to trigger the run, then push the same tag to `gitee` to keep the mirror equal.
 - **`main` is the only long-lived branch.** Feature branches are merged and then deleted on
   both remotes, not kept around.
+  The single exception is `main-web`, the web edition's product line — see below.
+
+### `main-web` — second product line
+
+`main` ships the Tauri desktop app. `main-web` carries the zero-build web edition in
+`web/` (see `docs/decisions-web-tool.md`). The two lines run in parallel and **neither one
+merges into the other**:
+
+- The Tauri build comes from `main`; `web/` exists only on `main-web`. Never add the web
+  page to `main`, and never resurrect `src-tauri/` changes on `main-web`.
+- `main-web` is long-lived, not a feature branch: do not delete it on either remote.
+- A change that genuinely belongs to both (a colour, a piece of copy) is ported by hand and
+  committed twice. A blind merge would drag the desktop shell into a page that has no
+  window, tray or filesystem.
+- Commits on `main-web` still go to both hosts with `git pushall`.
 
 ## Windows Build Environment
 
