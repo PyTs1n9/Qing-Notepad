@@ -8,7 +8,7 @@
 
 # QingNotepad 青记
 
-安装包 <strong><em><font color="#1f6feb">约 26MB</font></em></strong>，轻量级桌面应用<br>
+安装包 <strong><em><font color="#1f6feb">约 40MB</font></em></strong>，轻量级桌面应用<br>
 QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br>
 本地优先的 Markdown 记事、待办、画布、便签、知识图谱、插件与离线 AI 助手<br>
 基于 **Tauri v2 + React 19 + TypeScript** 构建
