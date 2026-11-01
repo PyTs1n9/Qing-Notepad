@@ -1,7 +1,34 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-29T13:05:00Z",
+  "generatedAt": "2026-11-01T09:25:00Z",
   "items": [
+    {
+      "id": "2026-11-01-v0-8-1",
+      "kind": "update",
+      "publishedAt": "2026-11-01T09:25:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.8.1：更新改成在软件里完成",
+        "en": "v0.8.1: updates happen inside the app"
+      },
+      "body": {
+        "zh": "「检查更新」不再是跳到网页让你自己下安装包：发现新版本后点一下按钮，就在软件内下载并安装，装完自动重启到新版本。默认从 Gitee 取更新，连不上时才回落到 GitHub。\n\n但这一版仍然需要手动安装一次。0.8.0 及以前的版本里没有更新代码，收不到下一条推送；装完 0.8.1 之后，往后的版本才会变成点一下就好。\n\n安装包会做签名校验：签名对不上就拒绝安装，被替换过的安装包不会悄悄装进来。",
+        "en": "\"Check for updates\" no longer sends you to a web page: when a new version appears, one click downloads and installs it in the app, then restarts on the new version. Updates come from Gitee by default and fall back to GitHub only when Gitee is unreachable.\n\nThis version still has to be installed manually once. Versions up to 0.8.0 ship no update code, so they will never see the next prompt; after 0.8.1 is installed, every later version is a single click.\n\nInstallers are signature-checked: a package that fails verification is refused, so a swapped installer can never be installed quietly."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.8.1",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-10-29-v0-8-0",
       "kind": "update",

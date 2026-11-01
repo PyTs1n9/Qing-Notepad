@@ -44,4 +44,20 @@ $env:WindowsSdkDir = "$SdkRoot\"
 # 3. Windows SDK Resource Compiler (rc.exe) —— Tauri build 需要
 $env:Path = "$(Join-Path $SdkRoot "bin\$SdkVersion\x64");$env:Path"
 
+# 4. Tauri 更新包签名
+#    `bundle.createUpdaterArtifacts` 打开后，`tauri build` 必须能拿到私钥，否则构建失败。
+#    密钥生成：npm run tauri signer generate -- -w "$env:USERPROFILE\.tauri\qing-notepad.key"
+#    （密码跟着交互提示输入；本模板假定密码存在同目录的 .key.pass，私钥与密码都不进 git）
+#    缺失私钥时的构建失败是刻意的：静默产出一个签不了名的包比构建报错更难查。
+$SigningKey = "$env:USERPROFILE\.tauri\qing-notepad.key"
+$SigningPass = "$env:USERPROFILE\.tauri\qing-notepad.key.pass"
+if (Test-Path $SigningKey) {
+    $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $SigningKey -Raw).Trim()
+    if (Test-Path $SigningPass) {
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = (Get-Content $SigningPass -Raw).Trim()
+    }
+} else {
+    Write-Host "未找到更新签名私钥，tauri build 会失败（见 docs/decisions-updater.md）" -ForegroundColor Yellow
+}
+
 Write-Host "Environment configured: Rust + MSVC $MsvcVersion + Windows SDK $SdkVersion (rc.exe)" -ForegroundColor Green

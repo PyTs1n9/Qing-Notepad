@@ -13,6 +13,7 @@ mod plugin;
 mod plugin_host;
 mod plugin_manifest;
 mod storage;
+mod update;
 mod vault;
 mod window_bg;
 
@@ -95,6 +96,10 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
+        // 软件内更新。只有 Rust 侧在用（前端调的是 `update::*` 两个命令，不是
+        // `@tauri-apps/plugin-updater` 的 JS API），所以不需要在 capabilities 里加
+        // `updater:*` 权限。端点由 `update.rs` 自己按源解析，配置里的 endpoints 留空。
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|_app, _shortcut, _event| {
@@ -171,6 +176,8 @@ pub fn run() {
             vault::vault_remove,
             vault::vault_scan,
             vault::vault_read_file,
+            update::check_update,
+            update::install_update,
         ])
         .setup(|app| {
             #[cfg(desktop)]

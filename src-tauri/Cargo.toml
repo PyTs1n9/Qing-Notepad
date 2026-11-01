@@ -1,6 +1,6 @@
 [package]
 name = "qing-notepad"
-version = "0.8.0"
+version = "0.8.1"
 description = "Qing Notepad - A lightweight note-taking app built with Tauri"
 authors = ["PyTs1N9"]
 edition = "2021"
@@ -30,6 +30,18 @@ tauri-plugin-global-shortcut = "2.4.1"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2.6.2"
 tauri-plugin-http = "2.8.3"
+# 软件内更新。只有 Rust 侧使用（没有对应的 `@tauri-apps/plugin-updater` 依赖），
+# 因此不需要遵守上面那条 JS/Rust 同 minor 的约束。
+#
+# 关掉默认特性有明确理由：默认带 `rustls-tls`（会再塞一整套 rustls + ring，而
+# `tauri-plugin-http` 走的是 native-tls/schannel）和 `zip`（Windows 的 NSIS 更新包是
+# 一个 .exe，不需要解压，却会把 tar 一起拉进来）。这里只保留 native-tls 与系统代理，
+# 装好的包体积才不会被更新功能白白撑大。
+tauri-plugin-updater = { version = "2.9", default-features = false, features = ["native-tls", "system-proxy"] }
+# 解析 Gitee 的 `/releases/latest` 302 拿到最新 tag，再拼出清单地址。
+# 复用 updater 已经引进来的 reqwest 0.13，不新增第二份 HTTP 栈；
+# `tauri-plugin-http` 那份是 0.12，两者共存是上游版本差异，不是本文件造成的。
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
 # Plugin packages: `zip` reads `.qnp` archives, `sha2` verifies index hashes.
 # `zip` keeps only deflate: store + deflate is what every packer emits, and the
 # other codecs would just be dead weight in the installer.

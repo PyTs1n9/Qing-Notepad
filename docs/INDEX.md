@@ -60,6 +60,7 @@
 | `decisions-canvas-note-tree.md` | 笔记文件树 → 画布结构图：`ref` 引用节点、曲线连线、`hidden`、`canvas:write` 四个方法、幂等语义 | 动画布条目类型 / 连线样式 / 画布插件 API | 13.4 KB |
 | `decisions-plugin-snippet.md` | 片段库插件 D1–D8：只插入不做模板、四个占位符、**无输入 UI 时的交互设计**、权限压到 5 条、删除快照 | 写第二个插件 / 需要"最小权限面"范例 / 改 `examples/qing-snippet` | 5.5 KB |
 | `decisions-announcements.md` | 更新日志/通告栏 D1–D10：远程结构化 JSON（Gitee raw 单源）+ 包内快照兜底、三层降级、版本区间、不做签名 | 动告示牌、`announcements.json`、或想换数据源 | 7.0 KB |
+| `decisions-updater.md` | 软件内自动更新 D1–D6：官方 updater、minisign 私钥=发布权、人工确认后自动重启、Gitee 按 tag 定位清单 + GitHub 尽力而为、`requireSignedVersion`、不做前端热替换；含每次发布的新增手动步骤 | 动 `update.rs` / `updateChecker.ts` / `UpdateAction.tsx` / `release.yml`，或要碰签名密钥时 | 9.9 KB |
 | `decisions-architecture-layering.md` | 分层 6 条契约：依赖单向、store 不碰宿主、落盘必须临时文件+rename 且失败抛出、rename 回退非破坏性（先备份再替换）、标题单一实现、子窗口不读 `settingsStore`、画布/图谱直连 fs 登记为例外 | 动 `utils`/`stores` 依赖方向、或要把某处直写改成原子写时（配 `scripts/verify-architecture.mjs`） | 16.1 KB |
 
 ## 3. 专题（分析与评审）
@@ -115,3 +116,4 @@
 | CSP / capability / `fs:scope` | `verify-batch3.md` | `review-performance-security.md` |
 | 导出 / PDF / Word | `decisions-export-docx-pdf.md` | `user-manual.md` |
 | 发布 / tag / CI | （不在 docs）`topics/git-release.md` | `topics/verify-runbook.md`（产物与验收） |
+| 软件内自动更新 / 签名密钥 | `decisions-updater.md` | `decisions-announcements.md`（Gitee raw 通道的实测数据） |

@@ -1,7 +1,7 @@
 {
   "name": "qing-notepad",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "collab:dev": "npm --prefix collab-server run dev",
     "collab:build": "npm --prefix collab-server run build",
     "version:set": "node scripts/set-version.mjs",
+    "updater:manifest": "node scripts/updater-manifest.mjs",
     "verify:architecture": "node scripts/verify-architecture.mjs",
     "verify:atomic-write": "node scripts/verify-atomic-write.mjs",
     "verify:batch2": "node scripts/verify-batch2/build.mjs --run",

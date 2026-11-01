@@ -1,21 +1,36 @@
 import packageJson from "../../package.json";
-import { isTauri } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 export const APP_VERSION = packageJson.version;
 export const GITHUB_URL = "https://github.com/PyTs1n9/Qing-Notepad";
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 
-const GITHUB_API_LATEST = "https://api.github.com/repos/PyTs1n9/Qing-Notepad/releases/latest";
+/**
+ * 更新链路的两个人机边界事件。名字由 Rust 侧的 `update.rs` 决定，
+ * 两边必须一致 —— 所以这里导出常量，组件不许再手写字符串。
+ */
+export const UPDATE_PROGRESS_EVENT = "update:progress";
+export const UPDATE_INSTALLING_EVENT = "update:installing";
+
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  /** 发行说明，取自清单里的 `notes`，可能为空。 */
+  body: string | null;
+  /** RFC 3339 发布时间。Gitee 与 GitHub 两份清单各自写入。 */
+  date: string | null;
+}
+
+export interface UpdateProgressPayload {
+  downloaded: number;
+  /** 服务端没给 `Content-Length` 时为 null。 */
+  total: number | null;
+}
 
 interface ParsedVersion {
   numbers: [number, number, number];
   prerelease: string[];
-}
-
-export interface LatestRelease {
-  version: string;
-  url: string;
 }
 
 function parseVersion(version: string): ParsedVersion | null {
@@ -26,43 +41,6 @@ function parseVersion(version: string): ParsedVersion | null {
     numbers: [Number(match[1]), Number(match[2]), Number(match[3])],
     prerelease: match[4]?.split(".") ?? [],
   };
-}
-
-function comparePrerelease(left: string[], right: string[]): number {
-  if (left.length === 0 && right.length === 0) return 0;
-  if (left.length === 0) return 1;
-  if (right.length === 0) return -1;
-
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const leftPart = left[index];
-    const rightPart = right[index];
-    if (leftPart === undefined) return -1;
-    if (rightPart === undefined) return 1;
-    if (leftPart === rightPart) continue;
-
-    const leftNumber = /^\d+$/.test(leftPart) ? Number(leftPart) : null;
-    const rightNumber = /^\d+$/.test(rightPart) ? Number(rightPart) : null;
-    if (leftNumber !== null && rightNumber !== null) return leftNumber > rightNumber ? 1 : -1;
-    if (leftNumber !== null) return -1;
-    if (rightNumber !== null) return 1;
-    return leftPart > rightPart ? 1 : -1;
-  }
-
-  return 0;
-}
-
-export function isVersionNewer(candidate: string, current: string): boolean {
-  const candidateVersion = parseVersion(candidate);
-  const currentVersion = parseVersion(current);
-  if (!candidateVersion || !currentVersion) return false;
-
-  for (let index = 0; index < candidateVersion.numbers.length; index += 1) {
-    const difference = candidateVersion.numbers[index] - currentVersion.numbers[index];
-    if (difference !== 0) return difference > 0;
-  }
-
-  return comparePrerelease(candidateVersion.prerelease, currentVersion.prerelease) > 0;
 }
 
 /**
@@ -116,18 +94,30 @@ export function isPrereleaseVersion(version: string): boolean {
  */
 export const remoteFetch: typeof fetch = isTauri() ? (tauriFetch as unknown as typeof fetch) : fetch;
 
-export async function fetchLatestRelease(): Promise<LatestRelease> {
-  const response = await remoteFetch(GITHUB_API_LATEST, {
-    headers: { Accept: "application/vnd.github+json" },
-  });
-  if (!response.ok) throw new Error(`GitHub API returned ${response.status}`);
+/**
+ * 检查更新。
+ *
+ * 源的顺序、端点解析、签名校验与版本比较全部在 Rust 侧（`update.rs`）：
+ * Gitee 主源，GitHub 尽力而为。前端不自己拼 URL 依次请求，是因为官方
+ * `endpoints` 数组只在返回非 2xx 时才回落，连接超时那类失败会静默吞掉备源。
+ *
+ * 返回 `null` 表示已是最新；抛错表示**所有**源都失败（含"忘了给 Gitee 传清单"）。
+ */
+export async function checkForUpdate(): Promise<UpdateInfo | null> {
+  if (!isTauri()) return null;
+  return invoke<UpdateInfo | null>("check_update");
+}
 
-  const data = await response.json() as { tag_name?: unknown; html_url?: unknown };
-  const version = typeof data.tag_name === "string" ? data.tag_name.trim().replace(/^v/i, "") : "";
-  if (!parseVersion(version)) throw new Error("GitHub release has an invalid version tag");
-
-  return {
-    version,
-    url: typeof data.html_url === "string" && data.html_url ? data.html_url : GITHUB_RELEASES_URL,
-  };
+/**
+ * 下载并安装。
+ *
+ * **Windows 上这个 promise 通常不会正常 resolve**：官方说明是安装步骤执行时
+ * 应用会被自动结束（受 Windows 安装器限制），新版本由安装器的 `/R` 参数拉起。
+ * 所以"更新成功"的收尾逻辑不能写在 `await` 之后，进度只能靠事件。
+ */
+export async function installUpdate(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("E_UPDATE_DESKTOP_ONLY: 仅桌面版支持软件内更新");
+  }
+  await invoke("install_update");
 }

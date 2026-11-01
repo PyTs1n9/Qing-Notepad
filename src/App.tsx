@@ -74,10 +74,9 @@ import AppDialog from "@/components/AppDialog";
 import { alertDialog } from "@/stores/dialogStore";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
-import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { refreshAnnouncements } from "@/utils/announcements";
-import { APP_VERSION, fetchLatestRelease, isVersionNewer } from "@/utils/updateChecker";
-import type { LatestRelease } from "@/utils/updateChecker";
+import { APP_VERSION, checkForUpdate } from "@/utils/updateChecker";
+import type { UpdateInfo } from "@/utils/updateChecker";
 import { renderStoredNoteContentForExport } from "@/utils/markdown";
 import { storedContentToMarkdown } from "@/utils/htmlToMarkdown";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
@@ -171,7 +170,7 @@ export default function App() {
   };
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const [availableUpdate, setAvailableUpdate] = useState<LatestRelease | null>(null);
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -402,14 +401,10 @@ export default function App() {
       useSettingsStore.getState().setUpdateReminderDisabledForVersion(null);
     }
 
-    fetchLatestRelease()
-      .then((release) => {
-        if (
-          !cancelled
-          && disabledForVersion !== APP_VERSION
-          && isVersionNewer(release.version, APP_VERSION)
-        ) {
-          setAvailableUpdate(release);
+    checkForUpdate()
+      .then((update) => {
+        if (!cancelled && disabledForVersion !== APP_VERSION && update) {
+          setAvailableUpdate(update);
         }
       })
       .catch((error) => {
@@ -1149,16 +1144,6 @@ export default function App() {
     setSidebarCollapsed(!sidebarCollapsed);
   };
 
-  const handleUpdateNow = useCallback(async () => {
-    if (!availableUpdate) return;
-    try {
-      const opened = await openInDefaultBrowser(availableUpdate.url);
-      if (opened) setAvailableUpdate(null);
-    } catch (error) {
-      console.error("Failed to open update page:", error);
-    }
-  }, [availableUpdate]);
-
   const handleNeverRemindUpdate = useCallback(() => {
     setUpdateReminderDisabledForVersion(APP_VERSION);
     setAvailableUpdate(null);
@@ -1386,7 +1371,6 @@ export default function App() {
         <UpdateModal
           currentVersion={APP_VERSION}
           latestVersion={availableUpdate.version}
-          onUpdateNow={handleUpdateNow}
           onUpdateLater={() => setAvailableUpdate(null)}
           onNeverRemind={handleNeverRemindUpdate}
         />

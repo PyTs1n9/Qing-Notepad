@@ -617,6 +617,10 @@ export type TranslationKeys = {
   upToDate: string;
   newVersion: string;
   downloadUpdate: string;
+  updateDownloading: string;
+  updateInstalling: string;
+  updateInstallFailed: string;
+  updateRestartHint: string;
   checkUpdateFailed: string;
   updateAvailableTitle: string;
   updateAvailableMessage: string;
@@ -1581,6 +1585,10 @@ const zh: TranslationKeys = {
   upToDate: "已是最新版本",
   newVersion: "发现新版本 v{version}",
   downloadUpdate: "下载更新",
+  updateDownloading: "正在下载 {percent}%",
+  updateInstalling: "正在安装，应用即将退出并自动重启",
+  updateInstallFailed: "更新安装失败",
+  updateRestartHint: "安装完成后应用会退出，随后自动重启到新版本。",
   checkUpdateFailed: "检查更新失败",
   updateAvailableTitle: "发现新版本",
   updateAvailableMessage: "Qing Notepad v{version} 已发布，是否立即更新？",
@@ -2545,6 +2553,10 @@ const en: TranslationKeys = {
   upToDate: "Up to date",
   newVersion: "New version v{version}",
   downloadUpdate: "Download Update",
+  updateDownloading: "Downloading {percent}%",
+  updateInstalling: "Installing — the app will quit and restart automatically",
+  updateInstallFailed: "Update installation failed",
+  updateRestartHint: "When installation finishes the app quits and restarts on the new version.",
   checkUpdateFailed: "Update check failed",
   updateAvailableTitle: "Update available",
   updateAvailableMessage: "Qing Notepad v{version} is available. Update now?",

@@ -27,6 +27,14 @@ dist-ssr
 # Local application data (single source of truth lives beside the app, never in git)
 /data/
 
+# 更新清单由 scripts/updater-manifest.mjs 在发布时生成，不进仓库
+/.updater/
+
+# 签名私钥与密码只留在 ~/.tauri，任何形式都不许进 git
+*.key
+*.key.pub
+*.key.pass
+
 # Machine-local build environment (copy env.example.ps1 to env.ps1)
 env.ps1
 
