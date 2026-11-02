@@ -357,6 +357,11 @@
 
 :root {
   --shell-pad: 6px;
+  /* Monospace is a *code* choice, not a body choice: the editor body defaults to
+     the UI sans stack (a monospace body falls back per-glyph for CJK, which is
+     what made small sizes look pixelated). Code keeps this one everywhere —
+     fenced blocks, inline code, the language label. */
+  --editor-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace;
   --shell-gutter: 6px;
   /* Space above the card row, below the title bar. Kept apart from the gutter
      so the cards keep the same floating margin as the other three sides
@@ -3331,7 +3336,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 /* Live preview (L1): classes painted by `utils/livePreview`           */
 /*                                                                     */
 /* Every size below is `em`, never `px`: the editor root carries the   */
-/* zoomed font size (`codeMirrorFontSizeTheme`), so a heading has to   */
+/* zoomed font size (`codeMirrorTypographyTheme`), so a heading has to */
 /* scale with ⌘+/- instead of pinning a second font-size scale.        */
 /* Colours are tokens or `color-mix` against them, like `qing-dec-*`,  */
 /* so the four themes resolve their own values.                        */
@@ -3352,6 +3357,8 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   background-color: var(--color-bg-secondary);
   border-radius: 4px;
   padding: 0.08em 0.3em;
+  /* Inline code stays monospace even though the body is a proportional face. */
+  font-family: var(--editor-font-mono);
   /* A chip that wraps keeps its tint on every line instead of the first. */
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -3404,12 +3411,174 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   color: var(--color-text-secondary);
 }
 
-.cm-md-code-block {
+/* ---------------------------------------------------------------- */
+/* Fenced code: a card, not a stripe                                  */
+/*                                                                    */
+/* A code block is painted line by line (`Decoration.line` cannot wrap */
+/* a range), so the card is assembled from its edges: every line      */
+/* carries the side borders, the first and last carry the caps. All   */
+/* rules are `.cm-line`-qualified because CodeMirror's base theme     */
+/* styles `.cm-line` at the same single-class specificity, and its    */
+/* stylesheet is injected after this file.                            */
+/* ---------------------------------------------------------------- */
+.cm-line.cm-md-code-block {
   background-color: var(--color-bg-secondary);
+  /* Code is the one place a monospace face is correct; the body no longer is. */
+  font-family: var(--editor-font-mono);
+  border-left: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  padding-left: 1em;
+  padding-right: 1em;
+}
+
+.cm-line.cm-md-code-block.cm-md-code-first {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: 8px 8px 0 0;
+  padding-top: 0.45em;
+}
+
+.cm-line.cm-md-code-block.cm-md-code-last {
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: 0 0 8px 8px;
+  padding-bottom: 0.45em;
+}
+
+.cm-line.cm-md-code-block.cm-md-code-single {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-radius: 8px;
+  padding-top: 0.45em;
+  padding-bottom: 0.45em;
+}
+
+/* Token colours, scoped to the block.
+   The global `hljs-*` rules further up are single-class, and CodeMirror injects
+   its own token styles at runtime *after* this file — so at equal specificity
+   the editor's `color: text-primary` won and every token came out grey. Scoping
+   to `.cm-line.cm-md-code-block` makes these two classes and takes them back.
+   The palette is the same one the preview and the exporters use. */
+.cm-line.cm-md-code-block .hljs-comment,
+.cm-line.cm-md-code-block .hljs-quote {
+  color: var(--color-text-muted) !important;
+  font-style: italic;
+}
+
+.cm-line.cm-md-code-block .hljs-keyword,
+.cm-line.cm-md-code-block .hljs-selector-tag,
+.cm-line.cm-md-code-block .hljs-literal,
+.cm-line.cm-md-code-block .hljs-section,
+.cm-line.cm-md-code-block .hljs-link {
+  color: var(--color-accent-text) !important;
+  font-weight: 600;
+}
+
+.cm-line.cm-md-code-block .hljs-string,
+.cm-line.cm-md-code-block .hljs-title,
+.cm-line.cm-md-code-block .hljs-name,
+.cm-line.cm-md-code-block .hljs-type,
+.cm-line.cm-md-code-block .hljs-attribute,
+.cm-line.cm-md-code-block .hljs-symbol,
+.cm-line.cm-md-code-block .hljs-bullet,
+.cm-line.cm-md-code-block .hljs-addition {
+  color: var(--color-success) !important;
+}
+
+.cm-line.cm-md-code-block .hljs-number,
+.cm-line.cm-md-code-block .hljs-meta,
+.cm-line.cm-md-code-block .hljs-built_in,
+.cm-line.cm-md-code-block .hljs-variable,
+.cm-line.cm-md-code-block .hljs-template-variable {
+  color: var(--color-warning) !important;
+}
+
+.cm-line.cm-md-code-block .hljs-regexp,
+.cm-line.cm-md-code-block .hljs-selector-attr,
+.cm-line.cm-md-code-block .hljs-selector-pseudo,
+.cm-line.cm-md-code-block .hljs-deletion {
+  color: var(--color-danger) !important;
+}
+
+.cm-line.cm-md-code-block .hljs-params,
+.cm-line.cm-md-code-block .hljs-punctuation,
+.cm-line.cm-md-code-block .hljs-operator {
+  color: var(--color-text-secondary) !important;
+}
+
+/* CodeMirror's base theme ships `&light .cm-activeLine` (two classes), which
+   outranks the single-class `transparent` in `noteEditorTheme`. The editor wants
+   no active-line tint at all, and inside a code block that tint paints a stripe
+   across the card's own background — the "one transparent line" that showed up
+   wherever the caret landed. */
+.cm-editor .cm-line.cm-activeLine {
+  background-color: transparent !important;
+}
+
+/* CodeMirror wraps each token's text in a span of its own, and *that* span
+   carries the editor's colour. The highlighter's class sits outside it, so its
+   `color` is only inherited and loses to the inner declaration — which is why a
+   red background showed up but the text stayed grey. Force the inner span to
+   take the colour from the highlighter class. */
+.cm-line.cm-md-code-block [class^="hljs-"] *,
+.cm-line.cm-md-code-block [class*=" hljs-"] * {
+  color: inherit !important;
+  background: none !important;
 }
 
 .cm-md-hr {
   border-top: 1px solid var(--color-border);
+}
+
+/* ---------------------------------------------------------------- */
+/* GFM table, rendered as a real table                                */
+/*                                                                    */
+/* The block is a `Decoration.replace` with a widget, so these nodes   */
+/* are ordinary DOM and can use the same tokens as everything else.    */
+/* The wrapper scrolls sideways instead of squeezing columns: a table  */
+/* with eight columns in a narrow pane should stay readable rather     */
+/* than wrap every cell to one character.                              */
+/* ---------------------------------------------------------------- */
+.cm-md-table-wrap {
+  overflow-x: auto;
+  padding: 0.15em 0;
+}
+
+.cm-md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.94em;
+  line-height: 1.55;
+}
+
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.7em;
+  vertical-align: top;
+  text-align: left;
+}
+
+.cm-md-table th {
+  background-color: var(--color-bg-secondary);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cm-md-table tbody tr:nth-child(even) td {
+  background-color: color-mix(in srgb, var(--color-bg-secondary) 45%, transparent);
+}
+
+.cm-md-table code {
+  font-family: var(--editor-font-mono);
+  font-size: 0.92em;
+  background-color: var(--color-bg-secondary);
+  border-radius: 4px;
+  padding: 0.06em 0.3em;
+}
+
+.cm-md-table a {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 
 /* `-` and `1.` share one fixed column so the text after them starts at the

@@ -48,6 +48,9 @@ await esbuild.build({
       `export { blocks, blockAt, blockAtPosition } from ${JSON.stringify(
         path.join(root, "src/utils/editorBlocks.ts"),
       ).replaceAll("\\", "/")};`,
+      `export { collectTableSpecs } from ${JSON.stringify(
+        path.join(root, "src/utils/livePreview/tableField.ts"),
+      ).replaceAll("\\", "/")};`,
       `export { EditorState, Text } from "@codemirror/state";`,
       `export { ensureSyntaxTree } from "@codemirror/language";`,
       `export { markdown, markdownLanguage } from "@codemirror/lang-markdown";`,
@@ -70,6 +73,7 @@ const {
   blocks,
   blockAt,
   blockAtPosition,
+  collectTableSpecs,
   EditorState,
   ensureSyntaxTree,
   markdown,
@@ -86,8 +90,10 @@ function specsFor(doc, ranges, options) {
   return { state, specs };
 }
 
-const format = (spec) =>
-  spec.kind === "line" ? `line:${spec.from}:${spec.className}` : `${spec.kind}:${spec.from}-${spec.to}:${spec.className ?? ""}`;
+const format = (spec) => {
+  if (spec.kind === "line") return `line:${spec.from}:${spec.className}`;
+  return `${spec.kind}:${spec.from}-${spec.to}:${spec.className ?? ""}`;
+};
 
 const formatted = (doc, ranges) => specsFor(doc, ranges).specs.map(format);
 
@@ -142,14 +148,21 @@ const fixtures = [
     expect: ["line:0:cm-md-quote", "line:6:cm-md-quote"],
   },
   {
-    name: "围栏代码块：逐行底纹，内容不隐藏",
-    doc: "```ts\nconst a = 1;\n\nconst b = 2;\n```\n",
+    // First/last lines carry their own class so CSS can round the card, and each
+    // token becomes a mark whose class is the highlighter's own (`hljs-*`) — the
+    // same palette the preview renderer emits. Nothing is hidden inside a fence.
+    name: "围栏代码块：卡片首末行 + 语法高亮",
+    doc: "```js\nconst a = 1;\n\nconst b = 2;\n```\n",
     expect: [
-      "line:0:cm-md-code-block",
+      "line:0:cm-md-code-block cm-md-code-first",
       "line:6:cm-md-code-block",
+      "mark:6-11:hljs-keyword",
+      "mark:16-17:hljs-number",
       "line:19:cm-md-code-block",
       "line:20:cm-md-code-block",
-      "line:33:cm-md-code-block",
+      "mark:20-25:hljs-keyword",
+      "mark:30-31:hljs-number",
+      "line:33:cm-md-code-block cm-md-code-last",
     ],
   },
   {
@@ -264,6 +277,50 @@ section("视口限制（view.visibleRanges 之外不计算）");
 }
 
 // ------------------------------------------------------------------ block fallback
+section("表格：StateField 规格（ViewPlugin 不能提供 block 装饰）");
+
+{
+  // A leading paragraph puts the caret outside the table at offset 0; without it
+  // the document *starts* in the table and the whole case would be the
+  // caret-inside branch.
+  const doc = "前言\n\n| 名 | 值 |\n| :-- | --: |\n| a | **1** |\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+
+  const specs = collectTableSpecs(state, true);
+  check("光标在外时产出 1 个表格 spec", specs.length === 1, String(specs.length));
+  const spec = specs[0];
+  check(
+    "spec 覆盖整块（含表头与数据行）",
+    Boolean(spec) && doc.slice(spec.from, spec.to) === "| 名 | 值 |\n| :-- | --: |\n| a | **1** |",
+    `${spec?.from}-${spec?.to}`,
+  );
+  check("表头 2 列", spec?.data.header.length === 2, JSON.stringify(spec?.data.header));
+  check("对齐取自分隔行", JSON.stringify(spec?.data.align) === '["left","right"]', JSON.stringify(spec?.data.align));
+  {
+    // Property order is irrelevant; what matters is that the `**` never becomes
+    // text and the content keeps the strong flag.
+    const cell = spec?.data.rows?.[0]?.[1] ?? [];
+    check(
+      "单元格行内粗体：源码标记不进入片段，内容带 strong",
+      cell.length === 1 && cell[0].text === "1" && cell[0].strong === true,
+      JSON.stringify(cell),
+    );
+  }
+
+  // The widget carries a serialised key so an unchanged table never rebuilds.
+  check("同一表格两次读取的 key 相同", collectTableSpecs(state, true)[0]?.data.key === spec?.data.key);
+
+  const inside = EditorState.create({
+    doc,
+    extensions: [language],
+    selection: { anchor: doc.indexOf("a |") + 1 },
+  });
+  ensureSyntaxTree(inside, doc.length, 5000);
+  check("光标在表格内时不渲染（回退源码可编辑）", collectTableSpecs(inside, true).length === 0);
+  check("只读实例不降级，始终渲染", collectTableSpecs(inside, false).length === 1);
+}
+
 section("L3 当前块回退（块内 hide 撤销，块级视觉保留）");
 
 {

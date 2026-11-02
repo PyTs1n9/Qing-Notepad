@@ -5,7 +5,7 @@ import { redoDepth, undoDepth } from "@codemirror/commands";
 import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
 import {
-  codeMirrorFontSizeTheme,
+  codeMirrorTypographyTheme,
   literalTabIndentation,
   themeAwareMarkdownHighlighting,
 } from "@/utils/codeMirror";
@@ -36,6 +36,11 @@ interface MarkdownSourceEditorProps {
    * paste/drop is an image and hands the file over.
    */
   onPasteImage?: (file: File) => void;
+  /**
+   * Body typeface family name from settings (`""` = system stack). Code is not
+   * affected: fenced blocks and inline code pin `--font-mono` in CSS.
+   */
+  fontFamily?: string;
 }
 
 const externalDocumentUpdate = Annotation.define<boolean>();
@@ -51,7 +56,6 @@ const noteEditorTheme = EditorView.theme({
     backgroundColor: "transparent",
   },
   ".cm-scroller": {
-    fontFamily: 'Consolas, "Cascadia Code", monospace',
     lineHeight: "1.7",
     overflow: "auto",
   },
@@ -93,11 +97,13 @@ export default function MarkdownSourceEditor({
   fontSize,
   livePreview = false,
   onPasteImage,
+  fontFamily = "",
 }: MarkdownSourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const latestValueRef = useRef(value);
   const latestFontSizeRef = useRef(fontSize);
+  const latestFontFamilyRef = useRef(fontFamily);
   const latestLivePreviewRef = useRef(livePreview);
   const latestPasteImageRef = useRef(onPasteImage);
   latestPasteImageRef.current = onPasteImage;
@@ -111,6 +117,7 @@ export default function MarkdownSourceEditor({
   const livePreviewCompartment = useMemo(() => new Compartment(), []);
   latestValueRef.current = value;
   latestFontSizeRef.current = fontSize;
+  latestFontFamilyRef.current = fontFamily;
   latestLivePreviewRef.current = livePreview;
 
   useEffect(() => {
@@ -137,7 +144,9 @@ export default function MarkdownSourceEditor({
         pluginDecorations,
         livePreviewCompartment.of(latestLivePreviewRef.current ? livePreviewExtension : []),
         markdownInputRules({ insertImage: (file) => latestPasteImageRef.current?.(file) }),
-        fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
+        fontSizeCompartment.of(
+          codeMirrorTypographyTheme(latestFontSizeRef.current, latestFontFamilyRef.current),
+        ),
         EditorView.lineWrapping,
         literalTabIndentation,
         keymap.of([
@@ -193,9 +202,9 @@ export default function MarkdownSourceEditor({
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: fontSizeCompartment.reconfigure(codeMirrorFontSizeTheme(fontSize)),
+      effects: fontSizeCompartment.reconfigure(codeMirrorTypographyTheme(fontSize, fontFamily)),
     });
-  }, [fontSize, fontSizeCompartment]);
+  }, [fontSize, fontFamily, fontSizeCompartment]);
 
   useEffect(() => {
     const view = viewRef.current;

@@ -224,6 +224,7 @@ export default function App() {
   const showWorkspaceHighlights = useSettingsStore((s) => s.showWorkspaceHighlights);
   const alwaysOnTop = useSettingsStore((s) => s.alwaysOnTop);
   const pluginsDisabled = useSettingsStore((s) => s.pluginsDisabled);
+  const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
   const announcementsEnabled = useSettingsStore((s) => s.announcementsEnabled);
   const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
@@ -355,6 +356,7 @@ export default function App() {
           glassBlurBg?: number;
           glassTintBg?: number;
           glassSaturateBg?: number;
+          editorFontFamily?: string;
           pluginsDisabled?: boolean;
         });
 
@@ -572,6 +574,7 @@ export default function App() {
         glassBlurBg,
         glassTintBg,
         glassSaturateBg,
+        editorFontFamily,
         pluginsDisabled,
         announcementsEnabled,
       });
@@ -598,6 +601,7 @@ export default function App() {
     glassBlurBg,
     glassTintBg,
     glassSaturateBg,
+    editorFontFamily,
     pluginsDisabled,
     announcementsEnabled,
     initialized,

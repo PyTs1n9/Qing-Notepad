@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { codeMirrorFontSizeTheme, themeAwareMarkdownHighlighting } from "@/utils/codeMirror";
+import { codeMirrorTypographyTheme, themeAwareMarkdownHighlighting } from "@/utils/codeMirror";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { livePreview } from "@/utils/livePreview";
 import { openInDefaultBrowser } from "@/utils/externalLinks";
 import { linkUrlAt } from "@/utils/markdownLinks";
@@ -35,8 +36,8 @@ const readonlyTheme = EditorView.theme({
   },
   ".cm-scroller": {
     overflow: "visible",
-    // Same stack as the editor so a preview and the editor agree on metrics.
-    fontFamily: 'Consolas, "Cascadia Code", monospace',
+    // Family comes from settings through the compartment, so a preview and the
+    // editor always agree on metrics.
     lineHeight: "1.7",
   },
   ".cm-content": { padding: "0", caretColor: "transparent" },
@@ -59,6 +60,7 @@ export default function MarkdownReadonlyView({ value, fontSize = 14, className }
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const latestValueRef = useRef(value);
+  const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
   const latestFontSizeRef = useRef(fontSize);
   const fontSizeCompartment = useMemo(() => new Compartment(), []);
   latestValueRef.current = value;
@@ -77,7 +79,7 @@ export default function MarkdownReadonlyView({ value, fontSize = 14, className }
           markdown({ base: markdownLanguage, addKeymap: false }),
           themeAwareMarkdownHighlighting,
           readonlyTheme,
-          fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
+          fontSizeCompartment.of(codeMirrorTypographyTheme(latestFontSizeRef.current, editorFontFamily)),
           EditorView.lineWrapping,
           READONLY_PREVIEW,
           EditorView.domEventHandlers({
@@ -111,9 +113,9 @@ export default function MarkdownReadonlyView({ value, fontSize = 14, className }
 
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: fontSizeCompartment.reconfigure(codeMirrorFontSizeTheme(fontSize)),
+      effects: fontSizeCompartment.reconfigure(codeMirrorTypographyTheme(fontSize, editorFontFamily)),
     });
-  }, [fontSize, fontSizeCompartment]);
+  }, [fontSize, editorFontFamily, fontSizeCompartment]);
 
   return <div ref={hostRef} className={className} />;
 }

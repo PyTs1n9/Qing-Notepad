@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { blockAtPosition } from "../editorBlocks";
+import { tablePreview } from "./tableField";
 import {
   buildLivePreviewDecorations,
   collectLivePreviewRanges,
@@ -162,14 +163,19 @@ export interface LivePreviewConfig {
  */
 export function livePreview(config: LivePreviewConfig = {}): Extension {
   const revealActiveBlock = config.revealActiveBlock !== false;
-  return ViewPlugin.fromClass(
-    class extends LivePreviewView {
-      constructor(view: EditorView) {
-        super(view, revealActiveBlock);
-      }
-    },
-    { decorations: (plugin) => plugin.decorations },
-  );
+  return [
+    ViewPlugin.fromClass(
+      class extends LivePreviewView {
+        constructor(view: EditorView) {
+          super(view, revealActiveBlock);
+        }
+      },
+      { decorations: (plugin) => plugin.decorations },
+    ),
+    // Tables are block replacements, which a view plugin may not provide; the
+    // field is separate for that reason, not for organisation.
+    tablePreview({ revealActiveBlock }),
+  ];
 }
 
 /**

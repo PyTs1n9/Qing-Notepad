@@ -2,6 +2,7 @@ import type { EditorState, Range } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
+import { highlightRanges } from "../highlight";
 
 /**
  * Live preview (L1) decoration specs, sorted by document position.
@@ -190,11 +191,19 @@ function visitNode(
   switch (node.name) {
     case "FencedCode":
     case "CodeBlock":
-      addLineClasses(state, Math.max(node.from, visible.from), Math.min(node.to, visible.to), "cm-md-code-block", visible, push);
+      addCodeBlockLines(node, state, visible, push);
+      // Fenced code can be highlighted; an indented block has no info string.
+      if (node.name === "FencedCode") addCodeHighlight(node, state, visible, push);
       return false;
     case "Blockquote":
       addLineClasses(state, Math.max(node.from, visible.from), Math.min(node.to, visible.to), "cm-md-quote", visible, push);
       // Descend for inline marks inside the quote.
+      return;
+    // Rendering lives in `tableField.ts`: a block replacement may only be
+    // provided by a state field, and this layer is a view plugin. What is left
+    // here is the caret-inside case — the source view still needs its inline
+    // marks hidden, so descend instead of stopping.
+    case "Table":
       return;
     case "HorizontalRule":
       if (contains(visible, node.from, node.to)) push({ kind: "hide", from: node.from, to: node.to });
@@ -267,6 +276,81 @@ function secondLinkMarkFrom(children: readonly SyntaxNode[], fallback: number): 
     seenFirst = true;
   }
   return fallback;
+}
+
+/**
+ * One line decoration per visible line of a code block, with the first and last
+ * line marked so CSS can round the corners.
+ *
+ * The first/last decision uses the *node's* bounds, not the visible slice: when
+ * the top of a block scrolls out of view the topmost painted line is mid-block,
+ * and rounding it would draw a stray cap in the middle of the block.
+ */
+function addCodeBlockLines(
+  node: SyntaxNode,
+  state: EditorState,
+  visible: VisibleRange,
+  push: Push,
+): void {
+  const doc = state.doc;
+  const blockFirstLine = doc.lineAt(node.from).number;
+  const blockLastLine = doc.lineAt(Math.max(node.to, node.from + 1) - 1).number;
+
+  const from = Math.max(node.from, visible.from);
+  const to = Math.min(node.to, visible.to);
+  if (to <= from) return;
+
+  const firstLine = Math.max(doc.lineAt(from).number, doc.lineAt(visible.from).number);
+  const lastLine = Math.min(doc.lineAt(to - 1).number, doc.lineAt(Math.max(visible.from, visible.to - 1)).number);
+
+  for (let number = firstLine; number <= lastLine; number += 1) {
+    const isFirst = number === blockFirstLine && number === firstLine;
+    const isLast = number === blockLastLine && number === lastLine;
+    const className =
+      isFirst && isLast
+        ? "cm-md-code-block cm-md-code-single"
+        : isFirst
+          ? "cm-md-code-block cm-md-code-first"
+          : isLast
+            ? "cm-md-code-block cm-md-code-last"
+            : "cm-md-code-block";
+    push({ kind: "line", from: doc.line(number).from, className });
+  }
+}
+
+/**
+ * Token colours for a fenced block, reusing the highlighter the preview and the
+ * exporters already use (`highlight.js`), so a block looks the same everywhere.
+ *
+ * The highlighter needs text, so this is the one place the layer reads the
+ * document — read-only, never written back. Runs are emitted as ordinary marks
+ * and are therefore *not* dropped when the caret enters the block: the source
+ * stays coloured while it is being edited, which is what makes dropping the
+ * hidden markers acceptable.
+ */
+function addCodeHighlight(
+  node: SyntaxNode,
+  state: EditorState,
+  visible: VisibleRange,
+  push: Push,
+): void {
+  let info = "";
+  let text: SyntaxNode | null = null;
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name === "CodeInfo") info = state.doc.sliceString(child.from, child.to);
+    else if (child.name === "CodeText") text = child;
+  }
+  if (!text) return;
+
+  const code = state.doc.sliceString(text.from, text.to);
+  for (const run of highlightRanges(code, info)) {
+    const from = text.from + run.from;
+    const to = text.from + run.to;
+    // Clipping at the viewport edge would paint half a token on the wrong
+    // character once the block scrolls; skip it and let the next paint catch it.
+    if (!contains(visible, from, to)) continue;
+    push({ kind: "mark", from, to, className: run.className });
+  }
 }
 
 /** Emits one line decoration per visible line of `[from, to)`. */

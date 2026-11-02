@@ -580,3 +580,73 @@ undefined (reading 'attachmentSrc')`）。改为 `getAttribute("data-attachment-
 
 - 本机 `data/notes` 不存在（仓库里没有真实笔记），真实用户数据上的分布未知；
 - 数据目录若不可写（只读盘/权限），备份会失败，脚本按设计整文件跳过并计入失败——未在真机上验证。
+
+## M9 实施记录（2026-11-02，真机反馈后的观感修复）
+
+`npx tsc --noEmit`、`npm run build` 通过；四个规格脚本 166 项全过。
+无头浏览器实测截图：`final-look.png`（整页）、`crop-zoom3.png`（代码块 3× 放大）。
+
+### 1. 表格渲染（原先完全没有）
+
+`Table` 节点在装饰层里**没有分支**，所以只有行内标记被处理，表格结构没人管——这正是
+「表格没渲染、表格内格式却正常」的原因。
+
+新增 `src/utils/livePreview/tableField.ts` + `tableWidget.ts`：
+
+- widget 由**单元格行内片段**构建（`readTable` 遍历 `TableCell` 的 `StrongEmphasis` /
+  `InlineCode` / `Link`），逐片 `createElement` + `textContent`，**不拼 HTML 字符串**，
+  因此不存在注入面；链接走与 `markdown.ts` 相同的 scheme 白名单。
+- 对齐取自分隔行（`TableDelimiter` 的 `:`）。
+- 光标在表格内时整块回退源码（`collectTableSpecs` 跳过），与 M3 的块降级一致。
+
+**踩坑（决定架构的一条）**：widget 起初放在 ViewPlugin 里，编辑器直接抛
+`RangeError: Block decorations may not be specified via plugins`，整个页面白屏（无错误边界）。
+CM 只允许 **StateField** 提供 block 装饰，因为块替换会改变文档高度。
+所以装饰层现在分成两半：行内/逐行留在 ViewPlugin，表格单独一个 StateField。
+**这条不是风格选择，是硬约束**，后续任何 block 级视觉（图片、数学块）都得走 StateField。
+
+表格只处理**顶层** `Table`：引用/列表里的表格保留源码形态，否则外层块的降级会失效。
+
+### 2. 代码块观感
+
+三处独立缺陷，各自修复：
+
+| 症状 | 根因 | 修法 |
+| --- | --- | --- |
+| 没有语法颜色 | 编辑器只接了 `markdown()`，围栏内容没有 token；项目真实的 19 个 python / 3 个 powershell 代码块用 CM 语言包也覆盖不到 | 复用已有的 `highlight.js`（14 门语言），把它的 HTML 输出还原成偏移，产出 `hljs-*` mark |
+| 只是一个矩形 | `.cm-md-code-block` 只有一句 `background-color` | 首/末行加 `cm-md-code-first/last/single`，圆角 + 四边发丝线 + 内边距 |
+| 光标落位透明一整行 | `highlightActiveLine` 的 baseTheme 是 `&light .cm-activeLine`（两类），压过主题里的单类 `transparent` | `.cm-editor .cm-line.cm-activeLine { background: transparent !important }` |
+
+高亮实现放在 `src/utils/highlight.ts`：语言注册从 `markdown.ts` 抽出来共用（原来预览与编辑器
+会各注册一遍，且在编辑器侧压根没注册）。`highlightRanges` 把 hljs 的 HTML 走一遍栈，
+转成 `{from,to,className}`；**结束时校验「可见文本长度 == 源码长度」**，不等就返回空——
+宁可不染色，也不能错位（实体 `&amp;` 是 5 个字符 1 个宽）。
+
+**踩坑**：`.hljs-keyword { color }` 一直不生效，但 `background: red !important` 能生效。
+原因是 CodeMirror 把每段 token 文字又包了一层自己的 `<span>`，颜色声明在**内层**；
+高亮器的 class 在**外层**，`color` 只是被继承，继承永远输给内层的直接声明。
+修法是让内层 `color: inherit !important`。这条同样适用于任何「在编辑器里给文字上色」的场景。
+
+代码块内保留围栏行（``` 与语言名），与 `#`、`>` 的处理一致：只加视觉，不藏块级标记。
+
+### 3. 正文字体接口
+
+原先三处编辑器实例都硬编码 `Consolas`。**中文没有等宽字体**，于是逐字回退到系统衬线，
+小字号下就是用户说的「像素化」。所以这不是"换个好看的字体"，是"用错了字体类别"。
+
+- `settingsStore.editorFontFamily: string`（`""` = 系统无衬线栈），随其余设置持久化。
+- 设置 → 基础 → **编辑器字体**：下拉取 `useFontStore` 的字体表（系统自带四款 + 用户上传的
+  `@font-face`），另有「自定义…」可填任意 family 名。
+- `codeMirrorTypographyTheme(fontSize, fontFamily)` 同时管字号与字体，仍走同一个 `Compartment`，
+  切换字体不重建视图。
+- **代码不受影响**：`--editor-font-mono` 只作用于 `.cm-md-code-block` 与 `.cm-md-code`。
+  该变量原本叫 `--font-mono`，与 Tailwind v4 `@theme` 里的同名 token 撞车，已改名。
+- `fontFamily === undefined` 表示"只改字号、别动字体"：云端编辑器共用这个 helper，
+  不能被顺带套上正文字体栈。
+
+### 未验证（需真机）
+
+1. 点击表格：应从 widget 跳回源码态并落光标。落点可能先到块首，再点一次才精确。
+2. 表格 widget 与滚动：`estimatedHeight` 是估算（34 + 行数×34），长表格首次进入视口可能有一次高度跳动。
+3. 字体下拉里用户上传的字体是否即时可选（`@font-face` 在主窗口注入，贴窗是独立 webview）。
+4. 切换字体后行高/光标位置是否立即正确（`Compartment` 重配应触发 remeasure）。

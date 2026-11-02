@@ -21,7 +21,8 @@ import { linkUrlAt } from "@/utils/markdownLinks";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { codeMirrorFontSizeTheme, themeAwareMarkdownHighlighting } from "@/utils/codeMirror";
+import { codeMirrorTypographyTheme, themeAwareMarkdownHighlighting } from "@/utils/codeMirror";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { livePreview } from "@/utils/livePreview";
 import { markdownInputRules } from "@/utils/livePreview/inputRules";
 
@@ -39,7 +40,6 @@ const STICKY_PREVIEW = livePreview();
 const stickyEditorTheme = EditorView.theme({
   "&": { height: "100%", color: "var(--color-text-primary)", backgroundColor: "transparent" },
   ".cm-scroller": {
-    fontFamily: 'Consolas, "Cascadia Code", monospace',
     lineHeight: "1.6",
     overflow: "auto",
   },
@@ -72,6 +72,9 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const fontSizeCompartment = useMemo(() => new Compartment(), []);
+  const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
+  const editorFontFamilyRef = useRef(editorFontFamily);
+  editorFontFamilyRef.current = editorFontFamily;
   const placeholderCompartment = useMemo(() => new Compartment(), []);
   // The editor is created once; the debounce lives below it, so route it through
   // a ref instead of rebuilding the view whenever a callback identity changes.
@@ -115,7 +118,7 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           stickyEditorTheme,
           STICKY_PREVIEW,
           markdownInputRules(),
-          fontSizeCompartment.of(codeMirrorFontSizeTheme(DEFAULT_FONT)),
+          fontSizeCompartment.of(codeMirrorTypographyTheme(DEFAULT_FONT, editorFontFamilyRef.current)),
           placeholderCompartment.of(codeMirrorPlaceholder("")),
           EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
@@ -166,8 +169,10 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
 
   // Ctrl+wheel zoom and the empty-note hint are reconfigurations, not rebuilds.
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: fontSizeCompartment.reconfigure(codeMirrorFontSizeTheme(fontSize)) });
-  }, [fontSize, fontSizeCompartment]);
+    viewRef.current?.dispatch({
+      effects: fontSizeCompartment.reconfigure(codeMirrorTypographyTheme(fontSize, editorFontFamily)),
+    });
+  }, [fontSize, editorFontFamily, fontSizeCompartment]);
 
   useEffect(() => {
     viewRef.current?.dispatch({

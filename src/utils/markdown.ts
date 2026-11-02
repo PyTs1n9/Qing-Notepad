@@ -1,40 +1,11 @@
 import { marked, type Tokens } from "marked";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import c from "highlight.js/lib/languages/c";
-import cpp from "highlight.js/lib/languages/cpp";
-import css from "highlight.js/lib/languages/css";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdown from "highlight.js/lib/languages/markdown";
-import powershell from "highlight.js/lib/languages/powershell";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
+import { hljs } from "@/utils/highlight";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join, resourceDir } from "@tauri-apps/api/path";
 import { getDataDirectory, getStorageLocation, resolveImageAttachment } from "@/utils/storage";
 
 const markdownRenderer = new marked.Renderer();
-
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("c", c);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("powershell", powershell);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("xml", xml);
 
 function escapeHtml(text: string): string {
   return text

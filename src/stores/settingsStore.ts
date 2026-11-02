@@ -192,6 +192,11 @@ interface SettingsState {
   glassBlurBg: number;
   glassTintBg: number;
   glassSaturateBg: number;
+  /**
+   * Editor body typeface, as a family name (`"LXGW WenKai"`) or empty for the
+   * system UI stack. Only the body: code keeps its own monospace stack.
+   */
+  editorFontFamily: string;
   /** Temporary kill switch: every plugin is refused while this is true. */
   pluginsDisabled: boolean;
   /**
@@ -199,6 +204,7 @@ interface SettingsState {
    * still renders the copy bundled with the build.
    */
   announcementsEnabled: boolean;
+  setEditorFontFamily: (family: string) => void;
   setPluginsDisabled: (disabled: boolean) => void;
   setAnnouncementsEnabled: (enabled: boolean) => void;
   setTheme: (theme: ThemeType) => void;
@@ -246,6 +252,7 @@ interface SettingsState {
     glassBlurBg?: number;
     glassTintBg?: number;
     glassSaturateBg?: number;
+    editorFontFamily?: string;
     pluginsDisabled?: boolean;
     announcementsEnabled?: boolean;
   }) => void;
@@ -273,6 +280,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   glassBlurBg: DEFAULT_GLASS_BLUR_BG,
   glassTintBg: DEFAULT_GLASS_TINT_BG,
   glassSaturateBg: DEFAULT_GLASS_SATURATE_BG,
+  editorFontFamily: "",
   pluginsDisabled: false,
   announcementsEnabled: true,
 
@@ -319,6 +327,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setShowWorkspaceHighlights: (showWorkspaceHighlights) => set({ showWorkspaceHighlights }),
 
   setAlwaysOnTop: (alwaysOnTop) => set({ alwaysOnTop }),
+
+  setEditorFontFamily: (editorFontFamily) => set({ editorFontFamily: editorFontFamily.trim() }),
 
   setPluginsDisabled: (pluginsDisabled) => set({ pluginsDisabled }),
 
@@ -375,6 +385,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       glassBlurBg: normalizeGlassNumber(settings.glassBlurBg, MIN_GLASS_BLUR, MAX_GLASS_BLUR, DEFAULT_GLASS_BLUR_BG),
       glassTintBg: normalizeGlassNumber(settings.glassTintBg, MIN_GLASS_TINT, MAX_GLASS_TINT, DEFAULT_GLASS_TINT_BG),
       glassSaturateBg: normalizeGlassNumber(settings.glassSaturateBg, MIN_GLASS_SATURATE, MAX_GLASS_SATURATE, DEFAULT_GLASS_SATURATE_BG),
+      editorFontFamily: typeof settings.editorFontFamily === "string" ? settings.editorFontFamily : "",
       pluginsDisabled: settings.pluginsDisabled === true,
       // Opt-out flag: only an explicit `false` disables the feed.
       announcementsEnabled: settings.announcementsEnabled !== false,

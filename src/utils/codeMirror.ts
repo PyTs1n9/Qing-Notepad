@@ -53,9 +53,49 @@ const themeAwareMarkdownHighlightStyle = HighlightStyle.define([
 
 export const themeAwareMarkdownHighlighting = syntaxHighlighting(themeAwareMarkdownHighlightStyle);
 
-export function codeMirrorFontSizeTheme(fontSize: number): Extension {
+/**
+ * Body face when the user has not picked one.
+ *
+ * This is deliberately the UI sans stack and not a monospace one: a CJK glyph
+ * has no monospace face on Windows, so a monospace body falls back per glyph to
+ * a bitmap-era serif — which is exactly what made small sizes look pixelated.
+ * Code keeps its own mono stack through `--font-mono` in CSS.
+ */
+export const DEFAULT_BODY_FONT = '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+
+/**
+ * `family` as a CSS `font-family` value, with the system stack behind it.
+ *
+ * The user types a family name (`LXGW WenKai`), not a full stack, so it gets
+ * quoted when needed and always keeps a fallback — a name that is not installed
+ * must degrade to the system UI font, never to the browser default serif.
+ */
+export function bodyFontStack(family: string | null | undefined): string {
+  const trimmed = (family ?? "").trim();
+  if (!trimmed) return DEFAULT_BODY_FONT;
+  const quoted = /^['"].*['"]$/.test(trimmed) ? trimmed : `"${trimmed}"`;
+  return `${quoted}, ${DEFAULT_BODY_FONT}`;
+}
+
+/**
+ * Font size and family in one extension, because both live in the same
+ * `Compartment` in every editor instance and a separate one for the family
+ * would just be another thing to keep in sync.
+ */
+export function codeMirrorTypographyTheme(
+  fontSize: number,
+  fontFamily?: string | null,
+): Extension {
+  // `undefined` means "leave the family alone": the cloud editor shares this
+  // helper for its font size only, and handing it the local body stack would
+  // silently restyle a surface that was never part of this change. An empty
+  // string *is* a choice — the system stack.
+  const family = fontFamily === undefined || fontFamily === null ? null : bodyFontStack(fontFamily);
   return EditorView.theme({
-    "&": { fontSize: `${fontSize}px` },
+    "&": {
+      fontSize: `${fontSize}px`,
+      ...(family ? { fontFamily: family } : {}),
+    },
   });
 }
 

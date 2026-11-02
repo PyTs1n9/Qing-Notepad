@@ -37,7 +37,7 @@ import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
 import {
-  codeMirrorFontSizeTheme,
+  codeMirrorTypographyTheme,
   literalTabIndentation,
   themeAwareMarkdownHighlighting,
 } from "@/utils/codeMirror";
@@ -988,7 +988,7 @@ export default function CloudNoteEditor({
       markdown(),
       themeAwareMarkdownHighlighting,
       literalTabIndentation,
-      fontSizeCompartment.of(codeMirrorFontSizeTheme(editorFontSize)),
+      fontSizeCompartment.of(codeMirrorTypographyTheme(editorFontSize)),
       EditorView.lineWrapping,
       EditorState.readOnly.of(!canEdit),
       // Keep the content DOM focusable for viewers so their selection/caret is
@@ -1141,7 +1141,7 @@ export default function CloudNoteEditor({
     const runtime = collaborationVisualsRef.current;
     if (!runtime) return;
     runtime.view.dispatch({
-      effects: runtime.fontSizeCompartment.reconfigure(codeMirrorFontSizeTheme(editorFontSize)),
+      effects: runtime.fontSizeCompartment.reconfigure(codeMirrorTypographyTheme(editorFontSize)),
     });
   }, [editorFontSize]);
 

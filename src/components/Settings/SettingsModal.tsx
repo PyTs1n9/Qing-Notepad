@@ -18,6 +18,7 @@ import {
   Megaphone,
   Palette,
   Pencil,
+  Type,
   Puzzle,
   RotateCcw,
   Save,
@@ -30,6 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useFontStore } from "@/stores/fontStore";
 import { useAuthStore } from "@/stores/authStore";
 import type {
   AppShortcuts,
@@ -184,13 +186,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     setPluginsDisabled,
     announcementsEnabled,
     setAnnouncementsEnabled,
+    editorFontFamily,
+    setEditorFontFamily,
   } = useSettingsStore();
+  const fonts = useFontStore((state) => state.fonts);
   const { user, loading: authLoading, error: authError, signOut, updateProfile, updatePassword, clearError } = useAuthStore();
   const activeAvatarCache = typeof user?.user_metadata?.avatar_cache === "string"
     ? user.user_metadata.avatar_cache
     : null;
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("basic");
+  // "Custom…" is a transient UI state, not a stored value: the stored value is
+  // always the family name itself, so an empty box means "system default".
+  const [customFontMode, setCustomFontMode] = useState(false);
   // The two profiles are chosen by whichever one App.tsx can actually apply, so
   // this is passed in rather than re-derived from the stored filename: the
   // settings file can name a background whose asset URL failed to resolve, and
@@ -754,6 +762,73 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
               {activeSection === "basic" && (
                 <div className="overflow-visible rounded-xl border border-border bg-bg-secondary/40">
+                  <div className="grid gap-4 border-b border-border p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-start">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+                        <Type size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-text-primary">
+                          {t(lang, "editorFontSection")}
+                        </div>
+                        <div className="truncate text-[11px] text-text-muted">
+                          {t(lang, "editorFontHint")}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                      {(() => {
+                        const CUSTOM = "__custom__";
+                        const known = fonts.map((font) => font.family);
+                        const isCustomFamily = editorFontFamily !== "" && !known.includes(editorFontFamily);
+                        const showInput = customFontMode || isCustomFamily;
+
+                        return (
+                          <>
+                            <select
+                              aria-label={t(lang, "editorFontSection")}
+                              value={showInput ? CUSTOM : editorFontFamily}
+                              onChange={(event) => {
+                                const next = event.target.value;
+                                if (next === CUSTOM) {
+                                  setCustomFontMode(true);
+                                  return;
+                                }
+                                setCustomFontMode(false);
+                                setEditorFontFamily(next);
+                              }}
+                              className="h-8 w-full rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] font-medium text-text-primary transition-colors hover:bg-bg-hover focus-visible:outline-2 focus-visible:outline-accent"
+                            >
+                              <option value="">{t(lang, "editorFontSystem")}</option>
+                              {fonts
+                                // The store's own "system default" entry is the same
+                                // thing as the empty value above; two identical rows
+                                // would be a picker that cannot be read.
+                                .filter((font) => font.family !== "Segoe UI")
+                                .map((font) => (
+                                  <option key={font.family} value={font.family}>
+                                    {font.name}
+                                  </option>
+                                ))}
+                              <option value={CUSTOM}>{t(lang, "editorFontCustom")}</option>
+                            </select>
+
+                            {showInput && (
+                              <input
+                                value={editorFontFamily}
+                                onChange={(event) => setEditorFontFamily(event.target.value)}
+                                placeholder={t(lang, "editorFontCustomPlaceholder")}
+                                spellCheck={false}
+                                className="h-8 w-full rounded-lg border border-border bg-bg-primary px-2.5 text-[13px] text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+                              />
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
                   <div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(180px,220px)] sm:items-center">
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-accent-light text-accent-text">

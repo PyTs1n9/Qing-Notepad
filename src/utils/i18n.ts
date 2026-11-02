@@ -418,6 +418,11 @@ export type TranslationKeys = {
   mdViewPreview: string;
   mdViewSplit: string;
   mdViewLive: string;
+  editorFontSection: string;
+  editorFontHint: string;
+  editorFontSystem: string;
+  editorFontCustom: string;
+  editorFontCustomPlaceholder: string;
   mdPlaceholder: string;
   inputTagName: string;
   toggleToolbar: string;
@@ -1384,6 +1389,11 @@ const zh: TranslationKeys = {
   mdViewPreview: "预览",
   mdViewSplit: "分屏",
   mdViewLive: "实时渲染",
+  editorFontSection: "编辑器字体",
+  editorFontHint: "正文用字体，代码仍保持等宽",
+  editorFontSystem: "系统默认",
+  editorFontCustom: "自定义…",
+  editorFontCustomPlaceholder: "输入字体名，如 LXGW WenKai",
   mdPlaceholder: "在此输入 Markdown 源码...",
   inputTagName: "输入标签名称:",
   toggleToolbar: "工具栏",
@@ -2351,6 +2361,11 @@ const en: TranslationKeys = {
   mdViewPreview: "Preview",
   mdViewSplit: "Split",
   mdViewLive: "Live rendering",
+  editorFontSection: "Editor font",
+  editorFontHint: "Body text only — code stays monospaced",
+  editorFontSystem: "System default",
+  editorFontCustom: "Custom…",
+  editorFontCustomPlaceholder: "Family name, e.g. LXGW WenKai",
   mdPlaceholder: "Type Markdown source here...",
   inputTagName: "Enter tag name:",
   toggleToolbar: "Toolbar",

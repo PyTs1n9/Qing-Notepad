@@ -113,6 +113,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const editorFontSize = useEditorZoom(editorContainerRef, { initialSize: 16 });
+  // Body typeface lives in settings; the editor reconfigures in place when it
+  // changes, so switching fonts never tears the view down.
+  const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
   const isSavingRef = useRef(false);
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
@@ -667,6 +670,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
             onHistoryChange={handleHistoryChange}
             onViewChange={handleCodeMirrorViewChange}
             fontSize={editorFontSize}
+            fontFamily={editorFontFamily}
             livePreview={markdownViewMode === "live"}
             onPasteImage={insertImageFile}
             onInsertTable={handleInsertTable}
