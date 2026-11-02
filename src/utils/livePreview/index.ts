@@ -44,8 +44,12 @@ class LivePreviewView {
   /** Switching notes destroys the view; the deferred settle must not touch it. */
   private destroyed = false;
 
-  constructor(private readonly view: EditorView) {
-    this.active = activeRange(view.state);
+  /** See `LivePreviewConfig.revealActiveBlock`. */
+  private readonly revealActiveBlock: boolean;
+
+  constructor(private readonly view: EditorView, revealActiveBlock: boolean) {
+    this.revealActiveBlock = revealActiveBlock;
+    this.active = this.computeActive(view.state);
     this.decorations = buildLivePreviewDecorations(view.state, view.visibleRanges, revealFor(this.active));
     view.contentDOM.addEventListener("compositionstart", this.onCompositionStart);
     view.contentDOM.addEventListener("compositionend", this.onCompositionEnd);
@@ -84,8 +88,12 @@ class LivePreviewView {
     this.view.contentDOM.removeEventListener("compositionend", this.onCompositionEnd);
   }
 
+  private computeActive(state: EditorState): VisibleRange | null {
+    return this.revealActiveBlock ? activeRange(state) : null;
+  }
+
   private rebuild(state: EditorState, view: EditorView): void {
-    const active = activeRange(state);
+    const active = this.computeActive(state);
     this.active = active;
     this.decorations = buildLivePreviewDecorations(state, view.visibleRanges, revealFor(active));
   }
@@ -100,7 +108,7 @@ class LivePreviewView {
    * common case (every arrow key, every click in the same paragraph).
    */
   private syncActive(state: EditorState): void {
-    const next = activeRange(state);
+    const next = this.computeActive(state);
     if (sameRange(this.active, next)) return;
 
     const affected = spanOf(this.active, next);
@@ -135,10 +143,34 @@ class LivePreviewView {
   };
 }
 
-/** Extension to mount for the 实时渲染 view; absent in 源码 view. */
-export const livePreview: Extension = ViewPlugin.fromClass(LivePreviewView, {
-  decorations: (plugin) => plugin.decorations,
-});
+export interface LivePreviewConfig {
+  /**
+   * Fall the block under the caret back to source. On by default — that is the
+   * editable experience. Read-only views turn it off: there is no caret to fall
+   * back for, and a selection at offset 0 would otherwise leave the first block
+   * permanently shown as source.
+   */
+  revealActiveBlock?: boolean;
+}
+
+/**
+ * Extension for the 实时渲染 view; absent in 源码 view.
+ *
+ * A factory rather than a constant because read-only instances need the same
+ * decorations without the caret behaviour. Each call creates its own plugin type,
+ * so call it once per editor and keep the result.
+ */
+export function livePreview(config: LivePreviewConfig = {}): Extension {
+  const revealActiveBlock = config.revealActiveBlock !== false;
+  return ViewPlugin.fromClass(
+    class extends LivePreviewView {
+      constructor(view: EditorView) {
+        super(view, revealActiveBlock);
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  );
+}
 
 /**
  * Block(s) the selection touches. A collapsed caret yields its block; a range

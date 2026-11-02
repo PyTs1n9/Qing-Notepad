@@ -13,7 +13,7 @@ import {
 // rather than something a plugin reaches into the view to toggle. `pluginDecorations`
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
-import { livePreview as livePreviewExtension } from "@/utils/livePreview";
+import { livePreview } from "@/utils/livePreview";
 import { markdownInputRules } from "@/utils/livePreview/inputRules";
 
 interface MarkdownSourceEditorProps {
@@ -40,6 +40,9 @@ interface MarkdownSourceEditorProps {
 }
 
 const externalDocumentUpdate = Annotation.define<boolean>();
+
+/** Editable instance: the caret's block falls back to source. */
+const livePreviewExtension = livePreview();
 
 const noteEditorTheme = EditorView.theme({
   "&": {

@@ -421,3 +421,53 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
 2. 上面那条「标记后 Backspace」的体验取舍：删整段标记 vs 只删一个字符。
 3. 跨块大选区删除时，M3 的整段回退是否会让用户"看到"即将被删的标记（观感）。
 4. 中文输入法组字中点 Backspace（与 M3 的冻结叠加）。
+
+## M6 实施记录（2026-11-02）
+
+`npx tsc --noEmit`、`npm run build` 通过；只读实例已在无头浏览器渲染核对（`readonly-tile.png`）。
+
+### 做了什么
+
+- `livePreview(config)` 改成工厂，新增 `revealActiveBlock`（默认 true）。只读实例传 false：
+  没有可编辑光标，若不关，offset 0 处的 selection 会让**首块永远停在源码态**。
+- 新增 `src/components/Editor/MarkdownReadonlyView.tsx`：`editable: false` + `readOnly: true`
+  的 CM 视图，挂同一套装饰，不注册输入规则，自管主题（透明底、无 gutter、auto height）。
+- `TileView` 从「`renderStoredNoteContent` → innerHTML」改为该组件，`dangerouslySetInnerHTML`
+  与 `renderMarkdown` 管线在卡片窗上彻底退出。
+- 链接点击：装饰层把 `[label](url)` 藏成纯文本，DOM 里已没有 `<a>`，所以改为
+  `view.posAtCoords` → `linkUrlAt(state,pos)` → `openInDefaultBrowser`（仍只放行 http(s)）。
+  `linkUrlAt` 抽到 `src/utils/markdownLinks.ts`，贴窗与卡片窗共用。
+
+### 贴窗的事实纠正（与原需求前提不同）
+
+原需求把贴窗也当只读。实际 `StickyNote` 是 **contentEditable 可编辑**窗口：防抖保存，并且把
+**渲染后的 HTML** 写回 `.md` 文件——这正是 M8 要迁移的「HTML 期数据」的来源。
+按你的选择，贴窗改成**可编辑的 CM 实例**（不是只读）：
+
+- 装饰、输入规则、主题、字号缩放全部复用；`markdownInputRules()` 不传 `insertImage`（贴窗没有附件路径）；
+- 保存改写 `view.state.doc.toString()`，即**直接写 Markdown**，HTML 往返与其"多一个空行"的旧注释一并消失；
+- `sticky:note-updated` 用带 annotation 的全量替换灌入，不置脏标记，避免回写风暴；
+- 组合输入：监听 `contentDOM` 的 compositionstart/end，组字期间不冲刷防抖保存。
+
+### 只读实例与主编辑器的装饰差异（全部为有意）
+
+| 项 | 主编辑器 | 只读实例 |
+| --- | --- | --- |
+| 光标降级 | `revealActiveBlock: true`，当前块回退源码 | `false`，全部保持渲染 |
+| 输入规则 | 11 条全注册 | 不注册（无 keymap、无 paste/drop、无复选框点击） |
+| 历史/撤销 | `basicSetup` 提供 | 无（不挂 history，不可编辑） |
+| 行号 / 活动行 / 搜索面板 | 有 | 无（不挂 basicSetup） |
+| 主题 | 编辑器主题 + 20px content padding | 透明底、无 padding、auto height 由窗口滚动 |
+| 字号 | `codeMirrorFontSizeTheme` | 同一个，标题仍是 `em` 跟随 |
+| 字体 | Consolas 栈 | 同一个栈（原卡片窗是正文无衬线，**观感变化**） |
+| 链接 | 文本，不可点（编辑器里靠预览面板） | 文本，可点（`posAtCoords` + 语法树） |
+
+### 需要人工确认
+
+1. 卡片窗（Tile）的观感：等宽字体替代了原来的无衬线，标题层级、代码块底纹、分隔线在窄窗里是否可接受。
+2. 贴窗（Sticky）整体：本机无法创建 Tauri 窗口，**只做了编译与静态审查**，编辑、防抖保存、
+   `sticky:note-saved` 回传主窗口、Ctrl+滚轮缩放、空笔记占位符都要真机过一遍。
+3. 贴窗焦点样式：原 `.sticky-content:focus` 的内阴影现在不会触发（焦点在 CM 内部），是否需要补一条
+   `.sticky-content:focus-within`。
+4. 旧笔记里已经存成 HTML 的内容，在卡片窗/贴窗里会显示为原始 HTML 文本（与主编辑器一致），
+   须由 M8 一次性迁移。

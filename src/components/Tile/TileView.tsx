@@ -5,8 +5,7 @@ import { loadNoteContent, loadNoteList, loadSettings } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import type { ThemeType, CustomColors } from "@/stores/settingsStore";
 import { X } from "lucide-react";
-import { handleExternalLinkClick } from "@/utils/externalLinks";
-import { renderStoredNoteContent } from "@/utils/markdown";
+import MarkdownReadonlyView from "@/components/Editor/MarkdownReadonlyView";
 
 interface NoteMeta {
   id: string;
@@ -20,7 +19,7 @@ const TileView: React.FC = () => {
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [updatedAt, setUpdatedAt] = useState("");
-  const [htmlContent, setHtmlContent] = useState("");
+  const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
 
   const params = new URLSearchParams(window.location.search);
@@ -49,10 +48,7 @@ const TileView: React.FC = () => {
       // Load note content
       try {
         const raw = await loadNoteContent(noteId);
-        if (raw) {
-          const html = await renderStoredNoteContent(raw);
-          setHtmlContent(html);
-        }
+        if (raw) setContent(raw);
       } catch {
         // ignore
       }
@@ -145,16 +141,11 @@ const TileView: React.FC = () => {
         )}
       </div>
 
-      {/* Note content */}
+      {/* Note content: the same live preview decorations as the editor, on a
+          read-only view. Link clicks are handled inside the view. */}
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {htmlContent ? (
-          <div
-            className="tile-content text-sm text-text-primary leading-relaxed
-              [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
-              [&_a]:text-accent-text [&_a]:underline"
-            onClick={handleExternalLinkClick}
-            dangerouslySetInnerHTML={{ __html: htmlContent }}
-          />
+        {content ? (
+          <MarkdownReadonlyView value={content} fontSize={14} />
         ) : (
           <p className="text-text-muted text-sm italic">Empty note</p>
         )}
