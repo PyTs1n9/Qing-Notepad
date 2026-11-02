@@ -31,6 +31,7 @@
     "verify:live-preview": "node scripts/verify-live-preview.mjs",
     "verify:input-rules": "node scripts/verify-input-rules.mjs",
     "verify:block-delete": "node scripts/verify-block-delete.mjs",
+    "migrate:html-notes": "node scripts/migrate-html-notes.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
   },
   "dependencies": {

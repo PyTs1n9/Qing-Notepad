@@ -511,3 +511,72 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
 
 本地编辑器整体依赖 Tauri（dialog/fs），无法在浏览器里整块挂载，因此**工具栏去掉同步按钮后的
 间距与换行**只做了静态判断，需真机看一眼。
+
+## M8 实施记录（2026-11-02）
+
+新增 `scripts/migrate-html-notes.mjs`（`npm run migrate:html-notes`）。`npx tsc --noEmit` 通过。
+
+### 用法
+
+```
+node scripts/migrate-html-notes.mjs --dry-run   # 只统计
+node scripts/migrate-html-notes.mjs             # 备份后写入
+node scripts/migrate-html-notes.mjs --dir <data/notes>
+```
+
+转换**完全复用** `htmlToMarkdown.ts`：`isStoredEditorHtml` 判定命中，`htmlToMarkdown` 负责改写，
+与 `NoteEditor` / `App.tsx` / `plugin/bridge.ts` 调用的是同一份规则，没有第二套实现。
+
+### 安全边界
+
+- 写盘前把原文件按字节复制到 `<data>/backup/html-migration-<YYYYMMDD-HHMMSS>/`；
+- 写入走「同目录临时文件 + rename」，不会出现半截文件；
+- 读取/转换/写入任一失败，原文件保持不动并计入失败；
+- 不删除任何文件。
+
+**回滚**：把备份目录里的同名文件复制回 `data/notes/` 覆盖即可（脚本运行结束会打印这两个路径）。
+
+### 幂等
+
+转换产物不再满足 `isStoredEditorHtml`，所以第二次运行命中 0、转换 0。
+
+唯一不收敛的情形是「代码块里存了字面 `<div>` 等标签」：转换结果仍会被识别为 HTML。
+这类文件**不写盘**、计入失败并列出原因——因为写下去之后，下一次运行会把围栏当标签解析并吃掉
+里面的标签（实测 26 → 15 字符，内容被破坏）。样例里 `warn-fence.md` 就是这一条。
+
+### 顺带修掉的一个阻塞
+
+`htmlToMarkdown.ts` 的 `img` 规则读 `el.dataset.attachmentSrc`。脚本在 Node 侧 DOM 下运行，
+那里没有 `dataset` 实现，**任何带图片的笔记都会转换失败**（实测 `Cannot read properties of
+undefined (reading 'attachmentSrc')`）。改为 `getAttribute("data-attachment-src")`，
+第二顺位仍是 `el.src`，浏览器的相对 URL 解析行为不变。
+
+### 样例副本运行结果（`%TEMP%/qnp-migration-samples/data/notes`，8 个文件）
+
+| 文件 | 内容 | 结果 |
+| --- | --- | --- |
+| `html-basic.md` | h1 / p / strong / em / code / ul / blockquote | 转换 164 → 69 字符 |
+| `html-code-image.md` | h2 / pre code / img / hr | 转换 118 → 62 字符 |
+| `html-div-lines.md` | contentEditable 的 div 行（含空行） | 转换 57 → 12 字符 |
+| `already-markdown.md` / `plain-text.md` / `empty.md` | 已是 Markdown / 纯文本 / 空 | 跳过 |
+| `blank-html.md` | `<p></p>` | 失败：转换结果为空，保留原文 |
+| `warn-fence.md` | 代码块里存了 `<div>` | 失败：不收敛，未写盘 |
+
+统计：**扫描 8 · 命中 5 · 转换 3 · 跳过 3 · 失败 2**；第二次运行 **转换 0**，失败集合与文件字节均不变。
+
+抽样对比（`html-basic.md`）：
+
+```
+前 <h1>项目计划</h1><p>第一段<strong>加粗</strong>…<ul><li><p>甲</p></li>…
+后 # 项目计划\n\n第一段**加粗**与*斜体*，还有`行内码`。\n\n## 清单\n\n-   甲\n\n-   乙\n\n> 引用一句
+```
+
+### 保真度观察（未改，属于既有规则）
+
+`<li><p>甲</p></li>` 这种 TipTap 结构会被 turndown 转成「松列表」：`-   甲` 后面跟一个空行。
+实时渲染里表现为列表项之间多一行空白。这来自既有转换规则，按要求没有另写一套去"优化"它。
+
+### 未验证
+
+- 本机 `data/notes` 不存在（仓库里没有真实笔记），真实用户数据上的分布未知；
+- 数据目录若不可写（只读盘/权限），备份会失败，脚本按设计整文件跳过并计入失败——未在真机上验证。

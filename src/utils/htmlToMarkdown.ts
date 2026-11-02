@@ -65,7 +65,11 @@ turndownService.addRule("img", {
   filter: "img",
   replacement: (_content, node) => {
     const el = node as HTMLImageElement;
-    const source = el.dataset.attachmentSrc || el.src;
+    // `getAttribute` rather than `dataset`: the migration script runs this
+    // module under a non-browser DOM, where `dataset` is not implemented and
+    // every note with a picture would fail to convert. `el.src` stays second so
+    // the browser keeps resolving relative URLs exactly as before.
+    const source = el.getAttribute("data-attachment-src") || el.src || el.getAttribute("src") || "";
     return `![${el.alt || "image"}](${source})`;
   },
 });
