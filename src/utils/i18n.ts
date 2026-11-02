@@ -419,6 +419,7 @@ export type TranslationKeys = {
   mdViewSource: string;
   mdViewPreview: string;
   mdViewSplit: string;
+  mdViewLive: string;
   mdPlaceholder: string;
   inputTagName: string;
   toggleToolbar: string;
@@ -1386,6 +1387,7 @@ const zh: TranslationKeys = {
   mdViewSource: "源码",
   mdViewPreview: "预览",
   mdViewSplit: "分屏",
+  mdViewLive: "实时渲染",
   mdPlaceholder: "在此输入 Markdown 源码...",
   inputTagName: "输入标签名称:",
   toggleToolbar: "工具栏",
@@ -2354,6 +2356,7 @@ const en: TranslationKeys = {
   mdViewSource: "Source",
   mdViewPreview: "Preview",
   mdViewSplit: "Split",
+  mdViewLive: "Live rendering",
   mdPlaceholder: "Type Markdown source here...",
   inputTagName: "Enter tag name:",
   toggleToolbar: "Toolbar",

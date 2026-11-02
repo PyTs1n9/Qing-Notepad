@@ -46,6 +46,14 @@ const TABLE_MARKDOWN = "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\
 const TABLE_FIRST_CELL_OFFSET = 2;
 
 /**
+ * Local notes offer two panes: live rendering and the raw-source escape hatch.
+ * `preview` / `split` stay in the cloud editor only, so the switch is handed
+ * this set instead of a hard-coded three.
+ */
+const LOCAL_MARKDOWN_VIEWS = ["live", "source"] as const;
+type LocalMarkdownView = (typeof LOCAL_MARKDOWN_VIEWS)[number];
+
+/**
  * The note page no longer has a title field. A note keeps whatever title it was
  * created with (imported files carry their file name); a note whose title is
  * still blank adopts its first non-empty body line so the sidebar, tab strip and
@@ -91,9 +99,10 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   const activeNoteIdRef = useRef<string | null>(null);
   const mdContentRef = useRef("");
 
-  // Default to the Markdown source view when a note page is first opened.
-  // The user can still switch to preview or split from the toolbar.
-  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("source");
+  // Live rendering is the default surface for a note. It shares the source
+  // editor until the decoration layer lands, so switching to `source` only
+  // removes the rendering, never the document.
+  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("live");
   const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
   const [mdContent, setMdContent] = useState("");
   const [editorSessionVersion, setEditorSessionVersion] = useState(0);
@@ -606,13 +615,15 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     );
   }
 
-  const showMarkdownSource = markdownViewMode === "source" || markdownViewMode === "split";
+  // `live` renders through the same CodeMirror instance as `source` for now, so
+  // both modes show the source pane; only the chrome differs.
+  const showMarkdownSource =
+    markdownViewMode === "live" || markdownViewMode === "source" || markdownViewMode === "split";
   const showMarkdownPreview = markdownViewMode === "preview" || markdownViewMode === "split";
 
-  const markdownViewLabels: Record<MarkdownViewMode, string> = {
+  const markdownViewLabels: Record<LocalMarkdownView, string> = {
+    live: t(lang, "mdViewLive"),
     source: t(lang, "mdViewSource"),
-    preview: t(lang, "mdViewPreview"),
-    split: t(lang, "mdViewSplit"),
   };
 
   // Word count: Chinese characters + English words
@@ -633,6 +644,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           own 16px top padding, so the row needs none below. */}
       <div className="note-editor-toolbar flex flex-wrap items-center gap-1 gap-y-1 px-5 py-0.5">
         <MarkdownViewSwitch
+          modes={LOCAL_MARKDOWN_VIEWS}
           value={markdownViewMode}
           onChange={setMarkdownViewMode}
           labels={markdownViewLabels}

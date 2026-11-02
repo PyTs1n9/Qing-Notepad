@@ -56,7 +56,10 @@ import HoverPopover from "@/components/Workspace/HoverPopover";
 import UserAvatar from "@/components/UserAvatar";
 import PublicationDateTimePicker from "@/components/Workspace/PublicationDateTimePicker";
 import WorkspaceDropdown from "@/components/Workspace/WorkspaceDropdown";
-import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
+import MarkdownViewSwitch, {
+  MARKDOWN_VIEW_ORDER,
+  type MarkdownViewMode,
+} from "@/components/Editor/MarkdownViewSwitch";
 
 interface CloudNoteEditorProps {
   document: WorkspaceDocument;
@@ -1338,7 +1341,9 @@ export default function CloudNoteEditor({
       setPublicationSavingAction(null);
     }
   };
-  const viewLabels: Record<MarkdownViewMode, string> = {
+  // The cloud editor keeps the original three panes; its label table is typed
+  // against that set, so adding a pane locally cannot leak a dead label here.
+  const viewLabels: Record<(typeof MARKDOWN_VIEW_ORDER)[number], string> = {
     source: t(lang, "mdViewSource"),
     preview: t(lang, "mdViewPreview"),
     split: t(lang, "mdViewSplit"),
@@ -1353,7 +1358,12 @@ export default function CloudNoteEditor({
           Nothing here is a header any more, which is why it no longer paints a
           bottom border - the strip above owns the one hairline. */}
       <div className="workspace-editor-toolbar relative z-20 flex flex-nowrap items-center gap-1 overflow-hidden px-5 py-0.5">
-        <MarkdownViewSwitch value={viewMode} onChange={setViewMode} labels={viewLabels} />
+        <MarkdownViewSwitch
+          modes={MARKDOWN_VIEW_ORDER}
+          value={viewMode}
+          onChange={setViewMode}
+          labels={viewLabels}
+        />
         <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
         <button
           type="button"
