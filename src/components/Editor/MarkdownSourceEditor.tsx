@@ -21,7 +21,6 @@ interface MarkdownSourceEditorProps {
   placeholder: string;
   onChange: (value: string) => void;
   onHistoryChange: (canUndo: boolean, canRedo: boolean) => void;
-  onScroll: (view: EditorView) => void;
   onViewChange: (view: EditorView | null) => void;
   /** Mod-Alt-t handler; the note editor owns what gets inserted. */
   onInsertTable?: () => void;
@@ -89,7 +88,6 @@ export default function MarkdownSourceEditor({
   placeholder,
   onChange,
   onHistoryChange,
-  onScroll,
   onViewChange,
   onInsertTable,
   fontSize,
@@ -167,21 +165,18 @@ export default function MarkdownSourceEditor({
     });
 
     const view = new EditorView({ state, parent: host });
-    const handleScroll = () => onScroll(view);
-    view.scrollDOM.addEventListener("scroll", handleScroll);
     viewRef.current = view;
     onViewChange(view);
     onHistoryChange(false, false);
 
     return () => {
-      view.scrollDOM.removeEventListener("scroll", handleScroll);
       if (viewRef.current === view) {
         viewRef.current = null;
         onViewChange(null);
       }
       view.destroy();
     };
-  }, [onChange, onHistoryChange, onScroll, onViewChange, placeholder]);
+  }, [onChange, onHistoryChange, onViewChange, placeholder]);
 
   useEffect(() => {
     const view = viewRef.current;

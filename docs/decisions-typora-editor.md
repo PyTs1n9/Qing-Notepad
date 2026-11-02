@@ -471,3 +471,43 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
    `.sticky-content:focus-within`。
 4. 旧笔记里已经存成 HTML 的内容，在卡片窗/贴窗里会显示为原始 HTML 文本（与主编辑器一致），
    须由 M8 一次性迁移。
+
+## M7 实施记录（2026-11-02）
+
+`npx tsc --noEmit`、`npm run build` 通过；四个验证脚本（158 项）无回归。
+
+### 本地编辑器
+
+- 档位仍是 `["live", "source"]`，但 state 类型从 `MarkdownViewMode`（四值）收紧为
+  `LocalMarkdownView`（两值）——`split` / `preview` 在这个编辑器里**类型上不可能出现**，
+  不需要运行期判断。
+- 删掉的路径：
+  - 预览面板（`dangerouslySetInnerHTML` + 那串 `prose` 工具类）与它的 `previewHtml` 状态；
+  - `renderMarkdown(mdContent)` 那个副作用——它本来只喂预览面板；
+  - 双栏布局、`w-1/2` / `border-r`、两个面板小标题（`markdownViewMode === "split"` 分支）；
+  - 双向滚动同步（`handleCodeMirrorScroll` / `handlePreviewScroll` / `isScrollingRef` /
+    `scrollSyncEnabled*` / `toggleScrollSync`）与工具栏上的同步开关按钮；
+  - `MarkdownSourceEditor` 的 `onScroll` prop 及其 DOM 监听（唯一调用方就是上面那个同步）。
+- i18n：`sourceEditor`、`preview` 两个键因此失效，已从类型表与 zh/en 表各删一条。
+  `mdViewSplit` / `mdViewPreview` / `synchronizedScroll` / `independentScroll` **保留**——云端编辑器仍在用。
+- 两处注释原本描述"预览/分屏只是 CSS 隐藏"，与现状不符，改为描述"两种模式共用一个 view"。
+
+### 云端
+
+`CloudNoteEditor` 一行未动：`splitRatio` / `resizingSplit` / 双栏滚动同步 / `mdViewSplit` 全部保留。
+
+### 全仓 split 搜索（排除 `.split(` 与无关英文）
+
+| 位置 | 结论 |
+| --- | --- |
+| `MarkdownViewSwitch.tsx` 的 union / `MARKDOWN_VIEW_ORDER` / 图标表 | 保留：云端三档共用 |
+| `CloudNoteEditor.tsx` 的 `split*` 与 `resizingSplit` | 保留：云端分屏 |
+| `i18n.ts` 的 `mdViewSplit` | 保留：云端在用 |
+| `NoteEditor.tsx` | 只剩 `imageExtensionOf` 里的 `.split()` 与一段讲 padding 的英文注释 |
+| `plugin/bridge.ts`、`utils/editorHandle.ts` | 原注释描述的分屏行为已不存在，改写 |
+| `App.tsx` / `NoteTabBar` / `GraphPage` / `plugin/*` / `settingsStore` 等 | 与编辑器档位无关的英文 `split`，不动 |
+
+### 未验证
+
+本地编辑器整体依赖 Tauri（dialog/fs），无法在浏览器里整块挂载，因此**工具栏去掉同步按钮后的
+间距与换行**只做了静态判断，需真机看一眼。

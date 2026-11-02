@@ -16,15 +16,13 @@ import { useAiStore } from "@/stores/aiStore";
 import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
 import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Sparkles, Undo2, Redo2, Link2, Unlink2, Table, ImagePlus, FileDown } from "lucide-react";
+import { Save, Pin, Sparkles, Undo2, Redo2, Table, ImagePlus, FileDown } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
-import { handleExternalLinkClick } from "@/utils/externalLinks";
-import { renderMarkdown } from "@/utils/markdown";
 import { useEditorZoom } from "@/utils/editorZoom";
 import { registerNoteFlusher } from "@/utils/noteFlush";
 import { setActiveEditor } from "@/utils/editorHandle";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
-import MarkdownViewSwitch, { type MarkdownViewMode } from "@/components/Editor/MarkdownViewSwitch";
+import MarkdownViewSwitch from "@/components/Editor/MarkdownViewSwitch";
 import { htmlToMarkdown, isStoredEditorHtml } from "@/utils/htmlToMarkdown";
 
 // Configure marked
@@ -91,9 +89,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   const lang = useSettingsStore((s) => s.lang);
   const autoSaveInterval = useSettingsStore((s) => s.autoSaveInterval);
   const codeMirrorViewRef = useRef<EditorView | null>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
-  const isScrollingRef = useRef(false);
-  const scrollSyncEnabledRef = useRef(true);
+
 
   // Refs to avoid stale closures in editor callbacks
   const activeNoteIdRef = useRef<string | null>(null);
@@ -102,11 +98,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   // Live rendering is the default surface for a note. It shares the source
   // editor until the decoration layer lands, so switching to `source` only
   // removes the rendering, never the document.
-  const [markdownViewMode, setMarkdownViewMode] = useState<MarkdownViewMode>("live");
-  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
+  const [markdownViewMode, setMarkdownViewMode] = useState<LocalMarkdownView>("live");
   const [mdContent, setMdContent] = useState("");
   const [editorSessionVersion, setEditorSessionVersion] = useState(0);
-  const [previewHtml, setPreviewHtml] = useState("");
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
   // Dirty state is tracked per note in the tab store, so each tab can show its
@@ -499,79 +493,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     setActiveEditor(view);
   }, []);
 
-  // Sync scroll: CodeMirror -> preview
-  const handleCodeMirrorScroll = useCallback((view: EditorView) => {
-    if (!scrollSyncEnabledRef.current || isScrollingRef.current) return;
-    isScrollingRef.current = true;
-
-    const scroller = view.scrollDOM;
-    const preview = previewRef.current;
-    if (!preview) {
-      isScrollingRef.current = false;
-      return;
-    }
-
-    const ratio = scroller.scrollTop / (scroller.scrollHeight - scroller.clientHeight || 1);
-    preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight);
-
-    requestAnimationFrame(() => {
-      isScrollingRef.current = false;
-    });
-  }, []);
-
-  // Sync scroll: preview -> CodeMirror
-  const handlePreviewScroll = useCallback(() => {
-    if (!scrollSyncEnabledRef.current || isScrollingRef.current) return;
-    isScrollingRef.current = true;
-
-    const scroller = codeMirrorViewRef.current?.scrollDOM;
-    const preview = previewRef.current;
-    if (!scroller || !preview) {
-      isScrollingRef.current = false;
-      return;
-    }
-
-    const ratio = preview.scrollTop / (preview.scrollHeight - preview.clientHeight || 1);
-    scroller.scrollTop = ratio * (scroller.scrollHeight - scroller.clientHeight);
-
-    requestAnimationFrame(() => {
-      isScrollingRef.current = false;
-    });
-  }, []);
-
-  const toggleScrollSync = useCallback(() => {
-    const nextEnabled = !scrollSyncEnabled;
-    scrollSyncEnabledRef.current = nextEnabled;
-    setScrollSyncEnabled(nextEnabled);
-    if (nextEnabled) {
-      requestAnimationFrame(() => {
-        const view = codeMirrorViewRef.current;
-        if (view) handleCodeMirrorScroll(view);
-      });
-    }
-  }, [handleCodeMirrorScroll, scrollSyncEnabled]);
-
   useEffect(() => {
-    if (markdownViewMode === "preview") return;
     requestAnimationFrame(() => codeMirrorViewRef.current?.requestMeasure());
-  }, [editorFontSize, markdownViewMode]);
-
-  // Resolve local image files asynchronously through Tauri's filesystem API.
-  // Cancel stale renders so switching notes cannot paint an older preview.
-  useEffect(() => {
-    let cancelled = false;
-    renderMarkdown(mdContent)
-      .then((html) => {
-        if (!cancelled) setPreviewHtml(html);
-      })
-      .catch((error) => {
-        console.error("Failed to render Markdown preview:", error);
-        if (!cancelled) setPreviewHtml("");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mdContent]);
+  }, [editorFontSize]);
 
   if (!activeNote) {
     return (
@@ -593,12 +517,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       </div>
     );
   }
-
-  // `live` renders through the same CodeMirror instance as `source` for now, so
-  // both modes show the source pane; only the chrome differs.
-  const showMarkdownSource =
-    markdownViewMode === "live" || markdownViewMode === "source" || markdownViewMode === "split";
-  const showMarkdownPreview = markdownViewMode === "preview" || markdownViewMode === "split";
 
   const markdownViewLabels: Record<LocalMarkdownView, string> = {
     live: t(lang, "mdViewLive"),
@@ -674,20 +592,6 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
         <div className="flex-1" />
         <button
           type="button"
-          aria-pressed={scrollSyncEnabled}
-          onClick={toggleScrollSync}
-          title={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-          aria-label={t(lang, scrollSyncEnabled ? "synchronizedScroll" : "independentScroll")}
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
-            scrollSyncEnabled
-              ? "border-accent/30 bg-accent/10 text-accent-text hover:bg-accent/15"
-              : "border-transparent text-text-secondary hover:bg-bg-hover hover:text-text-primary"
-          }`}
-        >
-          {scrollSyncEnabled ? <Link2 size={15} /> : <Unlink2 size={15} />}
-        </button>
-        <button
-          type="button"
           onClick={handleAiPolish}
           title={t(lang, "aiPolishEntry")}
           aria-label={t(lang, "aiPolishEntry")}
@@ -752,64 +656,21 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       {/* The shell already frames the editor, so the text surface is flush with
           the card: no second border, radius or tinted panel inside it. */}
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Editor Content */}
-        <div className="flex min-h-0 flex-1 overflow-hidden" style={{ fontSize: editorFontSize }}>
-          <div
-            className={`${showMarkdownSource ? "flex" : "hidden"} ${showMarkdownPreview ? "w-1/2 border-r border-border" : "w-full"} min-h-0 flex-col overflow-hidden`}
-          >
-              {/* Pane captions only earn their space when both panes are visible. */}
-              {markdownViewMode === "split" && (
-                <div className="border-b border-border bg-bg-secondary px-3 py-1 text-[11px] font-medium text-text-muted">
-                  {t(lang, "sourceEditor")}
-                </div>
-              )}
-              <MarkdownSourceEditor
-                key={`${activeNote.id}:${editorSessionVersion}`}
-                value={mdContent}
-                placeholder={t(lang, "mdPlaceholder")}
-                onChange={handleMdChange}
-                onHistoryChange={handleHistoryChange}
-                onScroll={handleCodeMirrorScroll}
-                onViewChange={handleCodeMirrorViewChange}
-                fontSize={editorFontSize}
-                livePreview={markdownViewMode === "live"}
-                onPasteImage={insertImageFile}
-                onInsertTable={handleInsertTable}
-              />
-          </div>
-          {showMarkdownPreview && (
-            <div className={`${showMarkdownSource ? "w-1/2" : "w-full"} flex min-h-0 flex-col overflow-hidden`}>
-              {markdownViewMode === "split" && (
-                <div className="border-b border-border bg-bg-secondary px-3 py-1 text-[11px] font-medium text-text-muted">
-                  {t(lang, "preview")}
-                </div>
-              )}
-              <div
-                ref={previewRef}
-                onScroll={handlePreviewScroll}
-                onClick={handleExternalLinkClick}
-                className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-10"
-              >
-                <div
-                  className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary
-                    [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mb-3 [&_h1]:mt-4
-                    [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3
-                    [&_h3]:text-lg [&_h3]:font-medium [&_h3]:mb-2 [&_h3]:mt-2
-                    [&_p]:leading-[1.7]
-                    [&_ul]:list-disc [&_ul]:pl-6
-                    [&_ol]:list-decimal [&_ol]:pl-6
-                    [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4
-                    [&_blockquote]:italic [&_blockquote]:text-text-secondary
-                    [&_hr]:border-border [&_hr]:my-4
-                    [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_img]:my-2
-                    [&_strong]:font-bold [&_em]:italic [&_u]:underline [&_s]:line-through
-                    [&_a]:text-accent-text [&_a]:underline
-                    [&_code]:bg-bg-secondary [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs"
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
-                />
-              </div>
-            </div>
-          )}
+        {/* Editor content. One pane: 分屏 is gone — the rendered state is a
+            property of this same buffer, not a second view of it. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ fontSize: editorFontSize }}>
+          <MarkdownSourceEditor
+            key={`${activeNote.id}:${editorSessionVersion}`}
+            value={mdContent}
+            placeholder={t(lang, "mdPlaceholder")}
+            onChange={handleMdChange}
+            onHistoryChange={handleHistoryChange}
+            onViewChange={handleCodeMirrorViewChange}
+            fontSize={editorFontSize}
+            livePreview={markdownViewMode === "live"}
+            onPasteImage={insertImageFile}
+            onInsertTable={handleInsertTable}
+          />
         </div>
 
         {/* Meta strip pinned to the bottom-right corner: updated time, save

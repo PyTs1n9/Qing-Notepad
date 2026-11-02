@@ -154,10 +154,9 @@ export const pluginDecorations: Extension = StateField.define<Map<string, Decora
  *
  * Two things this deliberately does *not* include:
  *
- * - **Preview mode is not "no editor".** Switching the note between source,
- *   preview and split only toggles a CSS class (`NoteEditor.tsx:807`), so the
- *   view stays mounted and plugins keep a working document while the user reads
- *   the rendered version.
+ * - **切换 实时渲染 / 源码 is not "no editor".** Both modes share one CodeMirror
+ *   view — only the decoration layer is reconfigured — so plugins keep a working
+ *   document whichever mode the user is in.
  * - **Cloud notes are not published here.** `Workspace/CloudNoteEditor.tsx` is
  *   a separate CodeMirror instance backed by Yjs/Hocuspocus; it never calls
  *   `setActiveEditor`, so `qing.editor.*` answers `E_NO_EDITOR` while the

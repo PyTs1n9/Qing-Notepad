@@ -414,8 +414,6 @@ export type TranslationKeys = {
   updatedAt: string;
   selectNote: string;
   orCreateNote: string;
-  sourceEditor: string;
-  preview: string;
   mdViewSource: string;
   mdViewPreview: string;
   mdViewSplit: string;
@@ -1382,8 +1380,6 @@ const zh: TranslationKeys = {
   updatedAt: "更新于",
   selectNote: "选择一个笔记开始编辑",
   orCreateNote: '或点击左侧"新建笔记"按钮',
-  sourceEditor: "源码编辑",
-  preview: "预览",
   mdViewSource: "源码",
   mdViewPreview: "预览",
   mdViewSplit: "分屏",
@@ -2351,8 +2347,6 @@ const en: TranslationKeys = {
   updatedAt: "Updated",
   selectNote: "Select a note to start editing",
   orCreateNote: 'Or click "New Note" on the left',
-  sourceEditor: "Source",
-  preview: "Preview",
   mdViewSource: "Source",
   mdViewPreview: "Preview",
   mdViewSplit: "Split",

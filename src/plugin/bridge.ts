@@ -297,11 +297,10 @@ async function readNoteBody(note: Note): Promise<string> {
  *
  * Two behaviours worth knowing because they get asked about:
  *
- * - **preview / split mode still has an editor.** `NoteEditor.tsx:807` hides the
- *   source pane with CSS (`hidden`), it does not unmount it, so `getText()` and
- *   `replace()` keep working while the user is looking at the rendered view.
- *   Only "no note open at all" (todo page, settings, empty tab) returns
- *   `E_NO_EDITOR`.
+ * - **切换 实时渲染 / 源码 does not unmount the editor.** Both modes are the same
+ *   CodeMirror view; only the decoration layer changes, so `getText()` and
+ *   `replace()` keep working. Only "no note open at all" (todo page, settings,
+ *   empty tab) returns `E_NO_EDITOR`.
  * - **cloud notes are not the active editor.** `Workspace/CloudNoteEditor.tsx`
  *   is a second CodeMirror instance backed by Yjs; it never calls
  *   `setActiveEditor`, so a plugin running while the workspace is open gets
