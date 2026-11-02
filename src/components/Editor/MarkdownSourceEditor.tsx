@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
 import {
   codeMirrorFontSizeTheme,
@@ -14,6 +14,7 @@ import {
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
 import { livePreview as livePreviewExtension } from "@/utils/livePreview";
+import { markdownInputRules } from "@/utils/livePreview/inputRules";
 
 interface MarkdownSourceEditorProps {
   value: string;
@@ -30,6 +31,12 @@ interface MarkdownSourceEditorProps {
    * is to see the file exactly as it is on disk.
    */
   livePreview?: boolean;
+  /**
+   * Receives an image file pasted or dropped onto the editor. The note editor
+   * owns where attachments live, so the input rule only decides *that* this
+   * paste/drop is an image and hands the file over.
+   */
+  onPasteImage?: (file: File) => void;
 }
 
 const externalDocumentUpdate = Annotation.define<boolean>();
@@ -84,12 +91,15 @@ export default function MarkdownSourceEditor({
   onInsertTable,
   fontSize,
   livePreview = false,
+  onPasteImage,
 }: MarkdownSourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const latestValueRef = useRef(value);
   const latestFontSizeRef = useRef(fontSize);
   const latestLivePreviewRef = useRef(livePreview);
+  const latestPasteImageRef = useRef(onPasteImage);
+  latestPasteImageRef.current = onPasteImage;
   // The editor is created once; route the shortcut through a ref so a new
   // callback identity never tears the whole CodeMirror instance down.
   const insertTableRef = useRef(onInsertTable);
@@ -114,11 +124,18 @@ export default function MarkdownSourceEditor({
         // Strikethrough node (and tables a Table node) with GFM enabled, and
         // `utils/editorBlocks.ts` parses with the same base. Two different
         // bases would give one document two block boundaries.
-        markdown({ base: markdownLanguage }),
+        //
+        // `addKeymap: false`: Enter is owned by `markdownInputRules` now, and the
+        // language's own continuation would both duplicate rule 2/3 and make a
+        // single rule impossible to switch off. Backspace keeps its markup
+        // deletion explicitly (cross-block deletion is M5's).
+        markdown({ base: markdownLanguage, addKeymap: false }),
+        keymap.of([{ key: "Backspace", run: deleteMarkupBackward }]),
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
         pluginDecorations,
         livePreviewCompartment.of(latestLivePreviewRef.current ? livePreviewExtension : []),
+        markdownInputRules({ insertImage: (file) => latestPasteImageRef.current?.(file) }),
         fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
         EditorView.lineWrapping,
         literalTabIndentation,

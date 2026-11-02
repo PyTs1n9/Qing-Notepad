@@ -317,3 +317,53 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
 
 另外两项也需要真机看：滚动时组字（冻结期间新进入视口的行不装饰，属于预期，但观感要确认）、
 跨块大范围选区的回退观感。
+
+## M4 实施记录（2026-11-02）
+
+新增 `src/utils/livePreview/inputRules.ts`（11 条规则 + 注册表 + 绑定）与
+`scripts/verify-input-rules.mjs`（`npm run verify:input-rules`，53 项）。
+`npx tsc --noEmit`、`npm run build` 通过；无头浏览器合成按键 9/9 通过。
+
+### 结构
+
+- 每条规则是 `run(context) → TransactionSpec | null` 的纯函数，注册在 `INPUT_RULES[id]`；
+  一个 id 可挂多个函数（`listIndent` = Tab + Shift-Tab，`inlineWrap` = Mod-b + Mod-i），
+  关闭一个 id 就整组停用。`markdownInputRules({ disabled })` 是唯一开关入口。
+- 所有事务带两个 annotation：`inputRuleSource`（来源）与 `isolateHistory.of("full")`
+  （独立 undo 组）。一条规则只发一次事务，所以 Ctrl+Z 必然整条回退，不会只退一半。
+- `MarkdownSourceEditor` 的 `markdown()` 改为 `addKeymap: false`：语言包自带的 Enter
+  续行会与本模块重复，且会让「单条关闭」失效。Backspace 的标记删除显式补回
+  （`deleteMarkupBackward`），跨块删除留给 M5。
+
+### 每条规则的触发条件 / 边界
+
+| # | 规则 | 触发 | 边界（已验证） |
+| --- | --- | --- | --- |
+| 1 | `headingShortcut` | 行尾输入空格，前面恰好是 0–3 空格 + 1–6 个 `#` | 7 个 `#` 不触发（保持段落）；行首缩进被抹平；光标不在行尾不触发 |
+| 2 | `quoteContinue` | 引用行 Enter | 只有 `>` 的行退出一级（`> > ` → `> `，`> ` → 空行）；懒续行（无 `>`）交回默认 |
+| 3 | `listContinue` | 列表项行 Enter | 有序按 `n+1` 且保留 `.`/`)`；任务项续出新的 `- [ ] `；引用内保留 `> `；行中拆分也带标记；空项让给规则 4 |
+| 4 | `listExit` | 只有标记的空项 Enter | 连缩进一起删；任务空项连 `[ ] ` 一起删；引用内保留 `>`；有内容不触发 |
+| 5 | `listIndent` | 列表项内 Tab / Shift-Tab | 单位取「本项缩进 → 文档首个缩进列表行 → 两空格」，tab 文档插 tab；多行项整块缩进；顶层 Shift-Tab 不动；非列表交给默认 Tab |
+| 6 | `fenceClose` | 未闭合围栏的起始行 Enter | 按起始围栏的字符与长度补闭合；已闭合/围栏行中间不触发 |
+| 7 | `mathClose` | 整行恰为 `$$` 时 Enter | 上方奇数个 `$$` 视为已在块内，不补；行内 `$$` 不触发 |
+| 8 | `hrBreak` | `---`/`***`/`___` 行 Enter | 正常情况补换行；被解析成 Setext 下划线时先插空行断开（一次事务两处改动，仍是一次撤销） |
+| 9 | `inlineWrap` | Mod-b / Mod-i | 已加粗则取消；连标记一起选中也能取消；空光标插入成对标记 |
+| 10 | `imageDrop` | 编辑器上粘贴/拖入图片文件 | 只判定「是图片」并 `preventDefault`，落盘仍走 `NoteEditor.insertImageBytes`（`attachment://` 路径未变） |
+| 11 | `taskToggle` | 点击 `[ ]` / `[x]` | 用 `TaskMarker` 节点定位，改 `[` 与 `]` 之间的一个字符；正文位置不触发；点击不移动光标 |
+
+### 验证方式
+
+- `verify-input-rules.mjs`：每个用例「文档 + 光标 → 期望文档 + 光标」，并断言事务里两个
+  annotation 都在、文档确实改变。
+- 无头浏览器 `?mode=rules`：合成 `KeyboardEvent` 交给 CodeMirror 自己的 keymap，
+  9 条按键规则全部 PASS —— 这同时证明 `Prec.highest` 压过了 `basicSetup` 的默认 Enter/Tab。
+- 未做（也无法做）：真实键盘/输入法的字符插入路径，所以「按下去到底会不会触发」仍需真机。
+
+### 需要人工确认
+
+1. 规则 1：真实输入法下「先打#再打空格」是否会先插入字符再触发规则（我们拦的是 keydown，
+   字符由浏览器插入，顺序与合成事件不同）。
+2. 规则 3/4：连续按 Enter 穿过「列表 → 空项 → 退出 → 引用退出」四级时的节奏是否顺。
+3. 规则 5：Tab 在缩进列表里的层级变化是否符合直觉，尤其混合 `-` 与 `1.` 的列表。
+4. 规则 10：真实拖拽（资源管理器拖文件）与截图粘贴是否都能落到 `data/img` 且 `attachment://` 可显示。
+5. 规则 11：点击复选框时不应抢走选区；鼠标按下与拖动选择的区分。

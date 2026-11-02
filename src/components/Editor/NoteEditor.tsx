@@ -466,45 +466,24 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     }
   }, [insertImageBytes, lang]);
 
-  // A pasted screenshot or a dropped image file takes the same route as the
-  // toolbar button, so nothing ever lands in the note as an inline base64 blob.
-  useEffect(() => {
-    const container = editorContainerRef.current;
-    if (!container) return;
-
-    const insertFromBrowserFile = (file: File) => {
-      void file.arrayBuffer()
+  /**
+   * A pasted screenshot or a dropped image file takes the same route as the
+   * toolbar button, so nothing ever lands in the note as an inline base64 blob.
+   *
+   * The *event* side moved into `inputRules.ts` (rule 10), which listens on the
+   * CodeMirror surface — the container listener used to cover the preview pane as
+   * well, but the preview pane is no longer reachable in the local editor. This
+   * callback stays here because it owns the write path, not the trigger.
+   */
+  const insertImageFile = useCallback(
+    (file: File) => {
+      void file
+        .arrayBuffer()
         .then((buffer) => insertImageBytes(new Uint8Array(buffer), imageExtensionOf(file.name || file.type)))
         .catch((error) => console.error("Failed to insert an image file:", error));
-    };
-    const pickImageFile = (list: FileList | null | undefined) =>
-      Array.from(list ?? []).find((file) => file.type.startsWith("image/"));
-
-    const handlePaste = (event: ClipboardEvent) => {
-      const file = pickImageFile(event.clipboardData?.files);
-      if (!file) return;
-      event.preventDefault();
-      insertFromBrowserFile(file);
-    };
-    const handleDragOver = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes("Files")) event.preventDefault();
-    };
-    const handleDrop = (event: DragEvent) => {
-      const file = pickImageFile(event.dataTransfer?.files);
-      if (!file) return;
-      event.preventDefault();
-      insertFromBrowserFile(file);
-    };
-
-    container.addEventListener("paste", handlePaste, true);
-    container.addEventListener("dragover", handleDragOver);
-    container.addEventListener("drop", handleDrop);
-    return () => {
-      container.removeEventListener("paste", handlePaste, true);
-      container.removeEventListener("dragover", handleDragOver);
-      container.removeEventListener("drop", handleDrop);
-    };
-  }, [insertImageBytes]);
+    },
+    [insertImageBytes],
+  );
 
   const handleHistoryChange = useCallback((undoAvailable: boolean, redoAvailable: boolean) => {
     setCanUndo(undoAvailable);
@@ -794,6 +773,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
                 onViewChange={handleCodeMirrorViewChange}
                 fontSize={editorFontSize}
                 livePreview={markdownViewMode === "live"}
+                onPasteImage={insertImageFile}
                 onInsertTable={handleInsertTable}
               />
           </div>
