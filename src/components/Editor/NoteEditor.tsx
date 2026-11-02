@@ -793,6 +793,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
                 onScroll={handleCodeMirrorScroll}
                 onViewChange={handleCodeMirrorViewChange}
                 fontSize={editorFontSize}
+                livePreview={markdownViewMode === "live"}
                 onInsertTable={handleInsertTable}
               />
           </div>

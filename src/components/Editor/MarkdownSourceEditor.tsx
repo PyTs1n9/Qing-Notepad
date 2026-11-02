@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { basicSetup } from "codemirror";
 import {
   codeMirrorFontSizeTheme,
@@ -13,6 +13,7 @@ import {
 // rather than something a plugin reaches into the view to toggle. `pluginDecorations`
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
+import { livePreview as livePreviewExtension } from "@/utils/livePreview";
 
 interface MarkdownSourceEditorProps {
   value: string;
@@ -24,6 +25,11 @@ interface MarkdownSourceEditorProps {
   /** Mod-Alt-t handler; the note editor owns what gets inserted. */
   onInsertTable?: () => void;
   fontSize: number;
+  /**
+   * Mount the live preview decoration layer. Off in 源码 view, where the point
+   * is to see the file exactly as it is on disk.
+   */
+  livePreview?: boolean;
 }
 
 const externalDocumentUpdate = Annotation.define<boolean>();
@@ -77,18 +83,24 @@ export default function MarkdownSourceEditor({
   onViewChange,
   onInsertTable,
   fontSize,
+  livePreview = false,
 }: MarkdownSourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const latestValueRef = useRef(value);
   const latestFontSizeRef = useRef(fontSize);
+  const latestLivePreviewRef = useRef(livePreview);
   // The editor is created once; route the shortcut through a ref so a new
   // callback identity never tears the whole CodeMirror instance down.
   const insertTableRef = useRef(onInsertTable);
   insertTableRef.current = onInsertTable;
   const fontSizeCompartment = useMemo(() => new Compartment(), []);
+  // Switching view is a reconfigure, not a remount: the undo history and the
+  // scroll position have to survive the 实时渲染 / 源码 toggle.
+  const livePreviewCompartment = useMemo(() => new Compartment(), []);
   latestValueRef.current = value;
   latestFontSizeRef.current = fontSize;
+  latestLivePreviewRef.current = livePreview;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -98,10 +110,15 @@ export default function MarkdownSourceEditor({
       doc: latestValueRef.current,
       extensions: [
         basicSetup,
-        markdown(),
+        // GFM base, not the CommonMark default: `~~del~~` only becomes a
+        // Strikethrough node (and tables a Table node) with GFM enabled, and
+        // `utils/editorBlocks.ts` parses with the same base. Two different
+        // bases would give one document two block boundaries.
+        markdown({ base: markdownLanguage }),
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
         pluginDecorations,
+        livePreviewCompartment.of(latestLivePreviewRef.current ? livePreviewExtension : []),
         fontSizeCompartment.of(codeMirrorFontSizeTheme(latestFontSizeRef.current)),
         EditorView.lineWrapping,
         literalTabIndentation,
@@ -164,6 +181,14 @@ export default function MarkdownSourceEditor({
       effects: fontSizeCompartment.reconfigure(codeMirrorFontSizeTheme(fontSize)),
     });
   }, [fontSize, fontSizeCompartment]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: livePreviewCompartment.reconfigure(livePreview ? livePreviewExtension : []),
+    });
+  }, [livePreview, livePreviewCompartment]);
 
   return <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden" />;
 }

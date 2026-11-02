@@ -192,3 +192,70 @@ B 与 C 都会在往返中静默丢失列表紧凑度、缩进、围栏代码块
 - `examples/*.qnp` 是插件包（内含 `dist/extension.js` + `package.json`），不含 Markdown，
   脚本只报告并跳过，没有解包。
 - 块边界的观感（块间距、光标进出块时的降级跳变）无法在本机确认。
+
+## M2 实施记录（2026-11-02）
+
+新增 `src/utils/livePreview/`（`index.ts` 插件 + `decorations.ts` 纯规格层）、
+`preview-live-preview.html` + `src/__preview-live-preview.tsx`（渲染验证台，与既有的
+`preview-*.html` 一样被 `.gitignore` 排除，只留本机）、
+`scripts/verify-live-preview.mjs`（`npm run verify:live-preview`，已入库）。
+`npx tsc --noEmit` 与 `npm run build` 通过；规格脚本 23 项检查全过。
+
+### 结构
+
+- `decorations.ts` 只产出**纯数据** `LivePreviewRange[]`（`hide` / `mark` / `line`），
+  `buildLivePreviewDecorations(state, ranges)` 再转成 `DecorationSet`。
+  分成两层是为了能在没有 DOM 的环境里断言「装饰了哪些偏移」——GUI 缺失时这是唯一可自动化的部分。
+- `index.ts` 是 `ViewPlugin`，只喂 `view.visibleRanges`；`update` 里除 `docChanged` /
+  `viewportChanged` 外还比较 `syntaxTree(startState) !== syntaxTree(state)`，
+  否则解析器异步补完的那一帧不会重绘。
+- 挂载点：`MarkdownSourceEditor` 的 `livePreview` prop，经 `Compartment` 重配。
+  切档是 reconfigure 不是 remount，撤销历史与滚动位置都保留；**源码档不挂载**，保持原始 Markdown。
+
+### 顺带解决 M1 遗留的解析基线问题
+
+`MarkdownSourceEditor` 的 `markdown()` 改为 `markdown({ base: markdownLanguage })`（GFM）。
+理由：`~~删除~~` 在 CommonMark 基线下根本不是 `Strikethrough` 节点，无法隐藏标记；
+表格同理。改后编辑器与 `blocks()` 用同一套树，不存在「同一文档两套块边界」。
+
+### 隐藏与样式清单
+
+| 源 | 隐藏 | 样式类 |
+| --- | --- | --- |
+| `**粗**` | 两段 `EmphasisMark` | `cm-md-strong`（700） |
+| `*斜*` | 两段 `EmphasisMark` | `cm-md-em`（italic） |
+| `~~删~~` | 两段 `StrikethroughMark` | `cm-md-strike`（line-through） |
+| `` `码` `` | 两段 `CodeMark` | `cm-md-code`（底纹 + 圆角 chip） |
+| `[文本](url)` | `[`、`](`、URL、`)` | `cm-md-link`（accent + 下划线） |
+| `# 标题` | 不隐藏 `#` | `cm-md-h1..h6`（字号 1.85/1.55/1.32/1.16/1.06/1em + 字重） |
+| `> 引用` | 不隐藏 `>` | `cm-md-quote`（3px 左侧竖线 + 缩进） |
+| ```` ``` ```` | 不隐藏围栏 | `cm-md-code-block`（逐行底纹） |
+| `---` | 整段隐藏 | `cm-md-hr`（border-top 画线） |
+| `- `/`1. ` | 不隐藏 | `cm-md-list-mark`（2ch 定宽右对齐，符号列对齐） |
+
+`#` 与 `>` 保留可见是**有意为之**：需求只列了五种行内标记要隐藏，块级标记按「加视觉」处理。
+若后续要 Typora 那样连块级标记一起隐藏，改 `visitNode` 两处即可。
+
+字号一律用 `em`，因为编辑器根节点的 px 字号由 `codeMirrorFontSizeTheme` 注入，
+em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
+
+### 验证方式（本机无 GUI，改用无头浏览器实测）
+
+用 `npm run dev` + headless Edge（`--headless=new --screenshot`）真实渲染
+`preview-live-preview.html`，截图存 `.workbuddy/preview/`：
+
+| 截图 | 结论 |
+| --- | --- |
+| `live-16.png` / `live-final.png` | 五种行内标记全部隐藏且样式生效；H1>H2>H3 字号递减；引用竖线存在；0 未捕获错误 |
+| `live-tail.png` | 代码块底纹覆盖围栏与空行、止于闭合围栏；`---` 画成细线且原文隐藏；`-` 与 `1.` 右对齐到同一列、后续文字同列 |
+| `live-zoom24.png` | 24px 下标题与正文同比放大，竖线随之变高，无裁切 |
+| `source-16.png` | 源码档完全不受影响：`**`、反引号、`[](  )`、`#` 全部原样可见，标题不变字号 |
+| `plugin-order.png` | 与 `pluginDecorations` 叠加（含「插件 mark 起始落在隐藏标记内部」的最坏情形），两种注册顺序的渲染一致，未捕获错误 0 |
+
+### 未验证项
+
+- 真实窗口内的滚动/光标：首屏外的行由 `viewportChanged` 重建，逻辑上成立，但只做了静态截图，
+  滚动过程中的闪烁与「新进入视口的那一帧是否已装饰」没法在截图里证明。
+- 光标进入被隐藏标记内部的落点、选区跨隐藏区、中文 IME 组字，均需真机确认。
+- `.cm-md-list-mark` 用了 `display:inline-block`，可能影响光标在符号前后的落点精度。
+- `.cm-md-hr` 的空行高度（画线上下各留一行）是否符合预期，需要在真实窗口里看。

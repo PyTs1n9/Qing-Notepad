@@ -28,6 +28,7 @@
     "verify:graph-layout": "node scripts/verify-graph-layout.mjs",
     "verify:graph-sync": "node scripts/verify-graph-sync.mjs",
     "verify:editor-blocks": "node scripts/verify-editor-blocks.mjs",
+    "verify:live-preview": "node scripts/verify-live-preview.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
   },
   "dependencies": {

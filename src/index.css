@@ -3328,6 +3328,101 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Live preview (L1): classes painted by `utils/livePreview`           */
+/*                                                                     */
+/* Every size below is `em`, never `px`: the editor root carries the   */
+/* zoomed font size (`codeMirrorFontSizeTheme`), so a heading has to   */
+/* scale with ⌘+/- instead of pinning a second font-size scale.        */
+/* Colours are tokens or `color-mix` against them, like `qing-dec-*`,  */
+/* so the four themes resolve their own values.                        */
+/* ------------------------------------------------------------------ */
+.cm-md-strong {
+  font-weight: 700;
+}
+
+.cm-md-em {
+  font-style: italic;
+}
+
+.cm-md-strike {
+  text-decoration: line-through;
+}
+
+.cm-md-code {
+  background-color: var(--color-bg-secondary);
+  border-radius: 4px;
+  padding: 0.08em 0.3em;
+  /* A chip that wraps keeps its tint on every line instead of the first. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.cm-md-link {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+.cm-md-h1 {
+  font-size: 1.85em;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.cm-md-h2 {
+  font-size: 1.55em;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.cm-md-h3 {
+  font-size: 1.32em;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.cm-md-h4 {
+  font-size: 1.16em;
+  font-weight: 600;
+}
+
+.cm-md-h5 {
+  font-size: 1.06em;
+  font-weight: 600;
+}
+
+.cm-md-h6 {
+  font-size: 1em;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.cm-md-quote {
+  border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  padding-left: 0.7em;
+  color: var(--color-text-secondary);
+}
+
+.cm-md-code-block {
+  background-color: var(--color-bg-secondary);
+}
+
+.cm-md-hr {
+  border-top: 1px solid var(--color-border);
+}
+
+/* `-` and `1.` share one fixed column so the text after them starts at the
+   same offset; the source space after the marker supplies the gap. */
+.cm-md-list-mark {
+  display: inline-block;
+  min-width: 2ch;
+  text-align: right;
+  color: var(--color-text-muted);
+}
+
+
+/* ------------------------------------------------------------------ */
 /* Extensions page: container queries for the detail column            */
 /*                                                                     */
 /* The detail pane is squeezed by the editor card it is docked in, not */
