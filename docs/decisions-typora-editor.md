@@ -105,8 +105,9 @@ B 与 C 都会在往返中静默丢失列表紧凑度、缩进、围栏代码块
 
 ## 待定问题
 
-- L3「块」的边界定义：按空行分段、按 AST 顶层节点，还是按视觉行组。这决定按块降级的判定，
-  也决定跨块删除的语义。
+- ~~L3「块」的边界定义：按空行分段、按 AST 顶层节点，还是按视觉行组。~~ 块边界已按 AST
+  节点区间落定（见 M1）。仍待定的是**降级粒度**：引用与表格整体降级是否可接受（表格首版只读，
+  引用内含列表时整块降级），待 M3 实测手感。
 - ~~`MarkdownViewSwitch` 是本地与云编辑器共用组件。本地删 `split` 后，需支持档位集合按调用方配置，
   避免云端三档被一起改掉。~~ 已解决，见下节 M0。
 - 中文 IME 组字期间 decoration 冻结策略（实现约束，非选项）。
@@ -142,3 +143,52 @@ B 与 C 都会在往返中静默丢失列表紧凑度、缩进、围栏代码块
 - 两档开关的实际宽度与 pill 滑动行程、`live` 图标（`PenLine`）在 15px 下的辨识度。
 - 切档时的 jelly 动画在两档下的观感（`markdown-view-pill-fill` 的 key 仍随 value 变化）。
 - 默认落在 `live` 时首帧是否有可见的 pill 位移动画。
+
+## M1 实施记录（2026-11-02）
+
+新增 `src/utils/editorBlocks.ts` 与 `scripts/verify-editor-blocks.mjs`（`npm run verify:editor-blocks`）。
+`npx tsc --noEmit` 通过；验证脚本 18 项检查全过，覆盖 79 个文档、4882 个块。
+
+### API
+
+| 导出 | 签名 | 用途 |
+| --- | --- | --- |
+| `blocks` | `(doc: Text, options?) => Block[]` | 需求指定的入口，自己建 state 解析 |
+| `blocksFromState` | `(state: EditorState, options?) => Block[]` | 装饰层复用编辑器已有语法树，避免每次更新再解析一遍 |
+| `blockAt` | `(blocks, pos) => Block \| null` | 取**最内层**块，把嵌套语义固化成可执行的函数 |
+
+`Block` 与 `BlockKind` 按需求定义；`depth` 分档解释：标题=级别，列表项=1 起的嵌套层数，
+引用恒为 1（引用是原子块），其余为 0。
+
+### 落定规则
+
+- 递归只发生在 `Document` → `BulletList`/`OrderedList` → `ListItem`（再找其中的嵌套列表）。
+- `Paragraph` / `LinkReference` / `Blockquote` / `Table` / `HorizontalRule` / `FencedCode` /
+  `CodeBlock` / `HTMLBlock` / `CommentBlock` / `ProcessingInstructionBlock` 是**原子块**，不再下钻。
+  引用内的列表因此整块降级，与计划 §4「引用整体成块」一致。
+- `LinkReference`（链接定义）按 `paragraph` 归类而非跳过：光标能进入该行，无主会让 L3 无块可降级。
+- 块之间**允许嵌套**，且实测只有「列表项包含其嵌套列表项」一种形态。取光标所在块用 `blockAt`，
+  不要假设块集合是扁平且互斥的。
+
+### 两个必须知道的解析事实
+
+1. **`markdown()` 默认是 CommonMark，没有 `Table` 节点**，GFM 表格会被解析成 `Paragraph`。
+   模块因此用 `markdown({ base: markdownLanguage })` 取 GFM 基线。
+   **`MarkdownSourceEditor.tsx` 目前仍是裸 `markdown()`** —— 编辑器自己的语法树里没有表格，
+   M2 要么统一走 `blocks(doc)`，要么把编辑器基线换成 GFM，两者不能混用（否则同一文档两套块边界）。
+2. **缩进代码块（`CodeBlock`）的 `from` 起于缩进之后**，块区间不含行首缩进。围栏代码、
+   段落、标题的边界都含各自的行首缩进/标记，只有它是特例。
+
+### 不变量（脚本每次运行都验）
+
+- 边界合法（`0 ≤ from ≤ to ≤ 长度`）、非空行内容都有块覆盖、块按文档顺序排列。
+- 重叠只允许「`listItem` 包含 `listItem`」，出现其它包含或部分重叠即失败。
+- 同一文档两次调用结果一致；`blocksFromState` 与 `blocks` 结果一致。
+
+### 未验证项
+
+- 计划里 M1 的验收写的是「50 篇真实笔记人工核对」，但本机 `data/notes/` 为空，
+  实际样本是仓库内 64 个 `.md`（`examples/**` 5 个 + `docs/**` 59 个）。真实笔记手感仍需真机补测。
+- `examples/*.qnp` 是插件包（内含 `dist/extension.js` + `package.json`），不含 Markdown，
+  脚本只报告并跳过，没有解包。
+- 块边界的观感（块间距、光标进出块时的降级跳变）无法在本机确认。

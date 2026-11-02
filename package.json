@@ -27,6 +27,7 @@
     "verify:graph-index": "node scripts/verify-graph-index.mjs",
     "verify:graph-layout": "node scripts/verify-graph-layout.mjs",
     "verify:graph-sync": "node scripts/verify-graph-sync.mjs",
+    "verify:editor-blocks": "node scripts/verify-editor-blocks.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
   },
   "dependencies": {
