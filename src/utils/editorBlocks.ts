@@ -131,11 +131,75 @@ export function blockAt(blocks: readonly Block[], pos: number): Block | null {
 }
 
 /**
+ * The block that owns caret position `pos`, resolved from the tree that is
+ * already parsed around it.
+ *
+ * `blockAt(blocks(state.doc), pos)` answers the same question, but `blocks()`
+ * walks the entire document — fine for tests and tools, not for a cursor that
+ * moves on every keypress. The rules are identical (this reuses `describeAtomic`
+ * and the same container precedence), and `scripts/verify-live-preview.mjs`
+ * cross-checks the two over every offset of a fixture.
+ */
+export function blockAtPosition(state: EditorState, pos: number): Block | null {
+  const clamped = Math.max(0, Math.min(pos, state.doc.length));
+  const tree = syntaxTree(state);
+  // A caret sits *between* characters, so both edges of a block resolve outside
+  // it: forward from the first character finds the block that starts here,
+  // backward from the position after the last character finds the one that ends
+  // here. Try the opening edge first — "the block I am about to type into" —
+  // then the closing one.
+  return blockFromChain(tree.resolveInner(clamped, 1)) ?? blockFromChain(tree.resolveInner(clamped, -1));
+}
+
+function blockFromChain(start: SyntaxNode): Block | null {
+  let result: Block | null = null;
+
+  for (let node: SyntaxNode | null = start; node; node = node.parent) {
+    const name = node.name;
+    if (name === "Document") break;
+
+    // An outer item must not steal the block from the inner one the caret is in.
+    if (name === "ListItem") {
+      if (result?.kind !== "listItem") {
+        result = { from: node.from, to: node.to, kind: "listItem", depth: listDepthOf(node) };
+      }
+      continue;
+    }
+
+    // Quotes and tables are atomic, and `blocks()` never descends into them, so
+    // the outermost one is the block that gets rendered or degraded.
+    if (name === "Blockquote" || name === "Table") {
+      result = {
+        from: node.from,
+        to: node.to,
+        kind: name === "Blockquote" ? "quote" : "table",
+        depth: name === "Blockquote" ? 1 : 0,
+      };
+      continue;
+    }
+
+    if (result) continue;
+    const described = describeAtomic(name);
+    if (described) result = { from: node.from, to: node.to, kind: described.kind, depth: described.depth };
+  }
+
+  return result;
+}
+
+/** 1-based list nesting of a `ListItem`, counted from the lists above it. */
+function listDepthOf(node: SyntaxNode): number {
+  let depth = 0;
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (parent.name === "BulletList" || parent.name === "OrderedList") depth += 1;
+  }
+  return Math.max(1, depth);
+}
+
+/**
  * Walks block children in document order. `listDepth` is the level assigned to
  * `ListItem`s found directly in `node`'s children — 1 for a top-level list — so
  * entering a list always raises it by one.
- */
-function collectBlocks(node: SyntaxNode, listDepth: number, out: Block[]): void {
+ */function collectBlocks(node: SyntaxNode, listDepth: number, out: Block[]): void {
   for (let child = node.firstChild; child; child = child.nextSibling) {
     switch (child.name) {
       case "Document":

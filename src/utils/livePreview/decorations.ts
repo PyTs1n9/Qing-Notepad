@@ -1,4 +1,4 @@
-import type { EditorState } from "@codemirror/state";
+import type { EditorState, Range } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
@@ -24,6 +24,16 @@ export type LivePreviewRange =
 export interface VisibleRange {
   from: number;
   to: number;
+}
+
+export interface LivePreviewOptions {
+  /**
+   * Inline markers inside this range stay visible. The block the caret sits in
+   * is passed here: a `Decoration.replace` makes its own content unreachable,
+   * so the block being edited has to show its source. Block-level styling —
+   * heading size, quote bar, code tint — is kept, only the hides are dropped.
+   */
+  reveal?: VisibleRange;
 }
 
 /** Inline nodes whose markers are hidden and whose content is restyled. */
@@ -54,12 +64,17 @@ const MARKER_CHILD_NAMES = new Set([
 export function collectLivePreviewRanges(
   state: EditorState,
   ranges: readonly VisibleRange[],
+  options: LivePreviewOptions = {},
 ): LivePreviewRange[] {
   const tree = syntaxTree(state);
+  const reveal = options.reveal;
   const result: LivePreviewRange[] = [];
   const seen = new Set<string>();
 
   const push = (range: LivePreviewRange): void => {
+    // The block being edited shows its source: hides inside it are dropped, so
+    // the caret can reach every character. Marks and line styles stay.
+    if (range.kind === "hide" && reveal && range.from >= reveal.from && range.to <= reveal.to) return;
     const key =
       range.kind === "line"
         ? `line:${range.from}:${range.className}`
@@ -102,8 +117,18 @@ export function collectLivePreviewRanges(
 export function buildLivePreviewDecorations(
   state: EditorState,
   ranges: readonly VisibleRange[],
+  options?: LivePreviewOptions,
 ): DecorationSet {
-  const decorations = collectLivePreviewRanges(state, ranges).map((range) => {
+  return Decoration.set(toDecorationRanges(collectLivePreviewRanges(state, ranges, options)), true);
+}
+
+/**
+ * Spec list → CodeMirror ranges. Exported because the plugin patches a subset of
+ * an existing set (`RangeSet.update({ add })`) when the caret crosses a block
+ * boundary, and that path needs the same mapping without rebuilding the world.
+ */
+export function toDecorationRanges(specs: readonly LivePreviewRange[]): Range<Decoration>[] {
+  return specs.map((range) => {
     switch (range.kind) {
       case "hide":
         return HIDE.range(range.from, range.to);
@@ -113,7 +138,6 @@ export function buildLivePreviewDecorations(
         return lineDecoration(range.className).range(range.from);
     }
   });
-  return Decoration.set(decorations, true);
 }
 
 /** Shared instances: CodeMirror compares decorations by identity on rebuild. */

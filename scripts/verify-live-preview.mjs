@@ -42,8 +42,11 @@ const outfile = path.join(tmpDir, "livePreview.bundle.mjs");
 await esbuild.build({
   stdin: {
     contents: [
-      `export { collectLivePreviewRanges, buildLivePreviewDecorations } from ${JSON.stringify(
+      `export { collectLivePreviewRanges, buildLivePreviewDecorations, toDecorationRanges } from ${JSON.stringify(
         path.join(root, "src/utils/livePreview/decorations.ts"),
+      ).replaceAll("\\", "/")};`,
+      `export { blocks, blockAt, blockAtPosition } from ${JSON.stringify(
+        path.join(root, "src/utils/editorBlocks.ts"),
       ).replaceAll("\\", "/")};`,
       `export { EditorState, Text } from "@codemirror/state";`,
       `export { ensureSyntaxTree } from "@codemirror/language";`,
@@ -60,16 +63,26 @@ await esbuild.build({
   logLevel: "silent",
 });
 
-const { collectLivePreviewRanges, buildLivePreviewDecorations, EditorState, ensureSyntaxTree, markdown, markdownLanguage } =
-  await import(pathToFileURL(outfile).href);
+const {
+  collectLivePreviewRanges,
+  buildLivePreviewDecorations,
+  toDecorationRanges,
+  blocks,
+  blockAt,
+  blockAtPosition,
+  EditorState,
+  ensureSyntaxTree,
+  markdown,
+  markdownLanguage,
+} = await import(pathToFileURL(outfile).href);
 
 /** Same language the editor mounts (`MarkdownSourceEditor` uses the GFM base). */
 const language = markdown({ base: markdownLanguage });
 
-function specsFor(doc, ranges) {
+function specsFor(doc, ranges, options) {
   const state = EditorState.create({ doc, extensions: [language] });
   ensureSyntaxTree(state, doc.length, 5000);
-  const specs = collectLivePreviewRanges(state, ranges ?? [{ from: 0, to: doc.length }]);
+  const specs = collectLivePreviewRanges(state, ranges ?? [{ from: 0, to: doc.length }], options);
   return { state, specs };
 }
 
@@ -248,6 +261,131 @@ section("视口限制（view.visibleRanges 之外不计算）");
     [viewport],
   );
   check("限定视口时 DecorationSet 与 spec 数量一致", builtLimited.size === limited.length);
+}
+
+// ------------------------------------------------------------------ block fallback
+section("L3 当前块回退（块内 hide 撤销，块级视觉保留）");
+
+{
+  const doc = "# 标题 **粗**\n\n正文 **甲**\n";
+  const { state } = specsFor(doc);
+  const heading = blockAtPosition(state, 2);
+  const specs = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: heading }).map(format);
+
+  check("光标所在块被识别为标题块", heading !== null && heading.kind === "heading", JSON.stringify(heading));
+  check(
+    "块内不再有 hide（`**` 可被光标进入）",
+    !specs.some((spec) => spec.startsWith("hide:") && Number(spec.split(":")[1].split("-")[0]) < heading.to),
+    JSON.stringify(specs),
+  );
+  check("块内仍保留行内样式", specs.includes("mark:7-8:cm-md-strong"), JSON.stringify(specs));
+  check("块级视觉保留（标题仍是标题）", specs.includes("line:0:cm-md-h1"), JSON.stringify(specs));
+  check("块外仍是渲染态", specs.includes("hide:15-17:") && specs.includes("hide:18-20:"), JSON.stringify(specs));
+
+  // A range selection spanning blocks reveals the whole span.
+  const spanStart = blockAtPosition(state, 2);
+  const spanEnd = blockAtPosition(state, doc.indexOf("正文") + 1);
+  const span = { from: Math.min(spanStart.from, spanEnd.from), to: Math.max(spanStart.to, spanEnd.to) };
+  const spanned = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: span }).map(format);
+  check("跨块选区把整段都回退为源码", !spanned.some((spec) => spec.startsWith("hide:")), JSON.stringify(spanned));
+}
+
+section("blockAtPosition 与 blocks()+blockAt 结果一致");
+
+{
+  const doc = [
+    "# 标题",
+    "",
+    "正文一 **粗**",
+    "",
+    "> 引用",
+    "> - 项一",
+    "> - 项二",
+    "",
+    "- 甲",
+    "  - 甲一",
+    "- 乙",
+    "",
+    "| a |",
+    "| --- |",
+    "| 1 |",
+    "",
+    "```",
+    "code",
+    "```",
+    "",
+    "---",
+    "",
+  ].join("\n");
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const all = blocks(state.doc);
+
+  const mismatches = [];
+  for (let pos = 0; pos <= doc.length; pos += 1) {
+    const fast = blockAtPosition(state, pos);
+    const slow = blockAt(all, pos);
+    const key = (block) => (block ? `${block.kind}:${block.from}-${block.to}` : "null");
+    if (key(fast) !== key(slow)) mismatches.push(`${pos} ${key(fast)} vs ${key(slow)}`);
+  }
+  check(
+    `每个偏移的当前块都与 blocks() 一致（${doc.length + 1} 个位置）`,
+    mismatches.length === 0,
+    mismatches.slice(0, 6).join("；"),
+  );
+}
+
+section("增量更新与全量重建等价（只重算受影响的块）");
+
+{
+  const doc = "# 标题\n\n正文 **甲**\n\n- 项一\n- 项二\n\n> 引用 **乙**\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const viewport = [{ from: 0, to: doc.length }];
+  const dump = (set) => {
+    const out = [];
+    set.between(0, doc.length, (from, to, value) => {
+      out.push(`${from}-${to}:${value.spec?.class ?? "hide"}`);
+    });
+    return out;
+  };
+
+  const heading = blockAtPosition(state, 2);
+  const item = blockAtPosition(state, doc.indexOf("项一") + 1);
+  const quote = blockAtPosition(state, doc.indexOf("引用") + 1);
+  check("三个块都被识别", Boolean(heading && item && quote));
+
+  let set = buildLivePreviewDecorations(state, viewport, { reveal: heading });
+  const patched = (from, to, toBlock) => {
+    set = set.update({
+      filterFrom: Math.min(from.from, to.from),
+      filterTo: Math.max(from.to, to.to),
+      filter: (f, t) => f < Math.min(from.from, to.from) || t > Math.max(from.to, to.to),
+      add: toDecorationRanges(
+        collectLivePreviewRanges(state, [{ from: Math.min(from.from, to.from), to: Math.max(from.to, to.to) }], {
+          reveal: toBlock,
+        }),
+      ),
+      sort: true,
+    });
+    return dump(set);
+  };
+
+  check(
+    "标题 → 列表项：增量结果 == 全量重建",
+    JSON.stringify(patched(heading, item, item)) ===
+      JSON.stringify(dump(buildLivePreviewDecorations(state, viewport, { reveal: item }))),
+  );
+  check(
+    "列表项 → 引用：增量结果 == 全量重建",
+    JSON.stringify(patched(item, quote, quote)) ===
+      JSON.stringify(dump(buildLivePreviewDecorations(state, viewport, { reveal: quote }))),
+  );
+  check(
+    "引用 → 标题（回到起点）：增量结果 == 全量重建",
+    JSON.stringify(patched(quote, heading, heading)) ===
+      JSON.stringify(dump(buildLivePreviewDecorations(state, viewport, { reveal: heading }))),
+  );
 }
 
 // ------------------------------------------------------------------ summary
