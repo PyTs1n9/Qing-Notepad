@@ -182,6 +182,43 @@ All of these must hold, otherwise the change is not done:
   "0 字"; that is a timing artefact, not data loss. The runner waits for a stable layout
   signature for exactly this reason — do not "fix" the empty state from such a shot.
 
+## Release Content Sync (Required)
+
+Every release writes the **same user-facing notes into three places**, in the same commit as
+the version bump. None of them reads the others, so skipping one produces a visible hole:
+
+| Place | Consumed by | When it takes effect |
+| --- | --- | --- |
+| `.github/workflows/release.yml` → `releaseBody` | the GitHub Release page | tag build (CI) |
+| `UPDATE.md` (repo root) | `updater-manifest.mjs --notes-file UPDATE.md` → `notes` in both manifests → the in-app update card | tag build (CI) |
+| `announcements.json` (repo root) | the remote feed behind the announcement board / changelog dialog | immediately on push to `main` (Gitee raw) |
+
+Rules:
+
+1. **The body text must match across the three.** The announcement may add one sentence about
+   where the update entry lives; it must not describe features the other two omit.
+2. **`announcements.json` gets a new item, never an edit of a shipped one.** `id` is the
+   read/dismiss key, so editing an existing entry is invisible to everyone who dismissed it.
+   Use `YYYY-MM-DD-vX-Y-Z`, put the item at the **front** of `items` (parsing slices to 20
+   before sorting), and set `publishedAt` to the real **UTC** release time — local time minus
+   the offset, not the wall clock.
+3. **`UPDATE.md` and `releaseBody` are frozen at tag time.** Fixing them after a release means
+   re-uploading release assets, not editing the source.
+4. **`announcements.json` is not tagged content.** Pushing it to `main` reaches every installed
+   client within the 1h cache window, with no release required. Use this for corrections.
+
+Checklist before tagging (all three must print `ok`):
+
+```bash
+node -e "const v=require('./package.json').version.replace(/\./g,'-');const j=require('./announcements.json');console.log(j.items.some(i=>i.id.endsWith('v'+v))?'announcement ok':'MISSING announcement')"
+grep -q '## 本次更新' .github/workflows/release.yml && echo 'releaseBody ok'
+test -s UPDATE.md && echo 'UPDATE.md ok'
+```
+
+An empty or one-line `UPDATE.md` (for example `修复已知问题`) is allowed only when it is also
+what the other two say. Any release that reuses an older version's notes (v0.9.2 did) must copy
+the full text, not a summary of it.
+
 ## Git Remotes
 
 `origin` is GitHub and nothing else — a plain `git push origin` must never reach Gitee.

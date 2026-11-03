@@ -122,8 +122,13 @@ Tauri 的 NSIS 模板（`crates/tauri-bundler/.../nsis/installer.nsi`）：更�
 `tauri-plugin-http` 走 native-tls/schannel），后者只为解压 Windows 用不到的包，却会拉进 `tar`。
 这里只保留 `native-tls` + `system-proxy`。
 
-## 每次发布的流程（新增一步）
+## 每次发布的流程
 
+0. **三处文案同步，缺一不可**：`release.yml` 的 `releaseBody`（GitHub Release 正文）、
+   `UPDATE.md`（更新卡片正文，CI 用 `--notes-file` 写进两份清单）、`announcements.json`
+   新增一条（公告板 / 更新日志，`id` 形如 `YYYY-MM-DD-vX-Y-Z`、放数组最前、
+   `publishedAt` 用 **UTC** 发版时间）。三处用户可见正文必须一致，公告只可补一句入口位置。
+   规则与发版前自检命令见 `AGENTS.md` §Release Content Sync。
 1. `npm run version:set -- vX.Y.Z` → 提交 → `git pushall`
 2. 打 tag 并推 **origin**（触发 CI），再推 gitee（`git push origin vX.Y.Z && git push gitee vX.Y.Z`）
 3. CI 构建后自动：创建 GitHub Release、产出 `QingNotepad_X.Y.Z_x64-setup.exe` + `.sig`、

@@ -1,11 +1,38 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-04T00:40:00Z",
+  "generatedAt": "2026-11-03T17:08:00Z",
   "items": [
+    {
+      "id": "2026-11-04-v0-9-2",
+      "kind": "update",
+      "publishedAt": "2026-11-03T17:02:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.2：0.9.0 的完整说明，附公告面板修复",
+        "en": "v0.9.2: the full 0.9.0 notes, plus a changelog fix"
+      },
+      "body": {
+        "zh": "这一版把 0.9.0 的功能说明完整带上：编辑器实时渲染、独立笔记窗口、从资源管理器打开 .md。\n\n同时修掉一个公告面板的问题：关闭后再打开，正文会停留在加载占位条上不显示。\n\n更新入口在标题栏右上角、公告喇叭右侧，只在有新版本时出现：第一次点击下载，第二次点击重启安装。",
+        "en": "This release carries the full 0.9.0 notes: live-rendered editing, standalone note windows, and opening .md files from Explorer.\n\nIt also fixes the announcement board: after closing and reopening it, the body text stayed on the loading placeholder.\n\nThe update entry sits at the top right of the title bar, right of the announcement button. It appears only when a new version exists: first click downloads, second click restarts into the installer."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.2",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-11-04-v0-9-1",
       "kind": "update",
-      "publishedAt": "2026-11-04T00:20:00Z",
+      "publishedAt": "2026-11-03T16:20:00Z",
       "startsAt": null,
       "endsAt": null,
       "minAppVersion": "0.7.0",
