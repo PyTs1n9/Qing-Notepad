@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "sticky-*", "tile-*", "canvas-tile-*"],
+  "windows": ["main", "sticky-*", "tile-*", "canvas-tile-*", "note-window-*"],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

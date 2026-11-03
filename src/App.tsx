@@ -18,6 +18,7 @@ import {
 } from "@/components/Layout/shellLayout";
 import TitleBar from "@/components/Layout/TitleBar";
 import NoteTabBar from "@/components/Layout/NoteTabBar";
+import { useUpdateController } from "@/hooks/useUpdateController";
 import TodoView from "@/components/Todo/TodoView";
 import TodoSidebar from "@/components/Todo/TodoSidebar";
 import NoteEditor from "@/components/Editor/NoteEditor";
@@ -34,7 +35,6 @@ import { activateStartupPlugins, deactivateAllPlugins } from "@/plugin/headless"
 import { useAiStore } from "@/stores/aiStore";
 import SettingsModal, { type SettingsSection } from "@/components/Settings/SettingsModal";
 import AboutModal from "@/components/Settings/AboutModal";
-import UpdateModal from "@/components/Settings/UpdateModal";
 import AuthModal from "@/components/Auth/AuthModal";
 import PasswordRecoveryModal from "@/components/Auth/PasswordRecoveryModal";
 import WorkspaceRemovalNotifier from "@/components/Workspace/WorkspaceRemovalNotifier";
@@ -75,16 +75,14 @@ import { alertDialog } from "@/stores/dialogStore";
 import { openTileWindow } from "@/utils/tile";
 import { applyShortcuts } from "@/utils/shortcutManager";
 import { refreshAnnouncements } from "@/utils/announcements";
-import { APP_VERSION, checkForUpdate } from "@/utils/updateChecker";
-import type { UpdateInfo } from "@/utils/updateChecker";
-import { renderStoredNoteContentForExport } from "@/utils/markdown";
-import { storedContentToMarkdown } from "@/utils/htmlToMarkdown";
+import { exportNoteFile } from "@/utils/exportNote";
+import { NOTE_WINDOW_APPEARANCE_EVENT } from "@/utils/noteWindow";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
 import { flushActiveNote } from "@/utils/noteFlush";
 import { CANVAS_OPEN_NOTE_EVENT } from "@/utils/canvasRefs";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { readTextFile, writeTextFile, writeFile } from "@tauri-apps/plugin-fs";
+import { open } from "@tauri-apps/plugin-dialog";
+import { readTextFile } from "@tauri-apps/plugin-fs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
@@ -115,49 +113,9 @@ function escapeHtml(text: string): string {
 }
 
 /**
- * Off-screen sheet handed to WebView2's print engine. It lives outside `#root`
- * so the print stylesheet can hide the whole app and leave only the note.
+ * Off-screen print sheet lives in `utils/exportNote.ts`: export is shared with
+ * the detached note window, which must not grow a second copy of that contract.
  */
-function mountPrintSheet(title: string, html: string): HTMLElement {
-  const sheet = document.createElement("article");
-  sheet.className = "print-sheet";
-
-  const heading = document.createElement("h1");
-  heading.className = "print-sheet-title";
-  heading.textContent = title;
-  sheet.appendChild(heading);
-
-  const body = document.createElement("div");
-  body.className = "print-sheet-body";
-  body.innerHTML = html;
-  sheet.appendChild(body);
-
-  document.body.appendChild(sheet);
-  document.body.classList.add("exporting-pdf");
-  return sheet;
-}
-
-function unmountPrintSheet(sheet: HTMLElement): void {
-  document.body.classList.remove("exporting-pdf");
-  sheet.remove();
-}
-
-/** PrintToPdf captures the layout as it is now, so wait for paint and images. */
-async function waitForPrintLayout(sheet: HTMLElement): Promise<void> {
-  for (let frame = 0; frame < 3; frame += 1) {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  }
-  try {
-    await document.fonts.ready;
-  } catch {
-    // Font loading is best-effort; printing can proceed with fallbacks.
-  }
-  await Promise.all(
-    Array.from(sheet.querySelectorAll("img")).map((image) =>
-      image.decode ? image.decode().catch(() => undefined) : Promise.resolve(),
-    ),
-  );
-}
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("note");
@@ -170,7 +128,6 @@ export default function App() {
   };
   const [aboutOpen, setAboutOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
-  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_MIN_WIDTH);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -226,7 +183,6 @@ export default function App() {
   const pluginsDisabled = useSettingsStore((s) => s.pluginsDisabled);
   const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
   const announcementsEnabled = useSettingsStore((s) => s.announcementsEnabled);
-  const updateReminderDisabledForVersion = useSettingsStore((s) => s.updateReminderDisabledForVersion);
   const sidebarCategoryRatio = useSettingsStore((s) => s.sidebarCategoryRatio);
   const aiSidebarOpen = useAiStore((s) => s.sidebarOpen);
   const expandedFolderIds = useSettingsStore((s) => s.expandedFolderIds);
@@ -237,7 +193,6 @@ export default function App() {
   const glassBlurBg = useSettingsStore((s) => s.glassBlurBg);
   const glassTintBg = useSettingsStore((s) => s.glassTintBg);
   const glassSaturateBg = useSettingsStore((s) => s.glassSaturateBg);
-  const setUpdateReminderDisabledForVersion = useSettingsStore((s) => s.setUpdateReminderDisabledForVersion);
   const loadSettingsState = useSettingsStore((s) => s.loadSettings);
   const initializeAuth = useAuthStore((s) => s.initialize);
   const autoLoginLoading = useAuthStore((s) => s.autoLoginLoading);
@@ -346,7 +301,6 @@ export default function App() {
           trashRetentionDays?: number;
           showWorkspaceHighlights?: boolean;
           alwaysOnTop?: boolean;
-          updateReminderDisabledForVersion?: string | null;
           sidebarCategoryRatio?: number | null;
           expandedFolderIds?: string[] | null;
           glassEnabled?: boolean;
@@ -393,30 +347,9 @@ export default function App() {
     init();
   }, []); // eslint-disable-line
 
-  // Check the latest GitHub release once after persisted settings are loaded.
-  useEffect(() => {
-    if (!initialized) return;
-
-    let cancelled = false;
-    const disabledForVersion = useSettingsStore.getState().updateReminderDisabledForVersion;
-    if (disabledForVersion && disabledForVersion !== APP_VERSION) {
-      useSettingsStore.getState().setUpdateReminderDisabledForVersion(null);
-    }
-
-    checkForUpdate()
-      .then((update) => {
-        if (!cancelled && disabledForVersion !== APP_VERSION && update) {
-          setAvailableUpdate(update);
-        }
-      })
-      .catch((error) => {
-        console.warn("Automatic update check failed:", error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialized]);
+  // 更新链路的唯一挂载点：启动查一次、回到前台按 1h 限频重查、把下载进度写回 store。
+  // 启动弹窗已下线，发现新版本只体现在标题栏的徽标上（decisions-updater.md D7/D11）。
+  useUpdateController(initialized);
 
   // Plugin runtime. Reading the install list is cheap; starting a worker is
   // not, so only plugins that declared `onStartup` are activated here. Five
@@ -564,7 +497,6 @@ export default function App() {
         trashRetentionDays,
         showWorkspaceHighlights,
         alwaysOnTop,
-        updateReminderDisabledForVersion,
         sidebarCategoryRatio,
         expandedFolderIds,
         glassEnabled,
@@ -591,7 +523,6 @@ export default function App() {
     trashRetentionDays,
     showWorkspaceHighlights,
     alwaysOnTop,
-    updateReminderDisabledForVersion,
     sidebarCategoryRatio,
     expandedFolderIds,
     glassEnabled,
@@ -767,8 +698,12 @@ export default function App() {
     if (initialized) {
       emit("tile-theme-sync", { theme, customColors });
       emit("sticky:appearance-updated", { theme, customColors, stickyOpacity });
+      // Detached note windows draw their own chrome, so they need the language
+      // too — a window left open across a language switch must not keep the old
+      // menu labels.
+      emit(NOTE_WINDOW_APPEARANCE_EVENT, { theme, customColors, lang });
     }
-  }, [theme, customColors, stickyOpacity, initialized]);
+  }, [theme, customColors, stickyOpacity, initialized, lang]);
 
   // Keep the native tray menu wording in step with the UI language. Runs on
   // startup (lang is restored from settings) and on every language change, so
@@ -1032,87 +967,22 @@ export default function App() {
     const targetNote = notes.find((note) => note.id === targetNoteId);
     if (!targetNote) return;
 
-    try {
-      const defaultPath = `${targetNote.title || t(lang, "untitled")}.md`;
-      const savePath = await save({
-        filters: [
-          { name: t(lang, "exportFilterMarkdown"), extensions: ["md"] },
-          { name: t(lang, "exportFilterText"), extensions: ["txt"] },
-          { name: t(lang, "exportFilterWord"), extensions: ["docx"] },
-          { name: t(lang, "exportFilterPdf"), extensions: ["pdf"] },
-        ],
-        defaultPath,
-      });
-      if (!savePath) return;
+    // Exporting the note that is open right now must export what is on screen,
+    // not the last autosaved revision: flush first, then read back from disk.
+    // Other notes are already persisted (switching tabs saves the outgoing one),
+    // so their in-memory copy is safe to use.
+    const isActiveNote = targetNoteId === activeNoteId;
+    if (isActiveNote) await flushActiveNote(targetNoteId);
 
-      // Windows only appends the first filter's extension, so a name typed
-      // without one after picking Word or PDF would otherwise land on `.md`.
-      const hasExtension = /\.[^./\\]+$/.test(savePath);
-      const exportPath = hasExtension ? savePath : `${savePath}.md`;
+    const storedContent = isActiveNote
+      ? await loadNoteContent(targetNoteId)
+      : Object.prototype.hasOwnProperty.call(targetNote, "content")
+        ? targetNote.content
+        : await loadNoteContent(targetNoteId);
 
-      // Exporting the note that is open right now must export what is on screen,
-      // not the last autosaved revision: flush first, then read back from disk.
-      // Other notes are already persisted (switching tabs saves the outgoing one),
-      // so their in-memory copy is safe to use.
-      const isActiveNote = targetNoteId === activeNoteId;
-      if (isActiveNote) await flushActiveNote(targetNoteId);
-
-      let storedContent: string;
-      if (isActiveNote) {
-        storedContent = await loadNoteContent(targetNoteId);
-      } else {
-        storedContent = Object.prototype.hasOwnProperty.call(targetNote, "content")
-          ? targetNote.content
-          : await loadNoteContent(targetNoteId);
-      }
-      const target = exportPath.toLowerCase();
-
-      // Word and PDF both need the rendered form: images inlined as data URLs
-      // (both loaders drop asset URLs), code blocks highlighted, Markdown parsed.
-      if (target.endsWith(".docx") || target.endsWith(".pdf")) {
-        const html = await renderStoredNoteContentForExport(storedContent);
-
-        if (target.endsWith(".docx")) {
-          // The DOCX writer is only pulled in when someone actually exports
-          // Word, which keeps it out of the startup bundle.
-          const { buildNoteDocx } = await import("@/utils/exportDocx");
-          const { data, droppedImages } = await buildNoteDocx({
-            title: targetNote.title,
-            html,
-          });
-          await writeFile(exportPath, data);
-          if (droppedImages > 0) {
-            await alertDialog({
-              title: t(lang, "exportFile"),
-              body: tWithParams(lang, "exportImagesDropped", { count: droppedImages }),
-              confirmLabel: t(lang, "dialogConfirm"),
-              tone: "warning",
-            });
-          }
-          return;
-        }
-
-        const sheet = mountPrintSheet(targetNote.title || t(lang, "untitled"), html);
-        try {
-          await waitForPrintLayout(sheet);
-          await invoke("export_pdf", { path: exportPath });
-        } finally {
-          unmountPrintSheet(sheet);
-        }
-        return;
-      }
-
-      await writeTextFile(exportPath, storedContentToMarkdown(storedContent));
-    } catch (e) {
-      console.error("Export file failed:", e);
-      const detail = e instanceof Error ? e.message : String(e);
-      void alertDialog({
-        title: t(lang, "exportFile"),
-        body: tWithParams(lang, "exportFailed", { message: detail }),
-        confirmLabel: t(lang, "dialogConfirm"),
-        tone: "danger",
-      });
-    }
+    // Dialog, format dispatch and error reporting belong to the shared export
+    // module: the detached note window offers the same command.
+    await exportNoteFile({ title: targetNote.title, content: storedContent, lang });
   }, [activeNoteId, lang, notes]);
 
   /**
@@ -1147,11 +1017,6 @@ export default function App() {
   const toggleActiveSidebar = () => {
     setSidebarCollapsed(!sidebarCollapsed);
   };
-
-  const handleNeverRemindUpdate = useCallback(() => {
-    setUpdateReminderDisabledForVersion(APP_VERSION);
-    setAvailableUpdate(null);
-  }, [setUpdateReminderDisabledForVersion]);
 
   // Only the values currently in force are written, so the stylesheet never has
   // to branch on "is there a wallpaper?" — that keeps every glass rule at one
@@ -1371,14 +1236,6 @@ export default function App() {
         hasWallpaper={hasBackground}
       />
       <AboutModal open={aboutOpen} onClose={() => setAboutOpen(false)} />
-      {availableUpdate && (
-        <UpdateModal
-          currentVersion={APP_VERSION}
-          latestVersion={availableUpdate.version}
-          onUpdateLater={() => setAvailableUpdate(null)}
-          onNeverRemind={handleNeverRemindUpdate}
-        />
-      )}
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
       <PasswordRecoveryModal />
       <AppDialog />

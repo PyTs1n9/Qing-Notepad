@@ -31,11 +31,17 @@
     "verify:live-preview": "node scripts/verify-live-preview.mjs",
     "verify:input-rules": "node scripts/verify-input-rules.mjs",
     "verify:block-delete": "node scripts/verify-block-delete.mjs",
+    "verify:markdown-commands": "node scripts/verify-markdown-commands.mjs",
+    "verify:markdown-stats": "node scripts/verify-markdown-stats.mjs",
     "migrate:html-notes": "node scripts/migrate-html-notes.mjs",
-    "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs"
+    "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs",
+    "verify:webview": "node scripts/verify-webview.mjs",
+    "verify:webview:status": "node scripts/verify-webview.mjs --status",
+    "verify:webview:close": "node scripts/verify-webview.mjs --close"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
+    "@codemirror/search": "^6.7.1",
     "@hocuspocus/provider": "^4.4.0",
     "@huggingface/transformers": "^4.3.1",
     "@supabase/supabase-js": "^2.110.7",

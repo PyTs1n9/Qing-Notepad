@@ -228,11 +228,19 @@ const UTILS_TO_STORES_WHITELIST = new Map([
   ["src/utils/ai/noteWrite.ts", "AI 改笔记要落到 noteStore（值导入），见 decisions-ai-note-write.md"],
   ["src/utils/i18n.ts", "仅 `import type { LangType }`，编译后擦除"],
   ["src/utils/theme.ts", "仅 `import type { ThemeType, CustomColors }`，编译后擦除"],
+  ["src/utils/noteWindow.ts", "开窗前读当前主题/语言下发给独立窗口（值导入）；与 tile/canvasTile 同形态"],
+  ["src/utils/exportNote.ts", "导出失败与图片丢弃提示沿用 `alertDialog`（原在 App.tsx 内直接调用），抽取后仍需弹窗"],
   ["src/utils/shortcutManager.ts", "仅 `import type { AppShortcuts }`，编译后擦除"],
   ["src/utils/ai/emptyState.ts", "仅 `import type { LangType }`，编译后擦除"],
 ]);
 
-const ALLOWED_BARRELS = new Set(["src/types/index.ts", "src/utils/ai/chat/index.ts"]);
+const ALLOWED_BARRELS = new Set([
+  "src/types/index.ts",
+  "src/utils/ai/chat/index.ts",
+  // 实时渲染把 ViewPlugin、表格 field 与装饰计算合成一个 extension；调用方只需要
+  // `livePreview()` 一个入口，拆开会把三种 CM6 概念泄漏到每个编辑器。
+  "src/utils/livePreview/index.ts",
+]);
 
 // ------------------------------------------------------------------- 规则集
 const under = (rel, dir) => rel === dir || rel.startsWith(`${dir}/`);

@@ -149,19 +149,9 @@
   container-name: note-editor;
 }
 
-/* The export label only appears when the editor card itself is wide enough.
-   Container query, not a media query: the left card is resizable, so the
-   viewport width says nothing about the room this row actually has. */
-.note-export-label {
-  display: none;
-}
-
-@container note-editor (min-width: 620px) {
-  .note-export-label {
-    display: inline;
-  }
-}
-
+/* Menu bar row. Every control keeps its intrinsic width: without `shrink-0` the
+   right-hand end (save / pin / export) is the first thing a narrow editor card
+   cuts off, and the row already wraps when even that is not enough. */
 .note-editor-toolbar button,
 .note-editor-toolbar > div:not(.flex-1) {
   flex-shrink: 0;
@@ -176,6 +166,43 @@
   .note-editor-toolbar {
     gap: 0.125rem;
     padding-inline: 0.5rem;
+  }
+}
+
+/* Outline column. It pushes the text rather than covering it, so the column is
+   a sibling of the editor and gets its own surface: a tint one step away from
+   the page, enough to read as a panel without a second border. */
+.note-outline {
+  background-color: color-mix(in srgb, var(--color-bg-secondary) 60%, transparent);
+}
+
+/* A 220px column inside a 480px card would leave ~260px of text, which is not
+   a readable measure. Below 560px the same element flips out of flow and floats
+   over the text on its own opaque surface — the toggle keeps working, the text
+   keeps its width. */
+@container note-editor (max-width: 560px) {
+  .note-outline {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    z-index: 20;
+    background-color: var(--color-bg-primary);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.28);
+  }
+}
+
+/* Status-bar degradation order. The words are legend, the numbers are data: the
+   prefix goes first, then the unit labels. The `title` on the statistics keeps
+   the legend available at every width. */
+@container note-editor (max-width: 620px) {
+  .note-statusbar__time-prefix {
+    display: none;
+  }
+}
+
+@container note-editor (max-width: 520px) {
+  .note-statusbar__stat-label {
+    display: none;
   }
 }
 
@@ -2187,6 +2214,18 @@ body.sticky-body {
   overflow: hidden;
 }
 
+/* Detached note window — one document, no shell cards. The body carries the
+   page colour so a slow first paint shows paper rather than the WebView's
+   default white. */
+body.note-window-body {
+  background: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.note-window-titlebar .note-window-icon {
+  flex-shrink: 0;
+}
+
 .calendar-motion {
   will-change: transform, opacity;
   animation-duration: var(--dur-fast);
@@ -2583,31 +2622,56 @@ body.sticky-body {
   padding-left: 1.5em;
 }
 
-/* Announcement board body copy.
+/* Compact body copy for narrow columns (announcement board, update card).
    `.markdown-preview` zeroes block margins on purpose (the editor preview draws
    its own spacing), which in a 300px column runs consecutive paragraphs
    together. This adds a hairline back and nothing else: it is unlayered, so it
    wins over the utilities the component would otherwise need for the same job -
    that is the whole reason it exists instead of another `[&_p]:` class. */
-.announcement-body.markdown-preview p,
-.announcement-body.markdown-preview ul,
-.announcement-body.markdown-preview ol,
-.announcement-body.markdown-preview blockquote {
+.compact-markdown.markdown-preview p,
+.compact-markdown.markdown-preview ul,
+.compact-markdown.markdown-preview ol,
+.compact-markdown.markdown-preview blockquote {
   margin-block: 0.35em;
   font-size: 0.75rem;
   line-height: 1.55;
 }
 
-.announcement-body.markdown-preview ul,
-.announcement-body.markdown-preview ol {
+.compact-markdown.markdown-preview ul,
+.compact-markdown.markdown-preview ol {
   padding-left: 1.1em;
 }
 
-.announcement-body.markdown-preview > :first-child {
+/* Tailwind preflight zeroes list markers, which turns an announcement's or
+   update notes' bullet list into indented paragraphs. Put them back for these
+   two surfaces only - the editor preview draws its own. */
+.compact-markdown.markdown-preview ul {
+  /* Longhands on purpose: the minifier collapses `list-style: disc outside`
+     into `list-style: outside`, which reads as "position only" to a human
+     reviewing the built stylesheet. The computed result is the same; the
+     longhand form survives review. */
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.compact-markdown.markdown-preview ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+/* The renderer preserves author blank lines as a full-line spacer, which is
+   right for a document preview and wrong for a 360px update card: it turns
+   every `**heading**` + list into a 20px hole. The block margins above already
+   separate blocks. */
+.compact-markdown .markdown-blank-lines {
+  display: none;
+}
+
+.compact-markdown.markdown-preview > :first-child {
   margin-top: 0;
 }
 
-.announcement-body.markdown-preview > :last-child {
+.compact-markdown.markdown-preview > :last-child {
   margin-bottom: 0;
 }
 

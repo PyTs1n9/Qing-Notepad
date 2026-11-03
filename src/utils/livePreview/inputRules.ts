@@ -3,6 +3,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { isolateHistory } from "@codemirror/commands";
 import type { SyntaxNode } from "@lezer/common";
+import { inlineWrap } from "@/utils/markdownCommands";
 
 /**
  * Markdown input rules (L2).
@@ -332,51 +333,11 @@ function wrapRule(marker: string): InputRule {
   return {
     id: "inlineWrap",
     trigger: `Mod-b / Mod-i wraps or unwraps the selection with ${marker}`,
+    // The algorithm lives in `utils/markdownCommands.ts` (`inlineWrap`), which
+    // the editor menu and the keymap also call. One implementation, so the
+    // keyboard path and the menu path cannot drift apart.
     run({ state }) {
-      const { from, to } = state.selection.main;
-      const doc = state.doc;
-      const outerFrom = from - marker.length;
-      const outerTo = to + marker.length;
-      if (
-        outerFrom >= 0 &&
-        outerTo <= doc.length &&
-        state.sliceDoc(outerFrom, from) === marker &&
-        state.sliceDoc(to, outerTo) === marker
-      ) {
-        return {
-          changes: [
-            { from: outerFrom, to: from },
-            { from: to, to: outerTo },
-          ],
-          selection: { anchor: outerFrom, head: outerFrom + (to - from) },
-        };
-      }
-      if (
-        from < to &&
-        state.sliceDoc(from, from + marker.length) === marker &&
-        state.sliceDoc(to - marker.length, to) === marker
-      ) {
-        return {
-          changes: [
-            { from, to: from + marker.length },
-            { from: to - marker.length, to },
-          ],
-          selection: { anchor: from, head: to - marker.length * 2 },
-        };
-      }
-      if (from === to) {
-        return {
-          changes: { from, insert: marker + marker },
-          selection: { anchor: from + marker.length },
-        };
-      }
-      return {
-        changes: [
-          { from, insert: marker },
-          { from: to, insert: marker },
-        ],
-        selection: { anchor: from + marker.length, head: to + marker.length },
-      };
+      return inlineWrap(state, marker);
     },
   };
 }

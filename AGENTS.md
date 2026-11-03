@@ -61,12 +61,126 @@ npm run dev           # Frontend-only Vite server, fixed port 8787
 npm run tauri dev     # Full desktop dev mode: Vite + Tauri
 npx tsc --noEmit      # TypeScript check
 npm run build         # TypeScript + frontend production build
+npm run verify:webview        # WebView2 acceptance; leaves the window open
+npm run verify:webview:status # is a build still open, and is it current?
+npm run verify:webview:close  # close the open build (also unlocks the exe)
 npm run tauri build   # Windows installer build through Tauri/NSIS
 ```
 
 `npm run build` runs `tsc && vite build`; use `npx tsc --noEmit` when you only need type checking.
 
 On Windows PowerShell, `npx tsc --noEmit` may be blocked by the local script execution policy because it resolves through `npx.ps1`. If this is the only type-check failure and the requested change does not otherwise depend on type-check output, do not keep retrying or escalate just for this; skip type checking and mention the policy block in the final response.
+
+## Build And WebView Acceptance (Required)
+
+Every change that can reach the shipped bundle is built locally and then loaded in the
+real WebView2 before it is reported as done. This is a standing rule, not a per-task
+request.
+
+### When it triggers
+
+Run the loop when a change can alter `dist/` or the exe:
+
+- anything under `src/`, `index.html`, `vite.config.ts`, `tsconfig.json`, `public/`
+- anything under `src-tauri/` (`tauri.conf.json`, `capabilities/`, Rust, Cargo files)
+- dependency or version changes (`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`)
+- runtime-read content: `docs/user-manual.md` and `docs/user-faq.md` are imported with
+  `?raw` into the bundle (`HelpCenterModal`, `knowledgeRetrieval`), so editing them counts
+
+Skip it only for changes that cannot change the bundle: prose in `docs/**` that is not
+imported above, `.github/**`, and comment-only edits.
+
+### Steps
+
+0. `npm run verify:webview:status` — a running build locks its own exe, so check
+   before rebuilding. Exit `1` (nothing running) continues; exit `2` (stale) or `0`
+   (running) means close it first: `npm run verify:webview:close`.
+1. `npm run build` — type check plus Vite build. Run it in PowerShell, not Git Bash: a
+   lowercase drive path breaks the `import.meta.glob("@/assets/...")` resolution.
+2. `npm run tauri -- build --no-bundle` after loading the MSVC environment
+   (`. .\env.ps1`). `--no-bundle` skips the NSIS installer but still embeds `dist/` into
+   `src-tauri/target/release/qing-notepad.exe`; that exe is the acceptance target.
+   Note: `env.ps1` is UTF-8 without BOM, so Windows PowerShell 5.1 can fail to parse its
+   Chinese comments — inline the four variables from "Windows Build Environment", or save
+   the file as UTF-8 with BOM, rather than skipping the build.
+3. `npm run verify:webview` — boots the release exe through `explorer.exe` (a plain
+   `spawn` gets reaped with the command's process tree), waits for the shell and note body
+   to stop changing, asserts the DOM, collects console errors, writes
+   `local_img/webview-main.png`, and **leaves the window open**.
+4. Read the screenshot with an image tool. DOM assertions cannot judge typography,
+   spacing, colour or clipping; the screenshot is the acceptance evidence.
+5. When a specific element needs a measurement, probe the running build instead of
+   guessing: `node scripts/verify-webview.mjs --eval "<js>"` (add `--shot <path>` to keep
+   a second angle).
+
+### Window lifecycle
+
+- `verify:webview` keeps the window open by default. It is the surface the human inspects
+  after the turn ends, so **do not close it when the turn ends** and do not kill
+  `qing-notepad.exe` as cleanup.
+- Only two things close it: a human, or `npm run verify:webview:close`. Clicking the X is
+  not a close — the app is close-to-tray and only hides.
+- `--close-after` is the explicit one-shot mode (assert, then close). Use it only for
+  scripted runs, never as the default.
+- Running the acceptance again while the window is open re-attaches over CDP instead of
+  opening a second window (`"reused": true`); the single-instance plugin would swallow a
+  second launch anyway. Console history is timestamp-filtered on re-attach so old 404s do
+  not fail a fresh run.
+- The window holds a lock on its exe. Rebuilding while it runs fails with access denied,
+  which is why step 0 exists.
+
+### Session resume
+
+A new session (or a session reopened after the window was closed) must not assume the
+previous window is still there or still current. Run `npm run verify:webview:status`
+first and branch on its exit code:
+
+| exit | meaning | what to do |
+| --- | --- | --- |
+| `0` | running, fingerprint matches `dist` + exe | reuse it: run `verify:webview` to re-assert without a new window |
+| `1` | not running (never opened, or manually closed) | **full flow**: build → tauri build → `verify:webview` (opens a new window) |
+| `2` | running, but a build happened since it opened | rebuild, then open: `verify:webview:close` and the full flow, or after rebuilding let `--replace` close the old window and open the new exe in one step |
+
+Closing the window never means "carry on with the old build": the next session always
+goes through steps 1–3 again and opens exactly one WebView.
+
+### Acceptance criteria
+
+All of these must hold, otherwise the change is not done:
+
+- `npm run build` exits 0 with no TypeScript errors.
+- `verify:webview` reports `"ok": true`, an empty `consoleErrors`, and
+  `url: http://tauri.localhost/` — that URL proves the real WebView2 loaded the embedded
+  bundle, not a browser stand-in. `"keptOpen": true` confirms the window survived the run.
+- `.app-root` exists, `#root` is not empty, `#startup-error` is absent, and
+  `window.__TAURI_INTERNALS__` is present.
+- At least two `.shell-box` cards; the editor card is at least 320×200; a title-bar drag
+  region exists; the activity rail has labelled buttons; no broken images; no horizontal
+  overflow on `<body>`.
+- The screenshot matches the intent of the change: no clipped text, no overlapping
+  panels, no fallback font, no empty black region. When only one area was meant to
+  change, compare against the previous screenshot.
+- Anything the run cannot prove — hover, drag, streaming timing, IME, scroll
+  choreography, tray and multi-window behaviour — is reported as 未验证, never as
+  "tested".
+
+### Failure handling and data safety
+
+- A console error or a failed assertion means the work is unfinished: fix, rebuild,
+  rerun. Never report success with a known failure. A failed run keeps its window open on
+  purpose — the failure is what the human needs to see.
+- Missing exe: run step 2. "Another qing-notepad.exe is running" means the installed build
+  holds the single-instance lock — quit it from the tray first. "CDP is not listening"
+  means the window was opened by hand, without the debugging flag: close it and let the
+  runner open it instead.
+- The runner never types or clicks destructive controls, but the app still resolves its
+  data root from `%APPDATA%/com.qing-notepad.app/storage.json` (it may point outside the
+  repo) and rewrites files on startup autosave. Back the data up before a change that
+  touches the storage format.
+- Screenshots land in `local_img/` (git-ignored). Do not commit them.
+- A screenshot taken before the restored tab finishes loading shows the placeholder and
+  "0 字"; that is a timing artefact, not data loss. The runner waits for a stable layout
+  signature for exactly this reason — do not "fix" the empty state from such a shot.
 
 ## Git Remotes
 

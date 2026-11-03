@@ -7,11 +7,17 @@ export const GITHUB_URL = "https://github.com/PyTs1n9/Qing-Notepad";
 export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 
 /**
- * 更新链路的两个人机边界事件。名字由 Rust 侧的 `update.rs` 决定，
- * 两边必须一致 —— 所以这里导出常量，组件不许再手写字符串。
+ * 更新链路的进度事件。名字由 Rust 侧的 `update.rs` 决定，两边必须一致 ——
+ * 所以这里导出常量，组件不许再手写字符串。
+ *
+ * 没有「正在安装」事件：安装就是启动安装器后进程退出，没有可持续观察的阶段。
  */
 export const UPDATE_PROGRESS_EVENT = "update:progress";
-export const UPDATE_INSTALLING_EVENT = "update:installing";
+
+/** 发行页地址。Gitee 是主源，也国内可达；GitHub 那份只作镜像。 */
+export function releaseNotesUrl(version: string): string {
+  return `https://gitee.com/PyTs1N9/Qing-Notepad/releases/tag/v${version}`;
+}
 
 export interface UpdateInfo {
   version: string;
@@ -109,15 +115,25 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 }
 
 /**
- * 下载并安装。
+ * 只下载，不安装。返回下载到的版本号。
  *
- * **Windows 上这个 promise 通常不会正常 resolve**：官方说明是安装步骤执行时
- * 应用会被自动结束（受 Windows 安装器限制），新版本由安装器的 `/R` 参数拉起。
- * 所以"更新成功"的收尾逻辑不能写在 `await` 之后，进度只能靠事件。
+ * 拆成两步是 Windows 的硬约束：`Update::install` 启动 NSIS 后会直接结束进程，
+ * 安装器必须先看到进程退出才能覆盖 exe。所以能停在中间等用户的节点只有「下载完成」。
  */
-export async function installUpdate(): Promise<void> {
+export async function downloadUpdate(): Promise<string> {
   if (!isTauri()) {
     throw new Error("E_UPDATE_DESKTOP_ONLY: 仅桌面版支持软件内更新");
   }
-  await invoke("install_update");
+  return invoke<string>("download_update");
+}
+
+/**
+ * 启动安装器。**通常不会 resolve**：Windows 上进程会被结束，新版本由安装器的 `/R` 拉起。
+ * 所以调用方不能把「收到成功」当成安装完成的凭据，只能把「连接断开」当成预期收尾。
+ */
+export async function installDownloaded(): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("E_UPDATE_DESKTOP_ONLY: 仅桌面版支持软件内更新");
+  }
+  await invoke("install_downloaded");
 }

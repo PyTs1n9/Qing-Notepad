@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
@@ -14,34 +14,27 @@ import {
 } from "@/utils/storage";
 import { useAiStore } from "@/stores/aiStore";
 import { NOTE_EXTERNAL_SAVE_EVENT } from "@/utils/ai/noteWrite";
-import { redo as codeMirrorRedo, undo as codeMirrorUndo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
-import { Save, Pin, Sparkles, Undo2, Redo2, Table, ImagePlus, FileDown } from "lucide-react";
+import { Save, Pin, FileDown, AppWindow } from "lucide-react";
 import { createStickyNote, closeStickyNote, isStickyOpen } from "@/utils/stickyManager";
+import { NOTE_WINDOW_MAIN_SAVED_EVENT, NOTE_WINDOW_SAVED_EVENT, openNoteWindow } from "@/utils/noteWindow";
 import { useEditorZoom } from "@/utils/editorZoom";
 import { registerNoteFlusher } from "@/utils/noteFlush";
 import { setActiveEditor } from "@/utils/editorHandle";
 import MarkdownSourceEditor from "@/components/Editor/MarkdownSourceEditor";
-import MarkdownViewSwitch from "@/components/Editor/MarkdownViewSwitch";
+import EditorMenuBar from "@/components/Editor/EditorMenuBar";
+import EditorStatusBar, { type SaveState } from "@/components/Editor/EditorStatusBar";
+import NoteOutlinePanel from "@/components/Editor/NoteOutlinePanel";
+import { extractOutline, type OutlineHeading } from "@/utils/noteOutline";
+import { computeMarkdownStats } from "@/utils/markdownStats";
+import { useOutlineNavigation } from "@/hooks/useOutlineNavigation";
 import { htmlToMarkdown, isStoredEditorHtml } from "@/utils/htmlToMarkdown";
+import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
+import { insertTable } from "@/utils/markdownCommands";
 
 // Configure marked
-/** Extension for an image selected in the dialog or pasted from the clipboard. */
-function imageExtensionOf(nameOrMime: string): string {
-  if (nameOrMime.includes("/")) return nameOrMime.split("/")[1] || "png";
-  const extension = nameOrMime.split(".").pop();
-  return extension && extension.length <= 5 ? extension : "png";
-}
 
 const DERIVED_TITLE_MAX_LENGTH = 40;
-
-/**
- * Empty 3x3 GFM table inserted by the toolbar button / `Mod-Alt-t`. Two spaces
- * between pipes keep every cell valid when the user types into it.
- */
-const TABLE_MARKDOWN = "| 列1 | 列2 | 列3 |\n| --- | --- | --- |\n|  |  |  |\n";
-/** Offset of the first header cell's text, so the caret lands inside it. */
-const TABLE_FIRST_CELL_OFFSET = 2;
 
 /**
  * Local notes offer two panes: live rendering and the raw-source escape hatch.
@@ -50,6 +43,9 @@ const TABLE_FIRST_CELL_OFFSET = 2;
  */
 const LOCAL_MARKDOWN_VIEWS = ["live", "source"] as const;
 type LocalMarkdownView = (typeof LOCAL_MARKDOWN_VIEWS)[number];
+
+/** Stable identity so a closed outline does not invalidate the memo every render. */
+const NO_HEADINGS: OutlineHeading[] = [];
 
 /**
  * The note page no longer has a title field. A note keeps whatever title it was
@@ -108,11 +104,20 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   const dirtyIds = useTabStore((s) => s.dirtyIds);
   const markDirty = useTabStore((s) => s.markDirty);
   const [isSaving, setIsSaving] = useState(false);
-  const [showSaveStatus, setShowSaveStatus] = useState(false);
   const [stickyOpen, setStickyOpen] = useState(false);
+  // Outline column. Session-scoped on purpose: switching notes must not lose
+  // the user's choice, but a restart starts quiet rather than reopening a
+  // 220px column over yesterday's document.
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // The status bar shows when the file was last written, not when a key was
+  // last pressed: `noteStore.updateNote` touches `updatedAt` on every
+  // keystroke, so the store value would tick while the user types.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   const editorContainerRef = useRef<HTMLDivElement>(null);
-  const editorFontSize = useEditorZoom(editorContainerRef, { initialSize: 16 });
+  const { fontSize: editorFontSize, zoomIn, zoomOut, resetZoom } = useEditorZoom(editorContainerRef, {
+    initialSize: 16,
+  });
   // Body typeface lives in settings; the editor reconfigures in place when it
   // changes, so switching fonts never tears the view down.
   const editorFontFamily = useSettingsStore((s) => s.editorFontFamily);
@@ -120,6 +125,26 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
 
   const activeNote = notes.find((n) => n.id === activeNoteId);
   const isDirty = activeNoteId ? dirtyIds.includes(activeNoteId) : false;
+
+  // Both derive from the buffer, so they move with every keystroke — that is
+  // the requirement ("实时响应当前编辑内容"). The outline is only scanned while
+  // the column is open: a full heading pass on every keystroke of a 5000-line
+  // note is work nobody can see. The statistics are always live.
+  const outline = useMemo(
+    () => (outlineOpen ? extractOutline(mdContent) : NO_HEADINGS),
+    [mdContent, outlineOpen],
+  );
+  const stats = useMemo(() => computeMarkdownStats(mdContent), [mdContent]);
+  // Jump + highlight live in a hook: the detached note window renders the same
+  // column and must share the 16px/8px coordinate corrections rather than
+  // re-derive them.
+  const { activeLine: outlineActiveLine, jumpTo: handleOutlineSelect } = useOutlineNavigation(
+    codeMirrorViewRef,
+    outline,
+    outlineOpen,
+    editorSessionVersion,
+  );
+  const saveState: SaveState = isSaving ? "saving" : isDirty ? "dirty" : "saved";
 
   const resetEditorContent = useCallback((value: string) => {
     mdContentRef.current = value;
@@ -164,9 +189,11 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       markDirty(noteId, false);
       // Notify open sticky windows to update
       emit("sticky:note-updated", { noteId, content: contentToSave });
-      // Brief flash of "saved" status
-      setShowSaveStatus(true);
-      setTimeout(() => setShowSaveStatus(false), 2000);
+      // The detached note window is a second editor for the same file: push the
+      // revision so it does not save a stale buffer back over this one.
+      emit(NOTE_WINDOW_MAIN_SAVED_EVENT, { noteId, content: contentToSave });
+      // The status bar shows write time, not typing time.
+      setSavedAt(Date.now());
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
@@ -229,6 +256,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     if (!currentId) {
       loadingNoteIdRef.current = null;
       resetEditorContent("");
+      setSavedAt(null);
       void persistPrevious();
       // Clear the marker only after the flush above has been invoked: it reads
       // this ref to decide whether the buffer belonged to the closing note.
@@ -239,6 +267,9 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     // Clear editor immediately before loading. The dirty flag belongs to the
     // note, not the component, so it is intentionally left alone here.
     resetEditorContent("");
+    // The bar must never show the previous note's write time while this one
+    // loads.
+    setSavedAt(null);
     loadingNoteIdRef.current = currentId;
 
     void persistPrevious()
@@ -255,6 +286,10 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
         // A note stored without a title (older data, quick capture) picks up its
         // first line here too, so opening it is enough to make it identifiable.
         const loadedNote = useNoteStore.getState().notes.find((note) => note.id === currentId);
+        const storedUpdatedAt = loadedNote ? Date.parse(loadedNote.updatedAt) : Number.NaN;
+        // Reopening a note is not an edit: the bar keeps the file's own time,
+        // which `updateNote(..., { touchUpdatedAt: false })` below preserves.
+        setSavedAt(Number.isNaN(storedUpdatedAt) ? null : storedUpdatedAt);
         const derivedTitle =
           loadedNote && !loadedNote.title.trim() ? deriveTitleFromContent(markdownContent) : "";
         updateNote(
@@ -302,6 +337,40 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       unlisten.forEach((pending) => pending.then((fn) => fn()));
     };
   }, [resetEditorContent]);
+
+  // A save from the detached note window. Sticky saves reload unconditionally
+  // because a sticky is a companion view of a note the user is not editing
+  // here; the detached window is a full editor, so an unsaved buffer in *this*
+  // window wins. Reloading it would discard text the user is still typing,
+  // which is worse than the two windows briefly disagreeing.
+  useEffect(() => {
+    const unlisten = listen<{ noteId: string; content: string }>(
+      NOTE_WINDOW_SAVED_EVENT,
+      (event) => {
+        const { noteId: savedId, content } = event.payload;
+        if (typeof content !== "string") return;
+        const isActive = savedId === activeNoteIdRef.current;
+        const hasLocalEdits = useTabStore.getState().dirtyIds.includes(savedId);
+
+        if (isActive) {
+          // The buffer here wins over a background window while it is dirty.
+          // The pending save below will refresh the metadata on its own.
+          if (hasLocalEdits) return;
+          resetEditorContent(isStoredEditorHtml(content) ? htmlToMarkdown(content) : content);
+          markDirty(savedId, false);
+          setSavedAt(Date.now());
+        }
+        // The detached window writes the .md file directly, so nothing else
+        // refreshes this note's metadata. Without this the sidebar, the tab
+        // strip and the status bar would keep the pre-detached timestamp (and
+        // the assistant would read a stale body) until the note is reopened.
+        updateNote(savedId, { content }, { touchUpdatedAt: true });
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [resetEditorContent, markDirty, updateNote]);
 
   // Ctrl+S / Cmd+S save handler
   useEffect(() => {
@@ -385,30 +454,68 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     useAiStore.getState().setSidebarOpen(true);
   }, []);
 
-  const handleUndo = useCallback(() => {
-    const view = codeMirrorViewRef.current;
-    if (view) codeMirrorUndo(view);
+  /** Same store action the tab strip uses, so closing never diverges. */
+  const handleCloseTab = useCallback(() => {
+    const noteId = activeNoteIdRef.current;
+    if (noteId) useTabStore.getState().closeTab(noteId);
   }, []);
-  const handleRedo = useCallback(() => {
-    const view = codeMirrorViewRef.current;
-    if (view) codeMirrorRedo(view);
+
+  /**
+   * Source ↔ live. Declared before `Ctrl+/` because the key handler and the
+   * status-bar button must drive the same state machine; two independent
+   * togglers would eventually disagree about which mode is current.
+   */
+  const handleToggleSourceMode = useCallback(() => {
+    setMarkdownViewMode((mode) => (mode === "source" ? "live" : "source"));
   }, []);
+
+  /**
+   * Ctrl+/ toggles 实时渲染 ↔ 源码; Ctrl+= / Ctrl+- / Ctrl+Shift+0 zoom.
+   *
+   * These cannot live in the editor keymap: Ctrl+/ has to work while a menu item
+   * or a toolbar button owns the focus. Capture phase plus a containment check
+   * keeps them scoped to the note card, so typing in the AI panel never resizes
+   * or re-renders the note.
+   */
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const container = editorContainerRef.current;
+      if (!container || !(event.target instanceof Node) || !container.contains(event.target)) return;
+
+      // Physical codes, not `event.key`: Ctrl+= reports "+" on some layouts and
+      // Ctrl+Shift+0 reports ")" — both would miss a character-based check.
+      if (event.code === "Slash") {
+        event.preventDefault();
+        handleToggleSourceMode();
+        return;
+      }
+      if (event.code === "Equal") {
+        event.preventDefault();
+        zoomIn();
+        return;
+      }
+      if (event.code === "Minus") {
+        event.preventDefault();
+        zoomOut();
+        return;
+      }
+      if (event.code === "Digit0" && event.shiftKey) {
+        event.preventDefault();
+        resetZoom();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
+  }, [handleToggleSourceMode, zoomIn, zoomOut, resetZoom]);
 
   // Shared by the toolbar button and Mod-Alt-t, so both paths insert exactly
   // the same skeleton at the caret and leave the caret in the first header cell.
   const handleInsertTable = useCallback(() => {
     const view = codeMirrorViewRef.current;
     if (!view) return;
-    const { from, to } = view.state.selection.main;
-    const doc = view.state.doc.toString();
-    // A table has to start on its own line, otherwise the paragraph above
-    // swallows it and nothing renders as a table.
-    const prefix = from > 0 && doc[from - 1] !== "\n" ? "\n" : "";
-    view.dispatch({
-      changes: { from, to, insert: `${prefix}${TABLE_MARKDOWN}` },
-      selection: { anchor: from + prefix.length + TABLE_FIRST_CELL_OFFSET },
-      scrollIntoView: true,
-    });
+    view.dispatch(insertTable(view.state));
     view.focus();
   }, []);
 
@@ -417,24 +524,16 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
    * generated file name, so moving the data directory never breaks a note.
    */
   const insertImageReference = useCallback((filename: string) => {
-    const snippet = `![](attachment://${filename})`;
     const view = codeMirrorViewRef.current;
     if (!view) {
       // Preview-only mode has no caret: append to the end instead of no-oping.
+      const snippet = `![](attachment://${filename})`;
       const current = mdContentRef.current;
       const separator = !current || current.endsWith("\n") ? "" : "\n";
       handleMdChange(`${current}${separator}${snippet}\n`);
       return;
     }
-    const { from, to } = view.state.selection.main;
-    const doc = view.state.doc.toString();
-    const prefix = from > 0 && doc[from - 1] !== "\n" ? "\n" : "";
-    view.dispatch({
-      changes: { from, to, insert: `${prefix}${snippet}\n` },
-      selection: { anchor: from + prefix.length + snippet.length + 1 },
-      scrollIntoView: true,
-    });
-    view.focus();
+    insertImageMarkdown(view, filename);
   }, [handleMdChange]);
 
   /** Copy the bytes into data/img, then reference the generated file name. */
@@ -500,6 +599,32 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     requestAnimationFrame(() => codeMirrorViewRef.current?.requestMeasure());
   }, [editorFontSize]);
 
+  /**
+   * Outline toggle. Opening or closing the column changes the editor's width;
+   * CodeMirror measures itself on resize, but one explicit measure on the next
+   * frame removes the single-frame lag where wrapping is still the old one.
+   */
+  const handleToggleOutline = useCallback(() => {
+    setOutlineOpen((open) => !open);
+    requestAnimationFrame(() => codeMirrorViewRef.current?.requestMeasure());
+  }, []);
+
+  /**
+   * Menu → zoom. Must stay above the `!activeNote` early return, together with
+   * every other hook: the editor renders the placeholder first (no note open) and
+   * only then the note surface, so a hook placed below that return would change
+   * the hook count between the two renders — React throws "Rendered more hooks
+   * than during the previous render" and unmounts the tree (black window).
+   */
+  const handleZoom = useCallback(
+    (action: "in" | "out" | "reset") => {
+      if (action === "in") zoomIn();
+      else if (action === "out") zoomOut();
+      else resetZoom();
+    },
+    [zoomIn, zoomOut, resetZoom],
+  );
+
   if (!activeNote) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-text-muted">
@@ -521,88 +646,42 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     );
   }
 
-  const markdownViewLabels: Record<LocalMarkdownView, string> = {
-    live: t(lang, "mdViewLive"),
-    source: t(lang, "mdViewSource"),
-  };
-
-  // Word count: Chinese characters + English words
-  const currentText = mdContent;
-  const chineseChars = (currentText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
-  const englishWords = (currentText.replace(/[\u4e00-\u9fff\u3400-\u4dbf]/g, " ").match(/[a-zA-Z0-9]+/g) || []).length;
-  const wordCountNum = chineseChars + englishWords;
+  const parsedUpdatedAt = activeNote ? Date.parse(activeNote.updatedAt) : Number.NaN;
+  const updatedAtValue = savedAt ?? (Number.isNaN(parsedUpdatedAt) ? null : parsedUpdatedAt);
 
   return (
     <div ref={editorContainerRef} className="note-editor-surface flex min-h-0 min-w-0 h-full flex-1 flex-col overflow-hidden">
-      {/* Toolbar: view switch, history, then the document actions. Actions are
-          icon-only by default, but the row must never clip: every control is
-          `shrink-0`, so without wrapping the right-hand end (save / export) is
-          the first thing a narrow editor card cuts off.
-          Height is locked to the tab strip above it: 2px + 32px (`h-8` controls)
-          + 2px = 36px, the same `h-9` every top strip uses. The padding is split
-          evenly so the controls stay optically centred; `.cm-content` brings its
-          own 16px top padding, so the row needs none below. */}
-      <div className="note-editor-toolbar flex flex-wrap items-center gap-1 gap-y-1 px-5 py-0.5">
-        <MarkdownViewSwitch
-          modes={LOCAL_MARKDOWN_VIEWS}
-          value={markdownViewMode}
-          onChange={setMarkdownViewMode}
-          labels={markdownViewLabels}
+      {/* Menu bar: 文件 / 编辑 / 段落 / 格式 / 视图. It replaces the icon row on
+          purpose — nine icons had no room left for the structural Markdown
+          commands, and a menu is the only container that stays honest as that
+          list grows. The three state-bearing controls stay outside: a menu item
+          cannot show "unsaved" at a glance.
+          Height is 2px + 24px + 2px = 28px, one step tighter than the 36px tab
+          strip above it: the editor's two own bars (this and the status bar)
+          frame the text, so they read as one frame rather than as two more
+          app-level strips. The padding is split evenly so the controls stay
+          optically centred; `.cm-content` brings its own top padding. */}
+      <div className="note-editor-toolbar flex flex-wrap items-center gap-1 gap-y-1 px-4 py-0.5">
+        <EditorMenuBar
+          lang={lang}
+          getView={() => codeMirrorViewRef.current}
+          hasEditor={Boolean(activeNote)}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          isDirty={isDirty}
+          isSaving={isSaving}
+          viewMode={markdownViewMode}
+          onViewModeChange={setMarkdownViewMode}
+          onSave={doSave}
+          onExport={onExportNote}
+          onCloseTab={handleCloseTab}
+          onOpenInWindow={() => void openNoteWindow(activeNote.id, activeNote.title)}
+          onInsertTable={handleInsertTable}
+          onInsertImage={() => void handleInsertImage()}
+          onAiPolish={handleAiPolish}
+          onZoom={handleZoom}
         />
-        <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border/70" />
-        <button
-          type="button"
-          onClick={handleUndo}
-          disabled={!canUndo}
-          title={t(lang, "undo")}
-          aria-label={t(lang, "undo")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
-            hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-        >
-          <Undo2 size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={handleRedo}
-          disabled={!canRedo}
-          title={t(lang, "redo")}
-          aria-label={t(lang, "redo")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
-            hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-        >
-          <Redo2 size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={handleInsertTable}
-          title={t(lang, "insertTable")}
-          aria-label={t(lang, "insertTable")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
-            hover:bg-bg-hover hover:text-text-primary"
-        >
-          <Table size={15} />
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleInsertImage()}
-          title={t(lang, "insertImage")}
-          aria-label={t(lang, "insertImage")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
-            hover:bg-bg-hover hover:text-text-primary"
-        >
-          <ImagePlus size={15} />
-        </button>
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={handleAiPolish}
-          title={t(lang, "aiPolishEntry")}
-          aria-label={t(lang, "aiPolishEntry")}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors
-            hover:bg-bg-hover hover:text-text-primary"
-        >
-          <Sparkles size={15} />
-        </button>
         <button
           type="button"
           onClick={doSave}
@@ -610,13 +689,13 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           aria-busy={isSaving}
           title={t(lang, "save")}
           aria-label={t(lang, "save")}
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
             isDirty
               ? "bg-accent text-on-accent hover:bg-accent-hover"
               : "text-text-muted cursor-not-allowed opacity-50"
           }`}
         >
-          <Save size={15} className={isSaving ? "animate-pulse" : undefined} />
+          <Save size={14} className={isSaving ? "animate-pulse" : undefined} />
         </button>
         <button
           type="button"
@@ -631,13 +710,22 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           }}
           title={t(lang, stickyOpen ? "unpinSticky" : "pinSticky")}
           aria-label={t(lang, stickyOpen ? "unpinSticky" : "pinSticky")}
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
             stickyOpen
               ? "bg-accent text-on-accent hover:bg-accent-hover"
               : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
           }`}
         >
-          <Pin size={15} />
+          <Pin size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => void openNoteWindow(activeNote.id, activeNote.title)}
+          title={t(lang, "openInNewWindow")}
+          aria-label={t(lang, "openInNewWindow")}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
+        >
+          <AppWindow size={14} />
         </button>
         <button
           type="button"
@@ -645,64 +733,83 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           disabled={!onExportNote}
           title={t(lang, "exportFile")}
           aria-label={t(lang, "exportFile")}
-          className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <FileDown size={15} />
-          {/* Export is the only way to turn a note into a file, so it keeps a
-              text label whenever the card is wide enough. Gated on the card's
-              own container width — the left card is resizable, so a viewport
-              media query would show the label at the wrong times. */}
-          <span className="note-export-label">{t(lang, "exportFile")}</span>
+          <FileDown size={14} />
         </button>
       </div>
 
       {/* The shell already frames the editor, so the text surface is flush with
-          the card: no second border, radius or tinted panel inside it. */}
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        {/* Editor content. One pane: 分屏 is gone — the rendered state is a
-            property of this same buffer, not a second view of it. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ fontSize: editorFontSize }}>
-          <MarkdownSourceEditor
-            key={`${activeNote.id}:${editorSessionVersion}`}
-            value={mdContent}
-            placeholder={t(lang, "mdPlaceholder")}
-            onChange={handleMdChange}
-            onHistoryChange={handleHistoryChange}
-            onViewChange={handleCodeMirrorViewChange}
-            fontSize={editorFontSize}
-            fontFamily={editorFontFamily}
-            livePreview={markdownViewMode === "live"}
-            onPasteImage={insertImageFile}
-            onInsertTable={handleInsertTable}
+          the card: no second border, radius or tinted panel inside it.
+          `relative` is what lets the outline column become an overlay on a
+          narrow card (index.css, container query) without a second wrapper. */}
+      <div className="note-body relative flex min-h-0 flex-1 overflow-hidden">
+        {/* Outline: a real column, so expanding it narrows the text instead of
+            covering it. Below 560px the container query flips it to an overlay
+            — 220px of a 480px card would leave an unreadable text column. */}
+        {outlineOpen && (
+          <NoteOutlinePanel
+            // Remounting per note drops the filter and the list's scroll
+            // offset: a query typed for 昨天's note should not silently hide
+            // today's headings.
+            key={activeNote.id}
+            headings={outline}
+            activeLine={outlineActiveLine}
+            onSelect={handleOutlineSelect}
+            onClose={() => setOutlineOpen(false)}
+            lang={lang}
           />
-        </div>
-
-        {/* Meta strip pinned to the bottom-right corner: updated time, save
-            state and word count stay reachable without a dedicated header row. */}
-        <div className="pointer-events-none absolute bottom-1.5 right-2.5 z-10 flex items-center gap-1.5 rounded-full bg-bg-primary/85 px-2 py-1 text-[11px] leading-none text-text-muted shadow-sm">
-          <span className="tabular-nums">
-            {t(lang, "updatedAt")} {new Date(activeNote.updatedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US")}
-          </span>
-          <span aria-hidden="true" className="opacity-50">·</span>
-          <span className={isDirty ? "text-amber-500" : showSaveStatus ? "text-green-500" : "text-text-muted"}>
-            {isDirty ? t(lang, "unsaved") : t(lang, "saved")}
-          </span>
-          <span aria-hidden="true" className="opacity-50">·</span>
-          <span className="tabular-nums">{tWithParams(lang, "wordCount", { count: wordCountNum })}</span>
-        </div>
-        {activeNote.tags.length > 0 && (
-          <div className="pointer-events-none absolute bottom-1.5 left-2.5 z-10 flex max-w-[55%] flex-wrap items-center gap-1">
-            {activeNote.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent-text"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
         )}
+
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Editor content. One pane: 分屏 is gone — the rendered state is a
+              property of this same buffer, not a second view of it. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden" style={{ fontSize: editorFontSize }}>
+            <MarkdownSourceEditor
+              key={`${activeNote.id}:${editorSessionVersion}`}
+              value={mdContent}
+              placeholder={t(lang, "mdPlaceholder")}
+              onChange={handleMdChange}
+              onHistoryChange={handleHistoryChange}
+              onViewChange={handleCodeMirrorViewChange}
+              fontSize={editorFontSize}
+              fontFamily={editorFontFamily}
+              livePreview={markdownViewMode === "live"}
+              onPasteImage={insertImageFile}
+              onInsertTable={handleInsertTable}
+            />
+          </div>
+
+          {activeNote.tags.length > 0 && (
+            <div className="pointer-events-none absolute bottom-1.5 left-2.5 z-10 flex max-w-[55%] flex-wrap items-center gap-1">
+              {activeNote.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-accent-light/85 px-1.5 py-0.5 text-[10px] leading-none text-accent-text"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* The status bar owns updated time, save state and the four counts; the
+          floating pill it replaced duplicated them and covered the last line of
+          text. Order is fixed (left cluster → gap → right cluster) and is the
+          contract for future additions: structure on the left, document state
+          on the right. */}
+      <EditorStatusBar
+        lang={lang}
+        outlineOpen={outlineOpen}
+        onToggleOutline={handleToggleOutline}
+        sourceMode={markdownViewMode === "source"}
+        onToggleSourceMode={handleToggleSourceMode}
+        updatedAt={updatedAtValue}
+        saveState={saveState}
+        stats={stats}
+      />
     </div>
   );
 };

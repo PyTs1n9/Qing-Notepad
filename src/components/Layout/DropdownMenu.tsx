@@ -6,7 +6,8 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import type { LucideIcon } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, type LucideIcon } from "lucide-react";
 
 export interface DropdownAction {
   id: string;
@@ -20,6 +21,11 @@ export interface DropdownAction {
   /** Required whenever `disabled` is set — a greyed button with no reason is a defect. */
   disabledReason?: string;
   danger?: boolean;
+  /**
+   * Radio state. The presence of the key (true or false) reserves the left slot
+   * for a check mark, so a list of mutually exclusive items keeps one text column.
+   */
+  checked?: boolean;
   onSelect: () => void;
 }
 
@@ -32,14 +38,33 @@ const PANEL_WIDTH = 224;
 const VIEWPORT_MARGIN = 8;
 const GAP = 2;
 
+/** Both item roles are actionable; the arrow-key walk must see the same set. */
+const ITEM_SELECTOR =
+  '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled])';
+
 interface DropdownMenuProps {
   /** Accessible name of the trigger; also the default tooltip. */
   label: string;
-  icon: LucideIcon;
+  /** Icon trigger. Omit this and `triggerLabel` to get an empty trigger. */
+  icon?: LucideIcon;
+  /**
+   * Text trigger. Used by the editor menu bar, where a row of words reads as a
+   * menu bar and a row of icons reads as a toolbar.
+   */
+  triggerLabel?: string;
   entries: DropdownEntry[];
   align?: "start" | "end";
   triggerClassName?: string;
   iconSize?: number;
+  /** Cap the panel and scroll. A 20-item menu must not exceed the window. */
+  maxHeight?: number;
+  /** Controlled mode, required for a menu bar where only one panel is open. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Fired when the pointer enters the trigger; a menu bar switches panels here. */
+  onTriggerHover?: () => void;
+  /** ArrowLeft / ArrowRight inside the panel; a menu bar moves between menus. */
+  onNavigate?: (direction: -1 | 1) => void;
 }
 
 /**
@@ -54,28 +79,54 @@ interface DropdownMenuProps {
  * - keyboard: Escape / ArrowUp / ArrowDown / Home / End / Tab, focus returns to the
  *   trigger on Escape
  * - the panel is `position: fixed` and flips above the trigger when the viewport
- *   bottom is too close, so a narrow or short window never clips it. Fixed is safe
- *   here because no ancestor carries `backdrop-filter` (glass lives on
- *   `.surface-glass::before`, see docs/prompt-workspace-shell-glass.md).
+ *   bottom is too close, so a narrow or short window never clips it
+ * - the panel is rendered through a portal on `document.body`. Fixed positioning
+ *   alone is not enough: the editor card carries `container-type: inline-size`,
+ *   which implies `contain: layout` and therefore makes that card the containing
+ *   block for fixed descendants — the panel would be positioned against the card
+ *   and then clipped by its `overflow: hidden`. A portal escapes both.
+ * - no submenus. The editor menu uses grouping + `maxHeight` instead; a second
+ *   level would need a hover-intent model and a second flip axis for no item that
+ *   actually needs two dimensions (see docs/decisions-editor-menubar.md).
  */
 export default function DropdownMenu({
   label,
   icon: Icon,
+  triggerLabel,
   entries,
   align = "end",
   triggerClassName = "",
   iconSize = 14,
+  maxHeight,
+  open: controlledOpen,
+  onOpenChange,
+  onTriggerHover,
+  onNavigate,
 }: DropdownMenuProps) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const close = useCallback((restoreFocus = true) => {
-    setOpen(false);
-    setPosition(null);
-    if (restoreFocus) triggerRef.current?.focus();
-  }, []);
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  const close = useCallback(
+    (restoreFocus = true) => {
+      setOpen(false);
+      setPosition(null);
+      if (restoreFocus) triggerRef.current?.focus();
+    },
+    [setOpen],
+  );
 
   const place = useCallback(() => {
     const trigger = triggerRef.current;
@@ -121,16 +172,13 @@ export default function DropdownMenu({
       window.removeEventListener("resize", onResize);
       window.removeEventListener("blur", onResize);
     };
-  }, [open, close]);
+  }, [open, close, setOpen]);
 
   // Focus the first actionable item so the menu is usable without a mouse.
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => {
-      const items = panelRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]:not([disabled])',
-      );
-      items?.[0]?.focus();
+      panelRef.current?.querySelector<HTMLButtonElement>(ITEM_SELECTOR)?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [open]);
@@ -138,9 +186,7 @@ export default function DropdownMenu({
   const handlePanelKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const panel = panelRef.current;
     if (!panel) return;
-    const items = Array.from(
-      panel.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])'),
-    );
+    const items = Array.from(panel.querySelectorAll<HTMLButtonElement>(ITEM_SELECTOR));
     if (items.length === 0) return;
     const current = items.indexOf(document.activeElement as HTMLButtonElement);
 
@@ -152,6 +198,16 @@ export default function DropdownMenu({
       case "Tab":
         // Tab leaves the menu; it must not walk through the items.
         close(false);
+        return;
+      case "ArrowLeft":
+        if (!onNavigate) return;
+        event.preventDefault();
+        onNavigate(-1);
+        return;
+      case "ArrowRight":
+        if (!onNavigate) return;
+        event.preventDefault();
+        onNavigate(1);
         return;
       case "ArrowDown":
         event.preventDefault();
@@ -179,6 +235,16 @@ export default function DropdownMenu({
     action.onSelect();
   };
 
+  const isTextTrigger = triggerLabel !== undefined;
+  // 24px, not 28: the note editor's menu row is compressed to 28px total (see
+  // EditorStatusBar for the matching bottom bar), and a trigger taller than the
+  // row would push the text baseline off-centre. Text triggers exist only in
+  // that menu bar today; an icon trigger supplies its own height via
+  // `triggerClassName`.
+  const textTriggerClass = `inline-flex h-6 items-center rounded-md px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:bg-bg-hover focus-visible:text-text-primary ${
+    open ? "bg-bg-hover text-text-primary" : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+  }`;
+
   return (
     <div className="relative flex h-full items-center">
       <button
@@ -187,17 +253,18 @@ export default function DropdownMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
-        title={label}
+        title={isTextTrigger ? undefined : label}
+        onMouseEnter={onTriggerHover}
         onClick={() => {
           if (open) close(false);
           else setOpen(true);
         }}
-        className={triggerClassName}
+        className={isTextTrigger ? `${textTriggerClass} ${triggerClassName}` : triggerClassName}
       >
-        <Icon size={iconSize} aria-hidden="true" />
+        {isTextTrigger ? triggerLabel : Icon ? <Icon size={iconSize} aria-hidden="true" /> : null}
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={panelRef}
           role="menu"
@@ -208,6 +275,8 @@ export default function DropdownMenu({
             top: position?.top ?? 0,
             left: position?.left ?? 0,
             width: PANEL_WIDTH,
+            maxHeight,
+            overflowY: maxHeight === undefined ? undefined : "auto",
             visibility: position ? "visible" : "hidden",
           }}
           className="z-50 rounded-lg border border-border bg-bg-secondary p-1 shadow-xl shadow-black/20"
@@ -223,20 +292,27 @@ export default function DropdownMenu({
               >
                 <button
                   type="button"
-                  role="menuitem"
+                  role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
+                  aria-checked={entry.checked}
                   aria-disabled={entry.disabled || undefined}
                   disabled={entry.disabled}
                   onClick={() => runAction(entry)}
-                  className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${
+                  className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors focus:outline-none ${
                     entry.disabled
                       ? "cursor-not-allowed text-text-muted opacity-55"
                       : entry.danger
-                        ? "text-danger hover:bg-danger/10"
-                        : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+                        ? "text-danger hover:bg-danger/10 focus:bg-danger/10"
+                        : "text-text-secondary hover:bg-bg-hover hover:text-text-primary focus:bg-bg-hover focus:text-text-primary"
                   }`}
                 >
-                  {entry.icon && (
-                    <entry.icon size={13} strokeWidth={1.9} className="mt-0.5 flex-shrink-0" />
+                  {entry.checked !== undefined ? (
+                    <span className="flex w-3 flex-shrink-0 justify-center pt-0.5">
+                      {entry.checked && <Check size={12} strokeWidth={2.4} aria-hidden="true" />}
+                    </span>
+                  ) : (
+                    entry.icon && (
+                      <entry.icon size={13} strokeWidth={1.9} className="mt-0.5 flex-shrink-0" />
+                    )
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">
@@ -257,7 +333,8 @@ export default function DropdownMenu({
               </div>
             ),
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

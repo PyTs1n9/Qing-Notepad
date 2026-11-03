@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  Prec,
+  Transaction,
+  type TransactionSpec,
+} from "@codemirror/state";
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -15,6 +22,15 @@ import {
 import { pluginDecorations } from "@/utils/editorHandle";
 import { livePreview } from "@/utils/livePreview";
 import { markdownInputRules } from "@/utils/livePreview/inputRules";
+import {
+  inlineWrap,
+  insertCodeBlock,
+  insertLink,
+  insertParagraph,
+  setHeading,
+  toggleList,
+  toggleQuote,
+} from "@/utils/markdownCommands";
 
 interface MarkdownSourceEditorProps {
   value: string;
@@ -47,6 +63,67 @@ const externalDocumentUpdate = Annotation.define<boolean>();
 
 /** Editable instance: the caret's block falls back to source. */
 const livePreviewExtension = livePreview();
+
+/** One command, one transaction; `false` lets the next binding try. */
+function runMarkdownCommand(
+  view: EditorView,
+  build: (state: EditorState) => TransactionSpec | null,
+): boolean {
+  const spec = build(view.state);
+  if (!spec) return false;
+  view.dispatch(spec);
+  return true;
+}
+
+/**
+ * Structural Markdown shortcuts.
+ *
+ * `Prec.high` because `basicSetup` already binds several of these keys
+ * (`Mod-/`, `Mod-Enter`) and the editor's menu advertises the accelerators shown
+ * here — a displayed shortcut that loses to a default would be a lie.
+ *
+ * Ctrl+/ and the zoom keys are *not* here: they must work while a menu item owns
+ * the focus, so `NoteEditor` owns them at window level.
+ */
+const markdownCommandKeymap = Prec.high(
+  keymap.of([
+    ...[0, 1, 2, 3, 4, 5, 6].map((level) => ({
+      key: `Mod-${level}`,
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => setHeading(state, level)),
+    })),
+    { key: "Mod-Shift-q", run: (view: EditorView) => runMarkdownCommand(view, toggleQuote) },
+    {
+      key: "Mod-Shift-[",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => toggleList(state, "bullet")),
+    },
+    {
+      key: "Mod-Shift-]",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => toggleList(state, "ordered")),
+    },
+    {
+      key: "Mod-Shift-x",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => toggleList(state, "task")),
+    },
+    { key: "Mod-Shift-k", run: (view: EditorView) => runMarkdownCommand(view, insertCodeBlock) },
+    { key: "Mod-k", run: (view: EditorView) => runMarkdownCommand(view, insertLink) },
+    {
+      key: "Mod-Shift-`",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => inlineWrap(state, "`")),
+    },
+    {
+      key: "Alt-Shift-5",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => inlineWrap(state, "~~")),
+    },
+    {
+      key: "Mod-Enter",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => insertParagraph(state, "below")),
+    },
+    {
+      key: "Mod-Shift-Enter",
+      run: (view: EditorView) => runMarkdownCommand(view, (state) => insertParagraph(state, "above")),
+    },
+  ]),
+);
 
 const noteEditorTheme = EditorView.theme({
   "&": {
@@ -139,6 +216,7 @@ export default function MarkdownSourceEditor({
         // deletion explicitly (cross-block deletion is M5's).
         markdown({ base: markdownLanguage, addKeymap: false }),
         keymap.of([{ key: "Backspace", run: deleteMarkupBackward }]),
+        markdownCommandKeymap,
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
         pluginDecorations,

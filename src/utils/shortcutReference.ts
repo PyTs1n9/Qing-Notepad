@@ -28,6 +28,11 @@ export const SHORTCUT_REFERENCE: ShortcutReferenceGroup[] = [
     titleKey: "shortcutGroupNote",
     items: [
       { keys: "Ctrl+S", labelKey: "shortcutSaveNote" },
+      { keys: "Ctrl+1 … 6", labelKey: "shortcutHeadingLevels" },
+      { keys: "Ctrl+Shift+K", labelKey: "codeBlock" },
+      { keys: "Ctrl+K", labelKey: "link" },
+      { keys: "Ctrl+F", labelKey: "shortcutFindReplace" },
+      { keys: "Ctrl+/", labelKey: "shortcutSourceMode" },
       { keys: "Ctrl+Alt+T", labelKey: "shortcutInsertTable" },
     ],
   },

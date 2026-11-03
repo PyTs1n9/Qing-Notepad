@@ -182,7 +182,6 @@ interface SettingsState {
   trashRetentionDays: number;
   showWorkspaceHighlights: boolean;
   alwaysOnTop: boolean;
-  updateReminderDisabledForVersion: string | null;
   sidebarCategoryRatio: number | null;
   expandedFolderIds: string[] | null;
   glassEnabled: boolean;
@@ -220,7 +219,6 @@ interface SettingsState {
   setTrashRetentionDays: (days: number) => void;
   setShowWorkspaceHighlights: (show: boolean) => void;
   setAlwaysOnTop: (alwaysOnTop: boolean) => void;
-  setUpdateReminderDisabledForVersion: (version: string | null) => void;
   setSidebarCategoryRatio: (ratio: number | null) => void;
   setExpandedFolderIds: (ids: string[] | null) => void;
   setGlassEnabled: (enabled: boolean) => void;
@@ -242,7 +240,6 @@ interface SettingsState {
     trashRetentionDays?: number;
     showWorkspaceHighlights?: boolean;
     alwaysOnTop?: boolean;
-    updateReminderDisabledForVersion?: string | null;
     sidebarCategoryRatio?: number | null;
     expandedFolderIds?: string[] | null;
     glassEnabled?: boolean;
@@ -270,7 +267,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   trashRetentionDays: DEFAULT_TRASH_RETENTION_DAYS,
   showWorkspaceHighlights: true,
   alwaysOnTop: false,
-  updateReminderDisabledForVersion: null,
   sidebarCategoryRatio: null,
   expandedFolderIds: null,
   glassEnabled: DEFAULT_GLASS_ENABLED,
@@ -334,8 +330,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setAnnouncementsEnabled: (announcementsEnabled) => set({ announcementsEnabled }),
 
-  setUpdateReminderDisabledForVersion: (updateReminderDisabledForVersion) => set({ updateReminderDisabledForVersion }),
-
   setSidebarCategoryRatio: (ratio) => set({ sidebarCategoryRatio: normalizeSidebarCategoryRatio(ratio) }),
 
   setExpandedFolderIds: (ids) => set({ expandedFolderIds: normalizeExpandedFolderIds(ids) }),
@@ -373,9 +367,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       trashRetentionDays: normalizeTrashRetentionDays(settings.trashRetentionDays),
       showWorkspaceHighlights: settings.showWorkspaceHighlights ?? true,
       alwaysOnTop: settings.alwaysOnTop === true,
-      updateReminderDisabledForVersion: typeof settings.updateReminderDisabledForVersion === "string"
-        ? settings.updateReminderDisabledForVersion
-        : null,
       sidebarCategoryRatio: normalizeSidebarCategoryRatio(settings.sidebarCategoryRatio),
       expandedFolderIds: normalizeExpandedFolderIds(settings.expandedFolderIds),
       glassEnabled: settings.glassEnabled !== false,

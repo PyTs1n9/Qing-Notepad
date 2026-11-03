@@ -108,6 +108,9 @@ pub fn run() {
                 .build(),
         )
         .manage(ext_bridge.clone())
+        // 更新链路的跨命令状态：检查得到的 `Update` 句柄与已下载的安装包。
+        // 只活在本进程内，退出即丢（见 `update.rs` 的 `UpdateState`）。
+        .manage(update::UpdateState::default())
         // `qing-plugin-rpc`: the hidden extension-host webview's only way out.
         // `capabilities: []` rules out Tauri IPC there, so the conversation has
         // to ride a custom scheme — which needs no capability and is still
@@ -177,7 +180,8 @@ pub fn run() {
             vault::vault_scan,
             vault::vault_read_file,
             update::check_update,
-            update::install_update,
+            update::download_update,
+            update::install_downloaded,
         ])
         .setup(|app| {
             #[cfg(desktop)]

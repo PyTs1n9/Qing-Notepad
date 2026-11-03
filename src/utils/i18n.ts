@@ -418,6 +418,24 @@ export type TranslationKeys = {
   mdViewPreview: string;
   mdViewSplit: string;
   mdViewLive: string;
+  // Editor status bar: outline column, source toggle and document statistics.
+  // The statistics labels are separate keys on purpose — the narrow layout
+  // drops the words and keeps the numbers (see EditorStatusBar).
+  outlineTitle: string;
+  outlineToggle: string;
+  outlineEmpty: string;
+  outlineEmptyHint: string;
+  outlineSearch: string;
+  outlineNoMatch: string;
+  outlineClearSearch: string;
+  statusBarLabel: string;
+  saveStateSaving: string;
+  statLines: string;
+  statWords: string;
+  statCjk: string;
+  statChars: string;
+  statsHint: string;
+  statsHintValues: string;
   editorFontSection: string;
   editorFontHint: string;
   editorFontSystem: string;
@@ -549,6 +567,52 @@ export type TranslationKeys = {
   insertTable: string;
   insertImage: string;
   insertImageFailed: string;
+  menuBarLabel: string;
+  appCrashedTitle: string;
+  appCrashedBody: string;
+  appCrashedDetails: string;
+  appCrashedReload: string;
+  appCrashedCopy: string;
+  appCrashedCopied: string;
+  menuFile: string;
+  menuEdit: string;
+  menuParagraph: string;
+  menuFormat: string;
+  menuView: string;
+  closeTabNote: string;
+  selectAll: string;
+  findReplace: string;
+  moveLineUp: string;
+  moveLineDown: string;
+  headingParagraph: string;
+  headingLevel: string;
+  blockquote: string;
+  bulletList: string;
+  orderedList: string;
+  taskList: string;
+  codeBlock: string;
+  horizontalRule: string;
+  tableBlock: string;
+  insertParagraphAbove: string;
+  insertParagraphBelow: string;
+  bold: string;
+  italic: string;
+  strikethrough: string;
+  inlineCode: string;
+  link: string;
+  zoomIn: string;
+  zoomOut: string;
+  zoomReset: string;
+  savingInProgress: string;
+  disabledNoEditor: string;
+  disabledNoUndo: string;
+  disabledNoRedo: string;
+  disabledNoChanges: string;
+  disabledNoExport: string;
+  aiPolishMenuHint: string;
+  shortcutHeadingLevels: string;
+  shortcutFindReplace: string;
+  shortcutSourceMode: string;
   about: string;
   aboutTitle: string;
   version: string;
@@ -611,6 +675,10 @@ export type TranslationKeys = {
   pressShortcut: string;
   pinSticky: string;
   unpinSticky: string;
+  openInNewWindow: string;
+  closeNoteWindow: string;
+  returnToMainApp: string;
+  disabledNoAi: string;
   stickyNote: string;
   stickyEmptyHint: string;
   pinNote: string;
@@ -620,19 +688,19 @@ export type TranslationKeys = {
   checkingUpdate: string;
   upToDate: string;
   newVersion: string;
-  downloadUpdate: string;
   updateDownloading: string;
   updateInstalling: string;
   updateInstallFailed: string;
   updateRestartHint: string;
   checkUpdateFailed: string;
-  updateAvailableTitle: string;
-  updateAvailableMessage: string;
   currentVersion: string;
-  latestVersion: string;
   updateNow: string;
-  updateLater: string;
-  neverRemind: string;
+  updateBadgeLabel: string;
+  updateCardTitle: string;
+  updateReadyHint: string;
+  updateReadyAction: string;
+  ignoreVersion: string;
+  viewFullNotes: string;
   aiAssistant: string;
   aiSettings: string;
   aiApiKey: string;
@@ -1389,6 +1457,21 @@ const zh: TranslationKeys = {
   mdViewPreview: "预览",
   mdViewSplit: "分屏",
   mdViewLive: "实时渲染",
+  outlineTitle: "大纲",
+  outlineToggle: "显示/隐藏大纲",
+  outlineEmpty: "本文暂无标题",
+  outlineEmptyHint: "用 # 开头写一行标题，这里会列成大纲",
+  outlineSearch: "查找",
+  outlineNoMatch: "没有匹配的标题",
+  outlineClearSearch: "清除查找",
+  statusBarLabel: "文档状态栏",
+  saveStateSaving: "保存中",
+  statLines: "行",
+  statWords: "词",
+  statCjk: "字",
+  statChars: "字符",
+  statsHint: "行数 · 词数 · 字数 · 字符数",
+  statsHintValues: "行数 {lines} · 词数 {words} · 字数 {cjk} · 字符数 {chars}",
   editorFontSection: "编辑器字体",
   editorFontHint: "正文用字体，代码仍保持等宽",
   editorFontSystem: "系统默认",
@@ -1521,6 +1604,52 @@ const zh: TranslationKeys = {
   insertTable: "插入表格（Ctrl+Alt+T）",
   insertImage: "插入图片",
   insertImageFailed: "图片插入失败：{message}",
+  menuBarLabel: "编辑器菜单",
+  appCrashedTitle: "界面出错了",
+  appCrashedBody: "这一屏的渲染被中断了。可以重新加载继续；如果反复出现，把下面的信息发出来。",
+  appCrashedDetails: "技术细节",
+  appCrashedReload: "重新加载",
+  appCrashedCopy: "复制错误信息",
+  appCrashedCopied: "已复制",
+  menuFile: "文件",
+  menuEdit: "编辑",
+  menuParagraph: "段落",
+  menuFormat: "格式",
+  menuView: "视图",
+  closeTabNote: "关闭当前标签",
+  selectAll: "全选",
+  findReplace: "查找替换…",
+  moveLineUp: "上移该行",
+  moveLineDown: "下移该行",
+  headingParagraph: "正文",
+  headingLevel: "{level}级标题",
+  blockquote: "引用",
+  bulletList: "无序列表",
+  orderedList: "有序列表",
+  taskList: "任务列表",
+  codeBlock: "代码块",
+  horizontalRule: "水平分割线",
+  tableBlock: "表格",
+  insertParagraphAbove: "在上方插入段落",
+  insertParagraphBelow: "在下方插入段落",
+  bold: "加粗",
+  italic: "斜体",
+  strikethrough: "删除线",
+  inlineCode: "行内代码",
+  link: "超链接",
+  zoomIn: "放大",
+  zoomOut: "缩小",
+  zoomReset: "实际大小",
+  savingInProgress: "正在保存…",
+  disabledNoEditor: "没有打开的笔记",
+  disabledNoUndo: "没有可撤销的操作",
+  disabledNoRedo: "没有可重做的操作",
+  disabledNoChanges: "没有未保存的修改",
+  disabledNoExport: "当前笔记不可导出",
+  aiPolishMenuHint: "选中文字则只润色选区",
+  shortcutHeadingLevels: "应用 1–6 级标题",
+  shortcutFindReplace: "查找替换",
+  shortcutSourceMode: "实时渲染 / 源码切换",
   about: "关于",
   aboutTitle: "关于 Qing Notepad",
   version: "版本",
@@ -1583,6 +1712,10 @@ const zh: TranslationKeys = {
   pressShortcut: "按下快捷键...",
   pinSticky: "钉住磁贴",
   unpinSticky: "取消钉住",
+  openInNewWindow: "在独立窗口中打开",
+  closeNoteWindow: "关闭独立窗口",
+  returnToMainApp: "返回主软件",
+  disabledNoAi: "独立窗口不支持 AI 润色",
   stickyNote: "磁贴笔记",
   stickyEmptyHint: "双击此处开始编辑…",
   pinNote: "置顶笔记",
@@ -1592,19 +1725,19 @@ const zh: TranslationKeys = {
   checkingUpdate: "检查中...",
   upToDate: "已是最新版本",
   newVersion: "发现新版本 v{version}",
-  downloadUpdate: "下载更新",
   updateDownloading: "正在下载 {percent}%",
   updateInstalling: "正在安装，应用即将退出并自动重启",
   updateInstallFailed: "更新安装失败",
   updateRestartHint: "安装完成后应用会退出，随后自动重启到新版本。",
   checkUpdateFailed: "检查更新失败",
-  updateAvailableTitle: "发现新版本",
-  updateAvailableMessage: "Qing Notepad v{version} 已发布，是否立即更新？",
   currentVersion: "当前版本",
-  latestVersion: "最新版本",
   updateNow: "立刻更新",
-  updateLater: "稍后更新",
-  neverRemind: "不再提醒",
+  updateBadgeLabel: "更新到 v{version}",
+  updateCardTitle: "v{version} 可以更新",
+  updateReadyHint: "安装包已下载，重启后完成安装。",
+  updateReadyAction: "重启以完成更新",
+  ignoreVersion: "忽略此版本",
+  viewFullNotes: "查看完整说明",
   aiAssistant: "小青",
   aiSettings: "AI 设置",
   aiApiKey: "DeepSeek API Key",
@@ -2361,6 +2494,21 @@ const en: TranslationKeys = {
   mdViewPreview: "Preview",
   mdViewSplit: "Split",
   mdViewLive: "Live rendering",
+  outlineTitle: "Outline",
+  outlineToggle: "Show/hide outline",
+  outlineEmpty: "No headings in this note",
+  outlineEmptyHint: "Start a line with # to build the outline",
+  outlineSearch: "Search",
+  outlineNoMatch: "No matching headings",
+  outlineClearSearch: "Clear search",
+  statusBarLabel: "Document status bar",
+  saveStateSaving: "Saving",
+  statLines: "lines",
+  statWords: "words",
+  statCjk: "chars",
+  statChars: "characters",
+  statsHint: "Lines · Words · Chinese chars · Characters",
+  statsHintValues: "Lines {lines} · Words {words} · Chinese chars {cjk} · Characters {chars}",
   editorFontSection: "Editor font",
   editorFontHint: "Body text only — code stays monospaced",
   editorFontSystem: "System default",
@@ -2493,6 +2641,52 @@ const en: TranslationKeys = {
   insertTable: "Insert table (Ctrl+Alt+T)",
   insertImage: "Insert image",
   insertImageFailed: "Could not insert the image: {message}",
+  menuBarLabel: "Editor menu",
+  appCrashedTitle: "Something broke",
+  appCrashedBody: "This screen stopped rendering. Reload to continue; if it keeps happening, send the details below.",
+  appCrashedDetails: "Technical details",
+  appCrashedReload: "Reload",
+  appCrashedCopy: "Copy details",
+  appCrashedCopied: "Copied",
+  menuFile: "File",
+  menuEdit: "Edit",
+  menuParagraph: "Paragraph",
+  menuFormat: "Format",
+  menuView: "View",
+  closeTabNote: "Close current tab",
+  selectAll: "Select all",
+  findReplace: "Find and replace…",
+  moveLineUp: "Move line up",
+  moveLineDown: "Move line down",
+  headingParagraph: "Paragraph",
+  headingLevel: "Heading {level}",
+  blockquote: "Blockquote",
+  bulletList: "Bullet list",
+  orderedList: "Ordered list",
+  taskList: "Task list",
+  codeBlock: "Code block",
+  horizontalRule: "Horizontal rule",
+  tableBlock: "Table",
+  insertParagraphAbove: "Insert paragraph above",
+  insertParagraphBelow: "Insert paragraph below",
+  bold: "Bold",
+  italic: "Italic",
+  strikethrough: "Strikethrough",
+  inlineCode: "Inline code",
+  link: "Link",
+  zoomIn: "Zoom in",
+  zoomOut: "Zoom out",
+  zoomReset: "Actual size",
+  savingInProgress: "Saving…",
+  disabledNoEditor: "No note is open",
+  disabledNoUndo: "Nothing to undo",
+  disabledNoRedo: "Nothing to redo",
+  disabledNoChanges: "No unsaved changes",
+  disabledNoExport: "This note cannot be exported",
+  aiPolishMenuHint: "Polishes the selection when there is one",
+  shortcutHeadingLevels: "Apply heading level 1–6",
+  shortcutFindReplace: "Find and replace",
+  shortcutSourceMode: "Live rendering / source",
   about: "About",
   aboutTitle: "About Qing Notepad",
   version: "Version",
@@ -2555,6 +2749,10 @@ const en: TranslationKeys = {
   pressShortcut: "Press shortcut...",
   pinSticky: "Pin as Sticky",
   unpinSticky: "Unpin",
+  openInNewWindow: "Open in Separate Window",
+  closeNoteWindow: "Close Detached Window",
+  returnToMainApp: "Back to App",
+  disabledNoAi: "AI polish is unavailable in the separate window",
   stickyNote: "Sticky Note",
   stickyEmptyHint: "Double-click to start writing…",
   pinNote: "Pin Note",
@@ -2564,19 +2762,19 @@ const en: TranslationKeys = {
   checkingUpdate: "Checking...",
   upToDate: "Up to date",
   newVersion: "New version v{version}",
-  downloadUpdate: "Download Update",
   updateDownloading: "Downloading {percent}%",
   updateInstalling: "Installing — the app will quit and restart automatically",
   updateInstallFailed: "Update installation failed",
   updateRestartHint: "When installation finishes the app quits and restarts on the new version.",
   checkUpdateFailed: "Update check failed",
-  updateAvailableTitle: "Update available",
-  updateAvailableMessage: "Qing Notepad v{version} is available. Update now?",
   currentVersion: "Current version",
-  latestVersion: "Latest version",
   updateNow: "Update now",
-  updateLater: "Later",
-  neverRemind: "Don't remind again",
+  updateBadgeLabel: "Update to v{version}",
+  updateCardTitle: "v{version} is available",
+  updateReadyHint: "Downloaded. Restart to finish installing.",
+  updateReadyAction: "Restart to update",
+  ignoreVersion: "Ignore this version",
+  viewFullNotes: "View full release notes",
   aiAssistant: "XiaoQing",
   aiSettings: "AI Settings",
   aiApiKey: "DeepSeek API Key",

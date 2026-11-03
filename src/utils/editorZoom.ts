@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 interface EditorZoomOptions {
   initialSize?: number;
@@ -11,6 +11,22 @@ interface EditorContainerRef {
   readonly current: HTMLElement | null;
 }
 
+export interface EditorZoom {
+  /** Current body font size in px. */
+  fontSize: number;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  /** Back to `initialSize`. */
+  resetZoom: () => void;
+}
+
+/**
+ * Body font size of an editor card.
+ *
+ * Two entry points share one state: Ctrl+wheel while the pointer is over the
+ * card, and the 视图 menu (放宽 / 缩小 / 实际大小). Both are clamped to the same
+ * bounds so the menu cannot reach a size the wheel refuses to produce.
+ */
 export function useEditorZoom(
   containerRef: EditorContainerRef,
   {
@@ -19,8 +35,13 @@ export function useEditorZoom(
     maxSize = 32,
     step = 1,
   }: EditorZoomOptions = {},
-) {
+): EditorZoom {
   const [fontSize, setFontSize] = useState(initialSize);
+
+  const clamp = useMemo(
+    () => (value: number) => Math.min(maxSize, Math.max(minSize, value)),
+    [maxSize, minSize],
+  );
 
   useEffect(() => {
     const handleWheel = (event: WheelEvent) => {
@@ -29,16 +50,18 @@ export function useEditorZoom(
       if (!container || !(event.target instanceof Node) || !container.contains(event.target)) return;
 
       event.preventDefault();
-      setFontSize((current) => (
-        event.deltaY < 0
-          ? Math.min(current + step, maxSize)
-          : Math.max(current - step, minSize)
+      setFontSize((current) => clamp(
+        event.deltaY < 0 ? current + step : current - step,
       ));
     };
 
     window.addEventListener("wheel", handleWheel, { passive: false, capture: true });
     return () => window.removeEventListener("wheel", handleWheel, true);
-  }, [containerRef, maxSize, minSize, step]);
+  }, [containerRef, clamp, step]);
 
-  return fontSize;
+  const zoomIn = useCallback(() => setFontSize((current) => clamp(current + step)), [clamp, step]);
+  const zoomOut = useCallback(() => setFontSize((current) => clamp(current - step)), [clamp, step]);
+  const resetZoom = useCallback(() => setFontSize(clamp(initialSize)), [clamp, initialSize]);
+
+  return { fontSize, zoomIn, zoomOut, resetZoom };
 }

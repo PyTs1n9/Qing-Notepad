@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { t } from "@/utils/i18n";
 import HelpMenu from "@/components/Help/HelpMenu";
 import ChangelogModal from "@/components/Help/ChangelogModal";
+import UpdateEntry from "@/components/Layout/UpdateEntry";
 import UserAvatar from "@/components/UserAvatar";
 import LoadingText from "@/components/LoadingText";
 import { getSnapshotAnnouncements, loadSeenAnnouncements } from "@/utils/announcements";
@@ -201,6 +202,8 @@ export default function TitleBar({
               )}
             </span>
           </button>
+          {/* 更新徽标：只在有新版本时渲染，平时零占位（见 decisions-updater.md D7）。 */}
+          <UpdateEntry />
           <button
             className="group mr-1 flex h-7 min-w-0 max-w-[164px] items-center gap-2 rounded-full border border-border/80 bg-bg-primary/55 px-1.5 pr-2.5 shadow-sm transition-all duration-150 hover:border-accent/45 hover:bg-bg-primary"
             onClick={handleProfileClick}

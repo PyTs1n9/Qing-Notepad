@@ -244,7 +244,7 @@ export default function AnnouncementBoard({
 
                   {html ? (
                     <div
-                      className="announcement-body markdown-preview mt-1 text-text-secondary
+                      className="compact-markdown markdown-preview mt-1 text-text-secondary
                         [&_a]:text-accent-text [&_a]:underline
                         [&_code]:rounded [&_code]:bg-bg-primary [&_code]:px-1 [&_code]:py-0.5
                         [&_strong]:font-semibold [&_strong]:text-text-primary"

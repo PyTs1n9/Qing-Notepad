@@ -33,6 +33,8 @@
 | `decisions-layout-unification.md` | 待办与云端工作台对齐笔记页的三卡外壳（todo 已落地，workspace 当时待做） | 动任一视图的外壳结构 | 12.1 KB |
 | `decisions-note-tabs.md` | 笔记标签栏：多标签、拖拽实时换位（本地 `dragOrder`）、Ctrl+W 关闭 | 动标签栏 / 拖拽手感 | 15.1 KB |
 | `decisions-topbar-menus.md` | 顶栏三菜单（工具/传送门/帮助）的上线级审计与收敛结论 | 动顶栏菜单、传送门入口 | 13.0 KB |
+| `decisions-editor-menubar.md` | 笔记编辑器改为 Typora 式五菜单：37 项清单、砍项理由、命令层与快捷键 | 改编辑器菜单 / 加排版命令 | 9 KB |
+| `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
 | `decisions-glass-layering.md` | 有壁纸时主卡更透、侧栏更深的分层规则 | 动磨砂 tint 分层 | 3.7 KB |
@@ -56,6 +58,7 @@
 | `decisions-subtodo.md` | 待办子任务的数据结构与交互 | 动待办数据模型 | 5.3 KB |
 | `decisions-recycle-bin.md` | 笔记回收站的删除/恢复语义 | 动删除逻辑 | 5.8 KB |
 | `decisions-export-docx-pdf.md` | 导出 Word/PDF 的选型与前置结论 | 动导出格式 | 5.0 KB |
+| `decisions-note-window.md` | 独立笔记窗口：Typora 式自绘头部 + 五菜单 + 完整底栏 + 返回按钮；双窗口保存同步与「谁有未保存输入谁保留」 | 动多窗口、编辑器外壳、或 `note-window:*` 事件 | 8.4 KB |
 | `decisions-plugin-system.md` | 插件机制 D1–D7：双轨运行、A 档贡献点、中央索引、手动更新、`apiVersion` | 动插件机制的任何决策 | 6.2 KB |
 | `decisions-canvas-note-tree.md` | 笔记文件树 → 画布结构图：`ref` 引用节点、曲线连线、`hidden`、`canvas:write` 四个方法、幂等语义 | 动画布条目类型 / 连线样式 / 画布插件 API | 13.4 KB |
 | `decisions-plugin-snippet.md` | 片段库插件 D1–D8：只插入不做模板、四个占位符、**无输入 UI 时的交互设计**、权限压到 5 条、删除快照 | 写第二个插件 / 需要"最小权限面"范例 / 改 `examples/qing-snippet` | 5.5 KB |
@@ -99,6 +102,9 @@
 | 主题色 / 配色 / 对比度 | `decisions-ui-polish.md`（D1/D11） | `decisions-colour-contrast.md` + `topics/tokens-colour.md` |
 | 磨砂 / 玻璃 / 壁纸 | `decisions-glass-layering.md` | `decisions-glass-blur.md`（四轮排查结论） |
 | 顶栏 / 菜单 / 传送门 | `decisions-topbar-menus.md` | `release-notes-titlebar.md`（用户口径） |
+| 编辑器菜单 / 排版命令 | `decisions-editor-menubar.md` | `decisions-typora-editor.md`（编辑器内核） |
+| 底栏 / 字数统计 / 目录列 | `decisions-editor-statusbar.md` | `decisions-typora-editor.md`（编辑器内核） |
+| 独立笔记窗口 / 多窗口同步 | `decisions-note-window.md` | `topics/ui-rules.md` + `decisions-architecture-layering.md`（子窗口不读 store） |
 | 侧栏 / 文件树 / 右键 | `decisions-file-tree.md` | `decisions-sidebar-collapse.md` + `topics/layout.md` |
 | 笔记标签栏 / 拖拽 | `decisions-note-tabs.md` | `topics/ui-rules.md` |
 | 待办 / 子任务 / 描述 | `decisions-subtodo.md` | `topics/ui-rules.md`（横线本与行几何） |

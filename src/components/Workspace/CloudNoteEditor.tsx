@@ -695,7 +695,7 @@ export default function CloudNoteEditor({
   const collaborationVisualsRef = useRef<CollaborationVisualsRuntime | null>(null);
   const showHighlightsRef = useRef(showHighlights);
   showHighlightsRef.current = showHighlights;
-  const editorFontSize = useEditorZoom(editorContainerRef, { initialSize: 15 });
+  const { fontSize: editorFontSize } = useEditorZoom(editorContainerRef, { initialSize: 15 });
   // Default to the Markdown source view when a cloud note page is first opened,
   // matching the local note editor.
   const [viewMode, setViewMode] = useState<MarkdownViewMode>("source");
