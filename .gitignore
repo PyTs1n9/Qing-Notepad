@@ -56,6 +56,9 @@ IDEA.md
 .workbuddy/
 .agents/
 
+# WorkBuddy 网页版发布指针：内容是 appId + 本机绝对路径，换机器即失效，不入库
+.wbapp_*.genie
+
 # Local design preview scaffolding (scratch entrypoints, preview builds, screenshots)
 /dist-preview/
 /preview-*.html
@@ -64,6 +67,10 @@ IDEA.md
 /sidebar-menu.png
 /*-preview.png
 /tree-tint*.png
+
+# Local screenshot archive (WebView2/CDP + headless-browser verification shots).
+# Kept out of git and out of the repo root; see .workbuddy/memory/topics/verify-runbook.md
+/local_img/
 
 # Scratch output from design/AI generation runs (never shipped, never tracked)
 /outputs/
