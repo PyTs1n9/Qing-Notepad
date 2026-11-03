@@ -76,6 +76,15 @@ export default function AnnouncementBoard({
   const [seen, setSeen] = useState<Record<string, string>>({});
   const [htmlById, setHtmlById] = useState<Record<string, string>>({});
   const renderedKeys = useRef<Set<string>>(new Set());
+  /**
+   * 组件是否仍然挂载。正文渲染的 effect **不能**用「依赖变化就取消」的写法：
+   * `items` 会按「快照 → 磁盘缓存 → 网络」三层依次到达，`bodyKey` 因此连续变化。
+   * 若每次都把在途的 `renderMarkdown` 标记为取消，`renderedKeys` 里的 key 已经写入、
+   * 结果却被丢弃，后续轮次会认为「已渲染」而跳过 —— 第二次打开面板时整片正文停在
+   * 骨架条上（2026-11-04 用户实测：首次正常，再次进入全空）。
+   * 只有卸载才该丢弃结果；已在途的渲染一律写回。
+   */
+  const mountedRef = useRef(true);
 
   const visible = items.filter((item) => !hiddenIds.includes(item.id));
   // Effects below key off these strings: `items` is a fresh array on every
@@ -87,6 +96,13 @@ export default function AnnouncementBoard({
   // meant "close this announcement" only held until the dialog unmounted, so the
   // entry was back the next time the user opened it - which reads as a broken
   // button, not as a preference.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void loadDismissedAnnouncements().then((dismissed) => {
@@ -120,12 +136,12 @@ export default function AnnouncementBoard({
   }, [idKey]);
 
   useEffect(() => {
-    let cancelled = false;
     const pending = visible.filter(
       (item) => item.body && !renderedKeys.current.has(`${item.id}:${item.body.length}`),
     );
     if (pending.length === 0) return;
-    for (const item of pending) renderedKeys.current.add(`${item.id}:${item.body.length}`);
+    const keys = pending.map((item) => `${item.id}:${item.body.length}`);
+    for (const key of keys) renderedKeys.current.add(key);
 
     void Promise.all(
       pending.map(
@@ -136,15 +152,13 @@ export default function AnnouncementBoard({
       ),
     )
       .then((pairs) => {
-        if (cancelled) return;
+        if (!mountedRef.current) return;
         setHtmlById((previous) => ({ ...previous, ...Object.fromEntries(pairs) }));
       })
       .catch(() => {
-        // A failed render leaves the body empty; the title and link still show.
+        // 失败时把 key 放回去，下一次 `bodyKey` 变化仍会重试；否则这几条会永久停在骨架条上。
+        for (const key of keys) renderedKeys.current.delete(key);
       });
-    return () => {
-      cancelled = true;
-    };
     // `bodyKey` covers both the ids and the bodies of exactly this list.
   }, [bodyKey]);
 
