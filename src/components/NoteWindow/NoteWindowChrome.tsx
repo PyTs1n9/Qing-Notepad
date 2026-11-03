@@ -15,6 +15,8 @@ interface NoteWindowChromeProps {
   children: ReactNode;
   onMinimize: () => void;
   onToggleMaximize: () => void;
+  /** Double-click on the top edge: fill the screen vertically, keeping width. */
+  onToggleVerticalFill: () => void;
   onClose: () => void;
   /** Flush, focus the main app, then close this window. */
   onReturn: () => void;
@@ -45,6 +47,7 @@ export default function NoteWindowChrome({
   children,
   onMinimize,
   onToggleMaximize,
+  onToggleVerticalFill,
   onClose,
   onReturn,
 }: NoteWindowChromeProps) {
@@ -66,7 +69,18 @@ export default function NoteWindowChrome({
           />
         </div>
 
-        <div data-tauri-drag-region className="flex h-full min-w-0 flex-1 items-center gap-2 pr-2">
+        <div data-tauri-drag-region className="relative flex h-full min-w-0 flex-1 items-center gap-2 pr-2">
+          {/* Same top-edge slot as the main title bar: 8px of double-click that
+              fills the screen vertically, no `data-tauri-drag-region` so
+              Tauri's own maximise-on-drag-region never fires here first. */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              onToggleVerticalFill();
+            }}
+          />
           <span
             data-tauri-drag-region
             className="truncate text-xs font-medium text-text-primary"

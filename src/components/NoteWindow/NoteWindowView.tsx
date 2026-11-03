@@ -20,6 +20,7 @@ import {
   focusMainWindow,
 } from "@/utils/noteWindow";
 import { exportNoteFile } from "@/utils/exportNote";
+import { toggleVerticalFill } from "@/utils/windowFill";
 import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
 import { insertTable } from "@/utils/markdownCommands";
 import {
@@ -193,6 +194,10 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
 
   const toggleMaximize = useCallback(() => {
     void getCurrentWindow().toggleMaximize().catch(() => undefined);
+  }, []);
+
+  const toggleFill = useCallback(() => {
+    void toggleVerticalFill().catch((error) => console.error("Vertical fill failed:", error));
   }, []);
 
   const returnToMain = useCallback(async () => {
@@ -457,6 +462,7 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
         isMaximized={isMaximized}
         onMinimize={minimizeWindow}
         onToggleMaximize={toggleMaximize}
+        onToggleVerticalFill={toggleFill}
         onClose={requestClose}
         onReturn={() => void returnToMain()}
         toolbar={

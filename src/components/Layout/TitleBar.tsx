@@ -9,6 +9,7 @@ import UpdateEntry from "@/components/Layout/UpdateEntry";
 import UserAvatar from "@/components/UserAvatar";
 import LoadingText from "@/components/LoadingText";
 import { getSnapshotAnnouncements, loadSeenAnnouncements } from "@/utils/announcements";
+import { toggleVerticalFill } from "@/utils/windowFill";
 import {
   LogIn,
   LogOut,
@@ -165,7 +166,20 @@ export default function TitleBar({
         </div>
 
         {/* Drag region */}
-        <div data-tauri-drag-region className="flex h-full flex-1 items-center justify-center text-sm font-semibold text-text-primary">
+        <div data-tauri-drag-region className="relative flex h-full flex-1 items-center justify-center text-sm font-semibold text-text-primary">
+          {/* The top 8px is its own hit area: double-clicking it fills the screen
+              vertically (width untouched), while the rest of the bar keeps the
+              Windows maximise gesture. It deliberately carries no
+              `data-tauri-drag-region` — Tauri toggles maximise on the
+              `mousedown` of a drag region, which would fire before this. */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize"
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+              void runWindowCommand("vertical fill", () => toggleVerticalFill());
+            }}
+          />
           <span data-tauri-drag-region className="brand-face flex whitespace-nowrap" aria-label="Qing Notepad">
             {Array.from("Qing Notepad").map((char, index) => (
               <span

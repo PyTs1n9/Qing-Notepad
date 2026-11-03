@@ -1,0 +1,103 @@
+# 决策记录：双击标题栏顶部纵向铺满
+
+日期：2026-11-03
+状态：已确认，已执行
+
+## 背景
+
+主窗口与独立笔记窗口都是 `decorations: false` 的自绘标题栏（`h-9`，36px）。
+双击标题栏当前执行 `toggleMaximize()`，即 Windows 语义的最大化/还原，没有
+「只把上下撑满、宽度不动」的能力（Windows 称之为纵向最大化，通常靠把窗口拖到屏幕上/下边缘触发）。
+
+需求：双击窗口最顶部，一键把窗口上下填充到屏幕，宽度保持不变。
+
+## 结论
+
+### 1. 目标形态
+
+结论：纵向铺满——客户区宽度不变，高度等于显示器工作区高度，客户区顶边贴合工作区顶边。
+理由：这就是用户描述的「填充上下」，也对应拖到屏幕上边缘的效果；宽度不动才不会打乱
+侧栏与编辑区之间的比例。
+
+### 2. 触发区域
+
+结论：只把标题栏**最顶部 8px**（`h-2`）作为新手势热区；标题栏其余区域双击仍是最大化/还原。
+理由：双击标题栏最大化是 Windows 通用预期，整条替换会让习惯手势的用户误以为窗口坏了。
+8px 与仓库既有的 8px 视觉节奏（landing margin）一致，150% 缩放下约 12 物理像素。
+
+### 3. 还原语义
+
+结论：再次在同一位置双击，恢复到铺满前的**客户区矩形**（宽、高、x、y 全量），不做三段循环。
+理由：铺满是一个临时布局动作，用户期望「再点一次回到刚才的样子」。记录值放在模块内存里，
+属于单个窗口的当前会话，不写 `settings.json`。
+
+### 4. 作用范围
+
+结论：主窗口（`TitleBar`）与独立笔记窗口（`NoteWindowChrome`）都支持，共用
+`src/utils/windowFill.ts`。
+理由：两个窗口是同一套自绘 chrome，只改一处会出现「同样的双击在不同窗口反应不同」。
+`NoteWindowChrome` 保持纯展示，手势以 `onToggleVerticalFill` prop 注入（沿用该组件
+不直接引用 Tauri 的既有约定）。
+
+### 5. 几何补偿：按客户区对齐，不按外框对齐
+
+结论：所有坐标在**客户区（inner）空间**计算，写回时把外框位置扣掉半个边框厚度。
+理由：`decorations: false` 不等于没有外框。实测本机 150% 缩放、窗口 1200×800 逻辑时：
+
+| 量 | 物理像素 |
+| --- | --- |
+| `outerSize` | 1822 × 1213 |
+| `innerSize` | 1800 × 1200 |
+| 差值（四边合计） | 22 × 13 |
+| 工作区 | 2560 × 1528 |
+
+Tauri 的 `setSize` 收的是 inner size，`setPosition` 动的是 outer 位置。若把外框矩形直接
+对齐工作区，客户区四周会各短 11 / 6.5 物理像素，窗口边缘露出一圈缝。按客户区对齐后，
+不可见外框溢出屏幕，视觉效果与 Windows 自带最大化一致。
+
+### 6. 坐标必须取整
+
+结论：传给 `setPosition` / `setSize` 的值一律 `Math.round`。
+理由：`set_position` 的 Rust 侧签名是 `i32`，半边框补偿会产生 `-6.5` 这类小数，
+Tauri 直接拒绝整条命令（实测报错：`invalid type: floating point -6.5, expected i32`），
+表现为「高度铺满了但窗口没顶到屏幕顶部」。取整同时也是还原可重复的前提。
+
+### 7. 与 Tauri 内置拖拽区的冲突
+
+结论：8px 热区**不带** `data-tauri-drag-region`。
+理由：Tauri 2.12 的 `drag.js` 在 `mousedown`（`detail === 2`）上调用
+`internal_toggle_maximize`，且只认 `composedPath()[0]` 上的 `data-tauri-drag-region` 属性。
+热区不带该属性，内置行为不会抢跑；代价是这 8px 内无法拖窗，下方 28px 仍可拖，
+且热区本身用 `cursor: ns-resize` 表明它是一块不同的区域。
+
+### 8. 从最大化状态进入
+
+结论：若当前是最大化，先 `unmaximize()` 并等待一次 resize 事件（200ms 兜底），再计算铺满。
+理由：最大化窗口忽略 `setSize`；同时把还原目标清空——从最大化出发没有「之前尺寸」可回退。
+
+## 实现位置
+
+- `src/utils/windowFill.ts`：`toggleVerticalFill()`、`readFrame()`（读 inner/outer 与外框差值）、
+  `applyGeometry()`（取整 + 半边框补偿）、`nextResize()`。
+- `src/components/Layout/TitleBar.tsx`：drag-region 容器内新增 `h-2 cursor-ns-resize` 热区，
+  `onDoubleClick` 先 `stopPropagation` 再调用。
+- `src/components/NoteWindow/NoteWindowChrome.tsx`：新增 `onToggleVerticalFill` prop 与同构热区。
+- `src/components/NoteWindow/NoteWindowView.tsx`：提供 `toggleFill` 回调。
+
+## 验收记录（2026-11-03，release exe + WebView2，显示器 2560×1600 @150%，任务栏 72 物理像素）
+
+| 场景 | 铺满前 | 铺满后 | 再次双击 |
+| --- | --- | --- | --- |
+| 主窗口 | inner 1800×1200，outer 位置 (380,164) | inner 1800×1528，位置 (380,−6) | 回到 1800×1200 @ (380,164) |
+| 独立笔记窗口 | inner 1440×1080，位置 (750,318) | inner 1440×1528，位置 (750,−6) | 回到 1440×1080 @ (750,318) |
+
+- 客户区顶边 = `−6 + 13/2 = 0.5` 物理像素，取整残差 0.5px，肉眼不可见。
+- 标题栏其余区域双击仍能最大化/还原（`isMaximized` false → true → false），回归通过。
+- 全程零控制台错误；截图判读标题栏无遮挡、无多余线条。
+
+## 暂未确定
+
+- 8px 热区依赖鼠标定位精度，没有 hover 提示（只有 `ns-resize` 光标）；若实测命中率低，
+  可扩到 10–12px，但会挤压可拖拽区域。
+- 没有任何键盘入口（快捷键/菜单项）。当前只作为鼠标手势存在。
+- 铺满后手动拖拽/缩放窗口，再次双击仍会还原到「铺满前」的旧矩形，而不是保留手动调整后的尺寸。
