@@ -1,7 +1,61 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-01T09:25:00Z",
+  "generatedAt": "2026-11-04T00:40:00Z",
   "items": [
+    {
+      "id": "2026-11-04-v0-9-1",
+      "kind": "update",
+      "publishedAt": "2026-11-04T00:20:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.1：修复已知问题",
+        "en": "v0.9.1: known issues fixed"
+      },
+      "body": {
+        "zh": "这一版是维护更新，集中修复已知问题，没有新增功能。\n\n已经在 0.9.0 上的用户可以直接在软件内更新；0.8.1 及更早的版本会先收到升级提示，点一下即可完成。",
+        "en": "A maintenance release: known issues fixed, no new features.\n\nUsers already on 0.9.0 can update inside the app. Versions 0.8.1 and earlier will be offered the upgrade first and can finish it in one click."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.1",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
+    {
+      "id": "2026-11-03-v0-9-0",
+      "kind": "update",
+      "publishedAt": "2026-11-03T15:54:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.0：实时渲染、独立窗口与新更新入口",
+        "en": "v0.9.0: live rendering, note windows, new update entry"
+      },
+      "body": {
+        "zh": "编辑器改成边写边看：粗体、斜体、链接等标记在光标离开后就地隐藏，标题分级、表格真正渲染，代码块接入 14 门语言高亮。正在编辑的那一段会显示原始 Markdown，移开即恢复排版。\n\n笔记可以放进独立窗口：工具栏的窗口图标，或「文件 → 在独立窗口中打开」，与主窗口双向同步。安装版还会把「Qing Notepad」写进 .md 的右键「打开方式」，不抢默认程序。\n\n**更新入口搬到标题栏**：启动时的更新弹窗已下线。有新版本时，标题栏右上角、公告喇叭右侧会出现一个下载图标；第一次点击下载，第二次点击重启安装。平时不显示，忽略只对本次运行有效。",
+        "en": "The editor now renders as you type: bold, italic and link markers hide once the cursor leaves them, headings get real type scale, tables render, and code blocks get syntax highlighting for 14 languages. The block you are editing stays as raw Markdown and snaps back when you move away.\n\nNotes can open in their own window from the editor toolbar or File > Open in window, with two-way sync to the main window. Installed builds also register Qing Notepad under Open with for .md files without taking over the default app.\n\nThe update entry moved to the title bar: the startup dialog is gone. When a new version exists, a download icon appears at the top right, just right of the announcement button. First click downloads, second click restarts into the installer. It stays hidden otherwise, and ignore only lasts for this run."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.0",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-11-01-v0-8-1",
       "kind": "update",
