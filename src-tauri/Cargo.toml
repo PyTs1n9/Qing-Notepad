@@ -1,6 +1,6 @@
 [package]
 name = "qing-notepad"
-version = "0.9.0"
+version = "0.9.1"
 description = "Qing Notepad - A lightweight note-taking app built with Tauri"
 authors = ["PyTs1N9"]
 edition = "2021"
