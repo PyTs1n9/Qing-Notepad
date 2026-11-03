@@ -47,6 +47,11 @@ const isTile = params.get("tile") === "1";
 const stickyNoteId = params.get("sticky");
 const canvasTileId = params.get("canvasTile");
 const noteWindowId = params.get("noteWindow");
+/**
+ * `external` = opened from Explorer, not in `notes/index.json` yet. The window
+ * autosaves to `<data>/external-drafts` and commits on "返回主软件".
+ */
+const noteWindowSource = params.get("source") === "external" ? "external" : undefined;
 const wantsProbe = params.get("probe") === "1" && import.meta.env.DEV;
 
 // Applied before React mounts, not in an effect: the window is frameless and
@@ -61,7 +66,7 @@ if (wantsProbe) {
   void import("@/probe/workerProbe").then((module) => module.mountProbe());
   content = <div />;
 } else if (noteWindowId) {
-  content = <NoteWindowView noteId={noteWindowId} />;
+  content = <NoteWindowView noteId={noteWindowId} source={noteWindowSource} />;
 } else if (canvasTileId) {
   content = <CanvasTileView />;
 } else if (stickyNoteId) {

@@ -678,6 +678,8 @@ export type TranslationKeys = {
   openInNewWindow: string;
   closeNoteWindow: string;
   returnToMainApp: string;
+  externalNoteHint: string;
+  externalNoteHintDetail: string;
   disabledNoAi: string;
   stickyNote: string;
   stickyEmptyHint: string;
@@ -1715,6 +1717,8 @@ const zh: TranslationKeys = {
   openInNewWindow: "在独立窗口中打开",
   closeNoteWindow: "关闭独立窗口",
   returnToMainApp: "返回主软件",
+  externalNoteHint: "外部文件 · 未入库",
+  externalNoteHintDetail: "点「返回主软件」后会加入「未分类笔记」；直接关闭窗口则保留为草稿。",
   disabledNoAi: "独立窗口不支持 AI 润色",
   stickyNote: "磁贴笔记",
   stickyEmptyHint: "双击此处开始编辑…",
@@ -2752,6 +2756,8 @@ const en: TranslationKeys = {
   openInNewWindow: "Open in Separate Window",
   closeNoteWindow: "Close Detached Window",
   returnToMainApp: "Back to App",
+  externalNoteHint: "External file · not saved yet",
+  externalNoteHintDetail: "Press “Back to App” to add it under Uncategorized; closing the window keeps it as a draft.",
   disabledNoAi: "AI polish is unavailable in the separate window",
   stickyNote: "Sticky Note",
   stickyEmptyHint: "Double-click to start writing…",

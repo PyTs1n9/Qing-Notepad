@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import type { EditorView } from "@codemirror/view";
@@ -20,13 +21,16 @@ import {
   focusMainWindow,
 } from "@/utils/noteWindow";
 import { exportNoteFile } from "@/utils/exportNote";
+import { commitExternalNote, type ExternalNoteInfo } from "@/utils/externalNotes";
 import { toggleVerticalFill } from "@/utils/windowFill";
 import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
 import { insertTable } from "@/utils/markdownCommands";
 import {
+  loadExternalDraft,
   loadNoteContent,
   loadNoteList,
   loadSettings,
+  saveExternalDraft,
   saveImageAttachment,
   saveNoteContent,
 } from "@/utils/storage";
@@ -42,6 +46,12 @@ const AUTOSAVE_DELAY = 800;
 
 interface NoteWindowViewProps {
   noteId: string;
+  /**
+   * `"external"` = the file came from Explorer and is not in the notebook yet.
+   * Content is read from the source file, autosave goes to
+   * `<data>/external-drafts`, and only "返回主软件" adds it to 未分类笔记.
+   */
+  source?: "external";
 }
 
 /**
@@ -59,8 +69,14 @@ interface NoteWindowViewProps {
  * window applies the main window's writes under the same rule. No dialog, no
  * merge UI: the rule is "whoever typed last keeps the text until the other one
  * starts typing", which is predictable and never discards an active edit.
+ *
+ * The one exception is `source === "external"`: the file is not a note yet, so
+ * there is no peer window and no index entry. Saves go to a draft file, and
+ * "返回主软件" hands the buffer to the main window, which alone writes
+ * `notes/index.json`.
  */
-export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
+export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) {
+  const isExternal = source === "external";
   const [lang, setLang] = useState<LangType>("zh");
   const [title, setTitle] = useState("");
   const [mdContent, setMdContent] = useState("");
@@ -118,11 +134,18 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
 
     const promise = (async () => {
       try {
-        await saveNoteContent(noteId, content);
-        setSavedAt(Date.now());
-        // The main editor reloads only if it has no unsaved edits; see the
-        // class comment. It also drives the tab strip's dirty dot.
-        await emit(NOTE_WINDOW_SAVED_EVENT, { noteId, content });
+        if (isExternal) {
+          // Not a note yet: keep the edits recoverable without making the file
+          // visible to `loadNoteList()` (which recovers every `.md` in notes/).
+          await saveExternalDraft(noteId, content);
+          setSavedAt(Date.now());
+        } else {
+          await saveNoteContent(noteId, content);
+          setSavedAt(Date.now());
+          // The main editor reloads only if it has no unsaved edits; see the
+          // class comment. It also drives the tab strip's dirty dot.
+          await emit(NOTE_WINDOW_SAVED_EVENT, { noteId, content });
+        }
       } catch (error) {
         // `saveNoteContent` reports its own failures; this branch still matters
         // because a failed broadcast must not look like a successful save.
@@ -140,7 +163,7 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
     } finally {
       if (savePromiseRef.current === promise) savePromiseRef.current = null;
     }
-  }, [noteId]);
+  }, [isExternal, noteId]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -203,13 +226,24 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
   const returnToMain = useCallback(async () => {
     try {
       await flushSave();
+      if (isExternal) {
+        // Hand over the buffer we just flushed rather than letting the main
+        // window read the draft: the debounce may not have fired yet, and an
+        // unedited file has no draft at all.
+        try {
+          await commitExternalNote(noteId, contentRef.current);
+        } catch (error) {
+          // The draft is still on disk, so reopening the file resumes the work.
+          console.error("Failed to queue the external note for import:", error);
+        }
+      }
       await focusMainWindow();
     } finally {
       // `destroy` rather than `close`: the close-requested handler would try to
       // flush again, and the write already happened above.
       await getCurrentWindow().destroy().catch(() => undefined);
     }
-  }, [flushSave]);
+  }, [flushSave, isExternal, noteId]);
 
   // --------------------------------------------------------------- loading --
   useEffect(() => {
@@ -229,18 +263,41 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
           typeof settings.editorFontFamily === "string" ? settings.editorFontFamily : "",
         );
 
-        const index = await loadNoteList();
-        const meta = index.notes.find((note) => note.id === noteId);
-        if (cancelled) return;
-        if (meta) {
-          setTitle(meta.title || "");
-          const parsed = Date.parse(meta.updatedAt);
-          setSavedAt(Number.isNaN(parsed) ? null : parsed);
-        }
+        if (isExternal) {
+          // The source file is read through Rust (the renderer has no fs scope
+          // for arbitrary paths); an unreadable file must still show the draft.
+          let info: ExternalNoteInfo | null = null;
+          try {
+            info = await invoke<ExternalNoteInfo>("external_note_read", { id: noteId });
+          } catch (error) {
+            console.warn("The external markdown file is no longer readable:", error);
+          }
+          const draft = await loadExternalDraft(noteId);
+          if (cancelled) return;
+          if (info) setTitle(info.title || "");
+          if (draft !== null) {
+            // Unsaved work from a previous visit beats the file on disk. That
+            // is the whole point of the draft: closing the window without
+            // pressing "返回主软件" must not lose the edit.
+            initialContent = draft;
+            setSavedAt(Date.now());
+          } else if (info) {
+            initialContent = info.content;
+          }
+        } else {
+          const index = await loadNoteList();
+          const meta = index.notes.find((note) => note.id === noteId);
+          if (cancelled) return;
+          if (meta) {
+            setTitle(meta.title || "");
+            const parsed = Date.parse(meta.updatedAt);
+            setSavedAt(Number.isNaN(parsed) ? null : parsed);
+          }
 
-        const stored = await loadNoteContent(noteId);
-        if (cancelled) return;
-        initialContent = stored ? (isStoredEditorHtml(stored) ? htmlToMarkdown(stored) : stored) : "";
+          const stored = await loadNoteContent(noteId);
+          if (cancelled) return;
+          initialContent = stored ? (isStoredEditorHtml(stored) ? htmlToMarkdown(stored) : stored) : "";
+        }
       } catch (error) {
         console.error("Failed to load the detached note:", error);
       } finally {
@@ -257,7 +314,7 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
       cancelled = true;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [noteId]);
+  }, [isExternal, noteId]);
 
   // ---------------------------------------------------------------- syncing --
   // Main window → this window. Unsaved local edits win; otherwise the disk
@@ -459,6 +516,8 @@ export default function NoteWindowView({ noteId }: NoteWindowViewProps) {
       <NoteWindowChrome
         lang={lang}
         title={title}
+        hint={isExternal ? t(lang, "externalNoteHint") : undefined}
+        hintDetail={isExternal ? t(lang, "externalNoteHintDetail") : undefined}
         isMaximized={isMaximized}
         onMinimize={minimizeWindow}
         onToggleMaximize={toggleMaximize}

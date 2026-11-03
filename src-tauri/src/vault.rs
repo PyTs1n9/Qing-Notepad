@@ -627,7 +627,7 @@ fn walk_vault(
 /// UTF-8 first (that is what every editor writes), BOM stripped, GB18030 as
 /// the fallback: Chinese notes saved by older Windows tools are GBK, which is a
 /// subset of GB18030, and a lossy decode still beats "unreadable file".
-fn decode_text(bytes: &[u8]) -> (String, &'static str) {
+pub(crate) fn decode_text(bytes: &[u8]) -> (String, &'static str) {
     let (body, has_bom) = match bytes.strip_prefix(&[0xEF_u8, 0xBB, 0xBF]) {
         Some(rest) => (rest, true),
         None => (bytes, false),

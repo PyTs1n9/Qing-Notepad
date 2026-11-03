@@ -28,6 +28,14 @@ const TODO_LISTS_FILE = "todo-lists.json";
 const NOTES_DIR = "notes";
 const NOTE_INDEX_FILE = "index.json";
 const NOTE_INDEX_BACKUP_FILE = "index.backup.json";
+/**
+ * Drafts of files opened from Explorer that are not in the notebook yet.
+ *
+ * Deliberately outside `notes/`: `loadNoteList()` recovers every `.md` under
+ * `notes/` that the index does not describe, so an autosaved draft stored there
+ * would join the notebook without the user pressing "返回主软件".
+ */
+const EXTERNAL_DRAFT_DIR = "external-drafts";
 const IMAGES_DIR = "img";
 const IMAGE_TRASH_DIR = "img-trash";
 const IMAGE_TRASH_PARTITION_DIRS = {
@@ -1048,6 +1056,47 @@ export async function saveNoteContent(id: string, content: string): Promise<void
     markNoteContentDirty(id);
   } catch (e) {
     console.error("Failed to save note content:", e);
+  }
+}
+
+async function externalDraftPath(id: string): Promise<string> {
+  // No `ensureDirectory` here: reads must not create a folder in a data
+  // directory that may be unavailable (unplugged drive).
+  const base = await getDataDirectory();
+  return join(base, EXTERNAL_DRAFT_DIR, `${id}.md`);
+}
+
+/** `null` means "no draft"; an empty string is a real (cleared) draft. */
+export async function loadExternalDraft(id: string): Promise<string | null> {
+  if (!isSafeNoteId(id)) return null;
+  try {
+    const path = await externalDraftPath(id);
+    if (!(await exists(path))) return null;
+    return await readTextFile(path);
+  } catch (e) {
+    console.error("Failed to load the external draft:", e);
+    return null;
+  }
+}
+
+export async function saveExternalDraft(id: string, content: string): Promise<void> {
+  assertSafeNoteId(id);
+  try {
+    const directory = await join(await getDataDirectory(), EXTERNAL_DRAFT_DIR);
+    await ensureDirectory(directory);
+    await writeFileAtomic(await join(directory, `${id}.md`), content);
+  } catch (e) {
+    console.error("Failed to save the external draft:", e);
+  }
+}
+
+export async function deleteExternalDraft(id: string): Promise<void> {
+  if (!isSafeNoteId(id)) return;
+  try {
+    const path = await externalDraftPath(id);
+    if (await exists(path)) await remove(path);
+  } catch (e) {
+    console.error("Failed to delete the external draft:", e);
   }
 }
 

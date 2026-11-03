@@ -60,6 +60,7 @@
 | `decisions-recycle-bin.md` | 笔记回收站的删除/恢复语义 | 动删除逻辑 | 5.8 KB |
 | `decisions-export-docx-pdf.md` | 导出 Word/PDF 的选型与前置结论 | 动导出格式 | 5.0 KB |
 | `decisions-note-window.md` | 独立笔记窗口：Typora 式自绘头部 + 五菜单 + 完整底栏 + 返回按钮；双窗口保存同步与「谁有未保存输入谁保留」 | 动多窗口、编辑器外壳、或 `note-window:*` 事件 | 8.4 KB |
+| `decisions-file-association.md` | `.md` 右键「打开方式」只写 HKCU 的 `OpenWithProgids`（不抢默认）、由 NSIS 钩子写、重装免卸载；外部文件走草稿 → 返回主软件 → 主窗口入库，路径哈希去重 | 动安装器钩子、文件关联、外部 md 打开链路或 `external-*` 命令 | 7.1 KB |
 | `decisions-plugin-system.md` | 插件机制 D1–D7：双轨运行、A 档贡献点、中央索引、手动更新、`apiVersion` | 动插件机制的任何决策 | 6.2 KB |
 | `decisions-canvas-note-tree.md` | 笔记文件树 → 画布结构图：`ref` 引用节点、曲线连线、`hidden`、`canvas:write` 四个方法、幂等语义 | 动画布条目类型 / 连线样式 / 画布插件 API | 13.4 KB |
 | `decisions-plugin-snippet.md` | 片段库插件 D1–D8：只插入不做模板、四个占位符、**无输入 UI 时的交互设计**、权限压到 5 条、删除快照 | 写第二个插件 / 需要"最小权限面"范例 / 改 `examples/qing-snippet` | 5.5 KB |

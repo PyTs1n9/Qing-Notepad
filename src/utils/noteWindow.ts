@@ -68,8 +68,16 @@ function currentPageColor(): [number, number, number] | undefined {
  * `decorations: false` is deliberate: the window draws a Typora-style header
  * with the app icon, the document title and the three window buttons, so the OS
  * chrome would be a second, differently styled title bar above it.
+ *
+ * `external` marks a file opened from Explorer that is not in the notebook yet:
+ * the window reads it through the Rust registry and autosaves to a draft, and
+ * only "返回主软件" adds it to 未分类笔记.
  */
-export async function openNoteWindow(noteId: string, title: string): Promise<void> {
+export async function openNoteWindow(
+  noteId: string,
+  title: string,
+  options?: { external?: boolean },
+): Promise<void> {
   const label = windowLabelFor(noteId);
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) {
@@ -97,7 +105,7 @@ export async function openNoteWindow(noteId: string, title: string): Promise<voi
   }
 
   const win = new WebviewWindow(label, {
-    url: `/?noteWindow=${encodeURIComponent(noteId)}`,
+    url: `/?noteWindow=${encodeURIComponent(noteId)}${options?.external ? "&source=external" : ""}`,
     title: title || "Qing Notepad",
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,

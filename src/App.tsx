@@ -40,7 +40,7 @@ import PasswordRecoveryModal from "@/components/Auth/PasswordRecoveryModal";
 import WorkspaceRemovalNotifier from "@/components/Workspace/WorkspaceRemovalNotifier";
 import LoadingText from "@/components/LoadingText";
 import { useTodoStore } from "@/stores/todoStore";
-import { useNoteStore } from "@/stores/noteStore";
+import { useNoteStore, UNCATEGORIZED_CATEGORY_ID } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useFontStore } from "@/stores/fontStore";
 import { useSettingsStore, deriveGlassEditorTint, GLASS_RAIL_DARKEN, GLASS_READABILITY_FLOOR } from "@/stores/settingsStore";
@@ -80,6 +80,13 @@ import { NOTE_WINDOW_APPEARANCE_EVENT } from "@/utils/noteWindow";
 import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
 import { flushActiveNote } from "@/utils/noteFlush";
+import {
+  EXTERNAL_OPEN_EVENT,
+  EXTERNAL_PENDING_EVENT,
+  importPendingExternalNotes,
+  openExternalPath,
+  takeLaunchFiles,
+} from "@/utils/externalNotes";
 import { CANVAS_OPEN_NOTE_EVENT } from "@/utils/canvasRefs";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
@@ -160,6 +167,7 @@ export default function App() {
   const activeCategoryId = useNoteStore((s) => s.activeCategoryId);
   const addNote = useNoteStore((s) => s.addNote);
   const loadNotesState = useNoteStore((s) => s.loadNotes);
+  const setActiveCategoryId = useNoteStore((s) => s.setActiveCategoryId);
 
   const tabs = useTabStore((s) => s.tabs);
   const tabsHydrated = useTabStore((s) => s.hydrated);
@@ -346,6 +354,58 @@ export default function App() {
     };
     init();
   }, []); // eslint-disable-line
+
+  /**
+   * Files opened from Explorer ("打开方式 → Qing Notepad").
+   *
+   * The note window cannot add itself to the notebook: `notes/index.json` has a
+   * single writer (this window's autosave effect), and a second writer would let
+   * two concurrent saves overwrite each other's entry. So the detached window
+   * only commits to a Rust queue, and this window performs the import.
+   *
+   * Three drain triggers, because the renderer may be at any stage when the
+   * path arrives: mount (cold start finished loading), the Rust events (warm
+   * start), and window focus ("返回主软件" focuses this window as its last step,
+   * so an event that raced the listener still resolves). Drains are serialized
+   * through a promise chain; the Rust queues drain atomically, so a duplicate
+   * trigger costs one empty call.
+   */
+  const externalDrainRef = useRef<Promise<void>>(Promise.resolve());
+  const drainExternalWork = useCallback(() => {
+    externalDrainRef.current = externalDrainRef.current
+      .then(async () => {
+        const { imported } = await importPendingExternalNotes();
+        if (imported > 0) {
+          // Land on 未分类笔记 rather than the folder the user was browsing:
+          // an import into a hidden folder looks like it did nothing.
+          setActiveCategoryId(UNCATEGORIZED_CATEGORY_ID);
+          setCurrentView("note");
+        }
+        for (const file of await takeLaunchFiles()) {
+          await openExternalPath(file);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to handle an external markdown file:", error);
+      });
+  }, [setActiveCategoryId]);
+
+  useEffect(() => {
+    if (!initialized || !isTauri()) return;
+
+    drainExternalWork();
+    const unlistenOpen = listen(EXTERNAL_OPEN_EVENT, () => drainExternalWork());
+    const unlistenPending = listen(EXTERNAL_PENDING_EVENT, () => drainExternalWork());
+    const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload }) => {
+      if (payload) drainExternalWork();
+    });
+
+    return () => {
+      unlistenOpen.then((fn) => fn());
+      unlistenPending.then((fn) => fn());
+      unlistenFocus.then((fn) => fn());
+    };
+  }, [drainExternalWork, initialized]);
 
   // 更新链路的唯一挂载点：启动查一次、回到前台按 1h 限频重查、把下载进度写回 store。
   // 启动弹窗已下线，发现新版本只体现在标题栏的徽标上（decisions-updater.md D7/D11）。

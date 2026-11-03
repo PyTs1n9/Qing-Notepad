@@ -7,6 +7,10 @@ interface NoteWindowChromeProps {
   lang: LangType;
   /** Note title shown in the custom window header. */
   title: string;
+  /** Optional state chip next to the app name (e.g. "not in the notebook yet"). */
+  hint?: string;
+  /** Tooltip for `hint`; the chip itself is too narrow to explain the action. */
+  hintDetail?: string;
   isMaximized: boolean;
   /** The menu bar (文件 / 编辑 / 段落 / 格式 / 视图). */
   toolbar: ReactNode;
@@ -41,6 +45,8 @@ const CONTROL_CLASS =
 export default function NoteWindowChrome({
   lang,
   title,
+  hint,
+  hintDetail,
   isMaximized,
   toolbar,
   statusBar,
@@ -94,6 +100,15 @@ export default function NoteWindowChrome({
           >
             Qing Notepad
           </span>
+          {hint && (
+            <span
+              data-tauri-drag-region
+              title={hintDetail}
+              className="shrink-0 rounded-full border border-border px-1.5 text-[10px] leading-4 font-normal text-text-muted"
+            >
+              {hint}
+            </span>
+          )}
         </div>
 
         <div

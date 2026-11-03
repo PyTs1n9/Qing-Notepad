@@ -8,6 +8,7 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 mod clipboard;
 mod credentials;
+mod external;
 mod pdf_export;
 mod plugin;
 mod plugin_host;
@@ -89,8 +90,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            show_main_window(app);
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            // A second launch can be a plain "show the window" (tray shortcut)
+            // or Explorer handing us an `.md`. Only the latter suppresses the
+            // main window: the note window it creates is the thing to look at.
+            let opened = external::enqueue(app, &argv, Some(std::path::Path::new(&cwd)));
+            if !opened {
+                show_main_window(app);
+            }
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
@@ -108,6 +115,10 @@ pub fn run() {
                 .build(),
         )
         .manage(ext_bridge.clone())
+        // Files opened from Explorer: the launch queue, the id→path map the
+        // detached window reads, and the committed drafts waiting for the main
+        // window. Lives for the process only; the draft files are the durable part.
+        .manage(external::ExternalState::default())
         // 更新链路的跨命令状态：检查得到的 `Update` 句柄与已下载的安装包。
         // 只活在本进程内，退出即丢（见 `update.rs` 的 `UpdateState`）。
         .manage(update::UpdateState::default())
@@ -182,6 +193,11 @@ pub fn run() {
             update::check_update,
             update::download_update,
             update::install_downloaded,
+            external::external_take_launch,
+            external::external_open_path,
+            external::external_note_read,
+            external::external_note_commit,
+            external::external_take_pending,
         ])
         .setup(|app| {
             #[cfg(desktop)]
@@ -199,6 +215,11 @@ pub fn run() {
             // watcher thread is started here so a folder edited in another
             // application shows up in the graph without a manual refresh.
             vault::init(app.handle());
+
+            // Cold start from "打开方式". Queues the path and emits; the main
+            // window drains it once it has loaded `notes/index.json`, so a slow
+            // boot cannot lose the file and cannot import before the list is ready.
+            external::capture_launch_args(app.handle());
 
             // A crash during an install must not leave a staging tree behind;
             // it is scratch space, so clearing it unconditionally is safe.

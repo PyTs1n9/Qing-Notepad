@@ -28,6 +28,9 @@
  *   node scripts/verify-webview.mjs --status        # report the live session
  *   node scripts/verify-webview.mjs --close         # close the live session
  *   node scripts/verify-webview.mjs --eval "<js>"   # probe the running build
+ *   node scripts/verify-webview.mjs --app-arg "<path>"  # launch as Explorer would
+ *   node scripts/verify-webview.mjs --target noteWindow= --no-assert --eval "<js>"
+ *                                                   # probe a detached note window
  *
  * Exit codes (run): 0 = every check passed, 1 = an assertion or console error
  * failed, 2 = the runner could not start (missing exe, blocked by another
@@ -69,6 +72,15 @@ const timeoutMs = Number(readFlag("timeout", "45000"));
 // like layout bugs.
 const settleMs = Number(readFlag("settle", "900"));
 const probeExpression = readFlag("eval", null);
+/**
+ * Second window to probe (e.g. `--target noteWindow=`). Without it the runner
+ * deliberately prefers the shell page, not a detached note window that happens
+ * to be open: the shell is what the assertions describe.
+ */
+const targetFilter = readFlag("target", null);
+/** Probe a non-shell window: skip the shell assertions, keep the screenshot. */
+const noAssert = hasFlag("no-assert");
+const appArg = readFlag("app-arg", null);
 const closeAfter = hasFlag("close-after");
 const replace = hasFlag("replace");
 
@@ -156,12 +168,15 @@ async function waitPidExit(pid, timeout = 10000) {
 function launchViaExplorer() {
   mkdirSync(stateDir, { recursive: true });
   const launcher = join(stateDir, `webview-launch-${port}.cmd`);
+  // `--app-arg` is how the acceptance drives "Explorer opened a .md": the app
+  // must treat it as a real command-line launch, not a test-only path.
+  const command = appArg ? `start "" "${exePath}" "${appArg}"` : `start "" "${exePath}"`;
   writeFileSync(
     launcher,
     [
       "@echo off",
       `set "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=${port}"`,
-      `start "" "${exePath}"`,
+      command,
       "",
     ].join("\r\n"),
     "utf8",
@@ -196,9 +211,17 @@ async function waitFor(check, { timeout = timeoutMs, interval = 300 } = {}) {
 }
 
 function pickPage(targets) {
+  const pages = targets.filter((target) => target.type === "page");
+  if (targetFilter) {
+    return pages.find((target) => (target.url ?? "").includes(targetFilter)) ?? null;
+  }
+  // Prefer the shell: with a detached note window open (or opened by
+  // `--app-arg`), both pages load `index.html`, and the shell is the one the
+  // assertions below describe.
   return (
-    targets.find((target) => target.type === "page" && /tauri\.localhost|index\.html/.test(target.url ?? "")) ??
-    targets.find((target) => target.type === "page" && !/^(devtools|chrome)/.test(target.url ?? "")) ??
+    pages.find((target) => /tauri\.localhost|index\.html/.test(target.url ?? "") && !/[?&]noteWindow=/.test(target.url ?? "")) ??
+    pages.find((target) => /tauri\.localhost|index\.html/.test(target.url ?? "")) ??
+    pages.find((target) => !/^(devtools|chrome)/.test(target.url ?? "")) ??
     null
   );
 }
@@ -548,19 +571,23 @@ async function main() {
   })()`);
 
   // ---- assertions -------------------------------------------------------
-  if (snapshot.startupError) failures.push(`startup error panel: ${snapshot.startupError}`);
-  if (!snapshot.appRoot) failures.push("`.app-root` is missing — App never rendered");
-  if (snapshot.rootChildren < 1) failures.push("#root is empty");
-  if (!snapshot.hasTauri) failures.push("window.__TAURI_INTERNALS__ missing — this is not the Tauri webview");
-  if (snapshot.shellCards < 2) failures.push(`expected >=2 floating shell cards, saw ${snapshot.shellCards}`);
-  if (!snapshot.editorCard || snapshot.editorCard.w < 320 || snapshot.editorCard.h < 200) {
-    failures.push(`editor card collapsed: ${JSON.stringify(snapshot.editorCard)}`);
+  // `--no-assert` exists for probes of a second window (sticky / tile / note),
+  // which have no `.shell-box` by design. The screenshot still lands.
+  if (!noAssert) {
+    if (snapshot.startupError) failures.push(`startup error panel: ${snapshot.startupError}`);
+    if (!snapshot.appRoot) failures.push("`.app-root` is missing — App never rendered");
+    if (snapshot.rootChildren < 1) failures.push("#root is empty");
+    if (!snapshot.hasTauri) failures.push("window.__TAURI_INTERNALS__ missing — this is not the Tauri webview");
+    if (snapshot.shellCards < 2) failures.push(`expected >=2 floating shell cards, saw ${snapshot.shellCards}`);
+    if (!snapshot.editorCard || snapshot.editorCard.w < 320 || snapshot.editorCard.h < 200) {
+      failures.push(`editor card collapsed: ${JSON.stringify(snapshot.editorCard)}`);
+    }
+    if (snapshot.dragRegions < 1) failures.push("title bar drag region missing");
+    if (snapshot.railButtons < 3) failures.push(`activity rail looks empty (${snapshot.railButtons} labelled buttons)`);
+    if (!snapshot.textSample) failures.push("shell rendered no visible text");
+    if (snapshot.brokenImages.length > 0) failures.push(`broken images: ${snapshot.brokenImages.join(", ")}`);
+    if (snapshot.overflowX > 1) failures.push(`horizontal overflow of ${snapshot.overflowX}px on <body>`);
   }
-  if (snapshot.dragRegions < 1) failures.push("title bar drag region missing");
-  if (snapshot.railButtons < 3) failures.push(`activity rail looks empty (${snapshot.railButtons} labelled buttons)`);
-  if (!snapshot.textSample) failures.push("shell rendered no visible text");
-  if (snapshot.brokenImages.length > 0) failures.push(`broken images: ${snapshot.brokenImages.join(", ")}`);
-  if (snapshot.overflowX > 1) failures.push(`horizontal overflow of ${snapshot.overflowX}px on <body>`);
 
   mkdirSync(dirname(shotPath), { recursive: true });
   const shot = await send("Page.captureScreenshot", { format: "png", fromSurface: true });
