@@ -16,7 +16,8 @@
 //!   [`UP_EVENT`].
 //! - `GET /down` — host → plugin messages (`init`, `call`, `event`, `res`).
 //!   Long-polls: blocks up to [`INBOX_WAIT`] and answers `null` when nothing is
-//!   waiting. Pushing goes the other way, through the [`DOWN_EVENT`] command.
+//!   waiting. Pushing goes the other way, through the `plugin_ext_host_send`
+//!   command.
 //!
 //! Why long-polling instead of a streamed response or a Tauri event: a streamed
 //! body needs the platform's streaming support in every place the response is
@@ -54,9 +55,6 @@ use serde_json::{json, Value};
 pub const SCHEME: &str = "qing-plugin-rpc";
 /// Plugin → host messages land on the main window as this event.
 pub const UP_EVENT: &str = "plugin-ext-host-up";
-/// The main window pushes a host → plugin message by invoking `plugin_ext_host_send`,
-/// which reaches the ext-host through the poll.
-pub const DOWN_COMMAND: &str = "plugin_ext_host_send";
 
 /// Plugin → host payloads are small by construction: an `rpc` is a call into
 /// `bridge.ts`, and a `res` is a command's return value or one level of tree
@@ -147,6 +145,12 @@ impl HostBridge {
 
     /// Stop accepting and wake every poller, so a closing host does not leave
     /// a thread parked on the condvar.
+    ///
+    /// No production path calls this yet — tearing the host down (window close,
+    /// "disable all plugins") is a later step. Kept rather than deleted because
+    /// that step needs it, and because [`Take::Closed`] is unreachable without
+    /// it: the 503 branch in [`handle_request`] only exists for tests today.
+    #[allow(dead_code)]
     pub fn close(&self) {
         let mut queue = self.lock();
         queue.closed = true;
