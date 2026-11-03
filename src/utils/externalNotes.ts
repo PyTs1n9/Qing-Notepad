@@ -20,9 +20,11 @@
  * concurrent saves overwrite each other's entry.
  */
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { exists } from "@tauri-apps/plugin-fs";
+import { join } from "@tauri-apps/api/path";
 import { useNoteStore } from "@/stores/noteStore";
 import { openNoteWindow } from "@/utils/noteWindow";
-import { deleteExternalDraft, saveNoteContent } from "@/utils/storage";
+import { deleteExternalDraft, getNotesDirectory, saveNoteContent } from "@/utils/storage";
 
 /** A file path arrived; drain `takeLaunchFiles`. */
 export const EXTERNAL_OPEN_EVENT = "external-note:open";
@@ -111,6 +113,13 @@ export async function importExternalNote(note: ExternalNoteInfo): Promise<Extern
   }
 
   await saveNoteContent(note.id, note.content);
+  // `saveNoteContent` logs write failures instead of throwing (that is the
+  // existing storage contract). Deleting the draft after a silent failure would
+  // be the only unrecoverable path here, so prove the file landed first.
+  const notePath = await join(await getNotesDirectory(), `${note.id}.md`);
+  if (!(await exists(notePath))) {
+    throw new Error(`the note file was not written: ${notePath}`);
+  }
   const now = new Date().toISOString();
   store.addNote({
     id: note.id,
@@ -133,14 +142,26 @@ export async function importExternalNote(note: ExternalNoteInfo): Promise<Extern
  * Import everything queued. The last imported note becomes active because
  * `addNote` sets `activeNoteId`; the caller only has to switch views.
  */
-export async function importPendingExternalNotes(): Promise<{ imported: number; existing: number }> {
+export async function importPendingExternalNotes(): Promise<{
+  imported: number;
+  existing: number;
+  failed: number;
+}> {
   const pending = await takePendingExternalNotes();
   let imported = 0;
   let existing = 0;
+  let failed = 0;
   for (const note of pending) {
-    const result = await importExternalNote(note);
-    if (result.outcome === "imported") imported += 1;
-    else existing += 1;
+    try {
+      const result = await importExternalNote(note);
+      if (result.outcome === "imported") imported += 1;
+      else existing += 1;
+    } catch (error) {
+      // One unwritable note must not drop the rest of the batch. The draft is
+      // still on disk, so reopening the file resumes the work.
+      failed += 1;
+      console.error("Failed to import the external note:", note.id, error);
+    }
   }
-  return { imported, existing };
+  return { imported, existing, failed };
 }
