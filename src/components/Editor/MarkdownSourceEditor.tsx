@@ -10,9 +10,9 @@ import {
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { basicSetup } from "codemirror";
 import {
   codeMirrorTypographyTheme,
-  editorSetup,
   literalTabIndentation,
   themeAwareMarkdownHighlighting,
 } from "@/utils/codeMirror";
@@ -78,7 +78,7 @@ function runMarkdownCommand(
 /**
  * Structural Markdown shortcuts.
  *
- * `Prec.high` because `editorSetup` already binds several of these keys
+ * `Prec.high` because `basicSetup` already binds several of these keys
  * (`Mod-/`, `Mod-Enter`) and the editor's menu advertises the accelerators shown
  * here — a displayed shortcut that loses to a default would be a lie.
  *
@@ -130,11 +130,9 @@ const noteEditorTheme = EditorView.theme({
     height: "100%",
     minHeight: "0",
     color: "var(--color-text-primary)",
-    // Opaque paper behind the text. A translucent surface makes Chromium fall
-    // back to grayscale antialiasing, which is what made 16px Chinese look soft;
-    // `--editor-paper` resolves to the *composited* colour of the card (see
-    // index.css), so the sheet is invisible but the glyphs get ClearType.
-    backgroundColor: "var(--editor-paper, transparent)",
+    // Deliberately transparent: the editor is a surface *on* the glass card, so
+    // the tint, the blur and a wallpaper all read through the text.
+    backgroundColor: "transparent",
   },
   ".cm-scroller": {
     lineHeight: "1.7",
@@ -142,10 +140,16 @@ const noteEditorTheme = EditorView.theme({
   },
   ".cm-content": {
     minHeight: "100%",
-    padding: "16px 20px",
+    // Typora's first-line inset: the text starts 40px below the card's edge.
+    padding: "40px 24px 96px",
+    // 44em ≈ 704px at 16px, i.e. 60–80 Chinese characters per line. `em`, not
+    // px, so zooming keeps the *line length* instead of the column width.
+    // The column stays **left-aligned** — the text begins right after the gutter
+    // and the surplus width is simply empty, as in the source view.
+    maxWidth: "44em",
   },
-  // Only painted if a gutter is ever mounted again (this editor no longer
-  // mounts `lineNumbers()`/`foldGutter()` — see `editorSetup`).
+  // The self-made gutter has to keep its own surface: CodeMirror's default is a
+  // transparent strip, and over the glass the numbers would sit on the blur.
   ".cm-gutters": {
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-muted)",
@@ -210,7 +214,7 @@ export default function MarkdownSourceEditor({
     const state = EditorState.create({
       doc: latestValueRef.current,
       extensions: [
-        editorSetup,
+        basicSetup,
         // GFM base, not the CommonMark default: `~~del~~` only becomes a
         // Strikethrough node (and tables a Table node) with GFM enabled, and
         // `utils/editorBlocks.ts` parses with the same base. Two different

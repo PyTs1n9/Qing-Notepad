@@ -1,32 +1,7 @@
 import { EditorState, Prec, type Extension } from "@codemirror/state";
-import {
-  EditorView,
-  crosshairCursor,
-  drawSelection,
-  dropCursor,
-  highlightActiveLine,
-  highlightSpecialChars,
-  keymap,
-  rectangularSelection,
-} from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
-import {
-  HighlightStyle,
-  bracketMatching,
-  defaultHighlightStyle,
-  foldKeymap,
-  indentOnInput,
-  indentUnit,
-  syntaxHighlighting,
-} from "@codemirror/language";
-import {
-  autocompletion,
-  closeBrackets,
-  closeBracketsKeymap,
-  completionKeymap,
-} from "@codemirror/autocomplete";
-import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { lintKeymap } from "@codemirror/lint";
+import { EditorView, keymap } from "@codemirror/view";
+import { indentLess, insertTab } from "@codemirror/commands";
+import { HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
 const themeAwareMarkdownHighlightStyle = HighlightStyle.define([
@@ -143,50 +118,4 @@ export const literalTabIndentation: Extension = [
   EditorState.tabSize.of(4),
   indentUnit.of("\t"),
   Prec.highest(keymap.of([{ key: "Tab", run: insertTab, shift: indentLess }])),
-];
-
-/**
- * `basicSetup` minus the two gutter extensions.
- *
- * The editor is a writing surface, not an IDE: a line-number column and a fold
- * gutter put `v` arrows and `1 2 3` in the left margin of every note, which is
- * both visual noise and ~28px of the reading column. `basicSetup` cannot be
- * configured, and its own docs say to copy the list and adjust it — so this is
- * that copy. Two entries are missing on purpose:
- *
- * - `lineNumbers()` — the numbers;
- * - `foldGutter()` — the arrows. `foldKeymap` stays, so folding still works
- *   from the keyboard/commands; only the gutter UI is gone.
- *
- * `highlightActiveLineGutter()` is dropped with them (there is no gutter left
- * to tint). Everything else is `codemirror@6.0.2`'s list, unchanged.
- *
- * The sub-packages below (`@codemirror/view`, `commands`, `language`,
- * `autocomplete`, `search`, `lint`) are the ones `codemirror` itself depends on
- * and the editor has always imported the first three directly.
- */
-export const editorSetup: Extension = [
-  highlightSpecialChars(),
-  history(),
-  drawSelection(),
-  dropCursor(),
-  EditorState.allowMultipleSelections.of(true),
-  indentOnInput(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-  bracketMatching(),
-  closeBrackets(),
-  autocompletion(),
-  rectangularSelection(),
-  crosshairCursor(),
-  highlightActiveLine(),
-  highlightSelectionMatches(),
-  keymap.of([
-    ...closeBracketsKeymap,
-    ...defaultKeymap,
-    ...searchKeymap,
-    ...historyKeymap,
-    ...foldKeymap,
-    ...completionKeymap,
-    ...lintKeymap,
-  ]),
 ];

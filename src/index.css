@@ -448,14 +448,6 @@
   --glass-panel-side: var(--color-bg-sidebar);
   --glass-tint-light: 60;
 
-  /* Opaque "paper" behind editor text. Chromium only enables subpixel
-     antialiasing (ClearType) when text sits on an opaque backdrop, and every
-     shell card here is deliberately translucent — so the editor paints a solid
-     sheet instead of letting its glyphs land on the glass. The default is the
-     plain page colour (what the detached note window's body already uses); the
-     main card overrides it with the colour its tint *composites to*. */
-  --editor-paper: var(--color-bg-primary);
-
   /* Paper grain, 120px tile, painted only by `.surface-glass::before`. The two
      variants differ by a single number, but that number sits inside the data
      URI, so they cannot share one declaration. */
@@ -592,34 +584,6 @@
 .surface-glass--editor {
   --glass-panel: var(--color-bg-primary);
   --glass-tint-here: var(--glass-tint-editor);
-}
-
-/* The editor's opaque sheet is the *same colour the card composites to*:
-   `color-mix(bg-primary <tint>%, bg-shell)` is exactly what the translucent
-   `::before` above produces over the shell, so the sheet is invisible while the
-   text inside it becomes opaque-backed. The `1%` multiplier is what turns the
-   unitless tint token into a percentage — a bare `var()` there would make the
-   whole `color-mix` invalid and silently drop the declaration. */
-.app-root {
-  --editor-paper: color-mix(
-    in srgb,
-    var(--color-bg-primary) calc(var(--glass-tint-editor, 100) * 1%),
-    var(--color-bg-shell)
-  );
-}
-
-/* Behind a wallpaper there is no single colour to composite against, and seeing
-   the wallpaper through the page is the reason the wallpaper exists — so the
-   paper goes away there and the text keeps the (softer) translucent surface. */
-.app-root.app-has-custom-background {
-  --editor-paper: transparent;
-}
-
-/* Glass off means "no translucency": the card is the plain page colour, so the
-   sheet has to be that same colour. Last, so it also wins over the wallpaper
-   rule — an opaque card was explicitly asked for. */
-.app-root[data-glass="off"] {
-  --editor-paper: var(--color-bg-primary);
 }
 
 /* Dialogs, auth and about panels: transient surfaces stacked over the app.
@@ -3471,41 +3435,88 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   text-underline-offset: 0.15em;
 }
 
-.cm-md-h1 {
+/* Headings carry their own gap above (`padding-top`), decreasing by level, so
+   the eye reads h1 → h2 → h3 as one descending ladder.
+   `padding`, never `margin`: CodeMirror measures a line's height from its box,
+   and a margin would sit outside that measurement — the height map then
+   disagrees with the DOM and the scroll position drifts on every re-measure.
+   The values are `em` of the heading's own size (h1's padding is 1.85× the body
+   em), which is why they look small for h1: 0.8em there is ~24px at 16px body.
+
+   The `.cm-content` + `.cm-line` prefix is load-bearing, not decoration: the
+   base theme ships `.ͼ1 .cm-line { padding: 0 2px 0 6px }` — two classes, and
+   its stylesheet is injected at runtime *after* this one — so a single-class
+   `.cm-md-h1` padding was silently reset to 0 and the headings had no gap at
+   all. Three classes outrank it, whatever the injection order. `.cm-md-quote`
+   and the code-block card below had the same dead padding for the same reason. */
+.cm-content .cm-line.cm-md-h1 {
   font-size: 1.85em;
   font-weight: 700;
   line-height: 1.4;
+  padding-top: 0.8em;
+  padding-bottom: 0.32em;
 }
 
-.cm-md-h2 {
+.cm-content .cm-line.cm-md-h2 {
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.45;
+  padding-top: 0.65em;
+  padding-bottom: 0.3em;
 }
 
-.cm-md-h3 {
+.cm-content .cm-line.cm-md-h3 {
   font-size: 1.32em;
   font-weight: 600;
   line-height: 1.5;
+  padding-top: 0.55em;
+  padding-bottom: 0.26em;
 }
 
-.cm-md-h4 {
+.cm-content .cm-line.cm-md-h4 {
   font-size: 1.16em;
   font-weight: 600;
+  padding-top: 0.45em;
+  padding-bottom: 0.2em;
 }
 
-.cm-md-h5 {
+.cm-content .cm-line.cm-md-h5 {
   font-size: 1.06em;
   font-weight: 600;
+  padding-top: 0.38em;
+  padding-bottom: 0.16em;
 }
 
-.cm-md-h6 {
+.cm-content .cm-line.cm-md-h6 {
   font-size: 1em;
   font-weight: 600;
   color: var(--color-text-secondary);
+  padding-top: 0.32em;
+  padding-bottom: 0.16em;
 }
 
-.cm-md-quote {
+/* The 40px inset already *is* the page's top margin; a heading on the first
+   line must not add a second gap on top of it. Two classes + a pseudo-class,
+   so this outranks every `.cm-md-h*` above without `!important`. */
+.cm-content > .cm-line:first-child {
+  padding-top: 0;
+}
+
+/* A blank source line *is* the paragraph break. At the scroller's 1.7
+   line-height it took a full 27px, which made the gap between two paragraphs
+   larger than the gap before a heading — the rhythm read backwards. One em is
+   Typora's paragraph gap and keeps 段间距 < 标题前间距. */
+.cm-line:has(> br:only-child) {
+  line-height: 1;
+}
+
+/* Inside a fenced block the blank line is part of the card, not a separator:
+   collapsing it would break the block's background into stripes. */
+.cm-line.cm-md-code-block:has(> br:only-child) {
+  line-height: inherit;
+}
+
+.cm-content .cm-line.cm-md-quote {
   border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   padding-left: 0.7em;
   color: var(--color-text-secondary);
@@ -3521,7 +3532,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 /* styles `.cm-line` at the same single-class specificity, and its    */
 /* stylesheet is injected after this file.                            */
 /* ---------------------------------------------------------------- */
-.cm-line.cm-md-code-block {
+.cm-content .cm-line.cm-md-code-block {
   background-color: var(--color-bg-secondary);
   /* Code is the one place a monospace face is correct; the body no longer is. */
   font-family: var(--editor-font-mono);
