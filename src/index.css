@@ -3428,6 +3428,40 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   box-decoration-break: clone;
 }
 
+/* ------------------------------------------------------------------ */
+/* Selection has to sit on top of a surface                            */
+/*                                                                    */
+/* `drawSelection` parks its band at `z-index: -1`, i.e. behind the    */
+/* text. That is fine until a mark paints an opaque surface of its     */
+/* own: a selected inline-code chip stayed solid grey in the middle of */
+/* a blue band, and a selected fenced block lost its highlight         */
+/* entirely. Raising the layer above the content puts the band over    */
+/* every surface, so a selection reads as one continuous band again.   */
+/*                                                                    */
+/* The cost is that glyphs inside the band are tinted by the same 34%  */
+/* accent. That reads as a normal selection, and the alternative —     */
+/* re-enabling the native highlight on the chip via `::selection` —    */
+/* leaves the chip's padding and its rounded corners as dark notches   */
+/* cut out of the band, which looks like a rendering fault.            */
+/*                                                                    */
+/* `!important` is mandatory: CodeMirror writes the layer's z-index as */
+/* an inline style (`above ? 150 : -1`, minus its slot).               */
+/*                                                                    */
+/* A layer above the content also takes the pointer, so it is made     */
+/* transparent to hit-testing here: `drawSelection` never set          */
+/* `pointer-events` on it, and without this a click inside an existing */
+/* band would land on the band instead of `.cm-content` and the        */
+/* selection would stop responding. Its children are the band rects.   */
+/* ------------------------------------------------------------------ */
+.cm-editor .cm-selectionLayer {
+  z-index: 1 !important;
+}
+
+.cm-editor .cm-selectionLayer,
+.cm-editor .cm-selectionLayer > * {
+  pointer-events: none;
+}
+
 .cm-md-link {
   color: var(--color-accent-text);
   text-decoration: underline;
