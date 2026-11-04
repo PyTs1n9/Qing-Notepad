@@ -1,7 +1,34 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-03T17:08:00Z",
+  "generatedAt": "2026-11-04T09:17:00Z",
   "items": [
+    {
+      "id": "2026-11-04-v0-9-4",
+      "kind": "update",
+      "publishedAt": "2026-11-04T09:17:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.4：外部文件直写、列表符号与正文排版",
+        "en": "v0.9.4: in-place file editing, list markers, typography"
+      },
+      "body": {
+        "zh": "这一版全部落在编辑器与文件读写上：正文终于用上了无衬线字体栈，列表符号渲染成真正的圆点、递增序号与复选框，标题的 `#` 与引用的 `>` 也按「光标进块才显示源码」处理；外部 `.md` 改成直接读写源文件，不再复制成草稿。\n\n**变更｜从资源管理器打开的 .md 直接改源文件**\n\n- 打开的就是那个文件：编辑直接写回你双击的那个文件，标题旁标「直接编辑源文件」，不在软件内部另存副本。\n- 写回保留原编码（UTF-8 / UTF-8 BOM / GB18030）与原有换行（CRLF / LF），保存后 git 不会出现整文件 diff；GB18030 遇到无法表示的字符直接拒绝保存，不做有损写入。\n- 写入前比对内容哈希：文件被其他程序改过就暂停自动保存，让你选「重新加载源文件」或「保留我的修改」；只看内容不看时间戳，网盘同步不会天天误报。\n- 只读、无权限或文件被移走时明确提示；写入用同目录临时文件 + 原子替换，不擅自改文件属性。\n- 点「返回主软件」才把文件加进笔记库的「未分类笔记」；入库后 `notes/` 里的是同步镜像，源文件始终是正文权威。旧版留下的副本会在下次打开同一文件时接上，正文不一致时另存为「（旧副本）」，不覆盖任何一方。\n\n**新增｜列表符号与任务复选框**\n\n- 无序列表的 `-` 渲染成 `•` / `◦` / `▪`（按嵌套层级），有序列表按列表起始号算出真实序号（`1. 1. 1.` 显示 1. 2. 3.），`1)` 保留右括号。\n- 任务列表的 `[ ]` / `[x]` 换成复选框，点一下即勾选，不移动光标，一次 `Ctrl+Z` 回退。\n- 光标进入某一项时该项回退源码，标记本身仍可改。\n\n**新增｜标题与引用的标记隐藏**\n\n- 标题的 `#` 与引用的 `>`（含后随空格）在光标离开后隐藏，标题只剩分级字号、引用只剩左侧竖线；Setext 标题的下划线保留。\n- 光标进入标题或引用块，整块的 `#` / `>` 原样出现。\n\n**改进｜正文排版**\n\n- 字体栈真正生效：根因是 CodeMirror 在滚动容器上写死 `monospace`，压过继承的字体族。现在字体同时写进滚动容器，中文不再落到等宽回退字体，小字号发虚的问题一并消失；代码仍用等宽字体。\n- 行号槽收窄约 21%：行号改 0.78em + 等宽数字，行号列与折叠槽随之变窄，仍随字号等比缩放。\n- 行号对齐正文基线：行号行高与正文行高一致，数字不再顶在行首、比正文高约 4px。\n- 标题间距改挂前一行下沿，行号与折叠箭头不再和标题错位；正文仍到边换行，不设最大宽度、不居中。\n- 编辑器保持透明底，磨砂与壁纸照常透出，不垫不透明纸层。\n\n**修复**\n\n- 行内代码芯片与代码块卡片的不透明底色不再吞掉选区色带；选区层抬到内容之上后仍放开指针穿透，选中区域内的点击照常有效。\n\n**说明**\n\n- 安装包下载完成后只保存在内存里，重启前退出应用需要重新下载（约 27 MB）。\n- 安装包做签名校验，签名对不上直接拒绝安装。\n\n更新入口在标题栏右上角、公告喇叭右侧，只在有新版本时出现：第一次点击下载，第二次点击重启安装。",
+        "en": "This release is all in the editor and in file I/O: body text finally uses a sans-serif stack, list markers render as real bullets, computed ordinals and checkboxes, heading `#` and quote `>` markers follow the same reveal-on-cursor rule, and `.md` files opened from Explorer are now read and written in place instead of being copied into drafts.\n\n**Changed | Markdown files opened from Explorer are edited in place**\n\n- The file you open is the file you edit: saves go straight back to it, the title bar says \"editing source file\", and no copy is kept inside the app.\n- Writes preserve the original encoding (UTF-8 / UTF-8 BOM / GB18030) and line endings (CRLF / LF), so git shows no whole-file diff after a save; GB18030 refuses to save characters it cannot represent instead of writing lossy data.\n- A content hash is compared before writing: if another program changed the file, autosave pauses and you choose \"reload source\" or \"keep my edits\". Only content is compared, never timestamps, so cloud sync does not raise false alarms.\n- Read-only files, missing permissions and moved files are reported explicitly; writes go through a temp file in the same directory plus an atomic replace, and never change file attributes.\n- The file only enters the library's \"Uncategorised\" folder when you click \"back to the main app\"; after that `notes/` holds a mirror and the source file stays authoritative. Copies left by older versions are picked up the next time you open the same file, and conflicting content is saved as \"(old copy)\" without overwriting either side.\n\n**New | List markers and task checkboxes**\n\n- Unordered `-` renders as `•` / `◦` / `▪` by nesting level; ordered lists compute real numbers from the list start (`1. 1. 1.` shows 1. 2. 3.) and `1)` keeps its closing parenthesis.\n- Task `[ ]` / `[x]` become checkboxes you can click without moving the cursor, undone by a single `Ctrl+Z`.\n- Putting the cursor into an item reveals its source markers, which stay editable.\n\n**New | Heading and quote markers hide**\n\n- Heading `#` and quote `>` (with the following space) hide once the cursor leaves the block: headings keep only their size, quotes only their rail; Setext underlines stay.\n- Moving the cursor into a heading or quote block brings the whole block of `#` / `>` back.\n\n**Improved | Body typography**\n\n- The font stack now actually applies: CodeMirror declared `monospace` on its scroll container, overriding the inherited family. The family is now written to the scroll container too, so Chinese no longer falls back to a monospace face and blurry small text is gone; code stays monospaced.\n- The line-number gutter is about 21% narrower: numbers at 0.78em with tabular figures, and the gutter and fold column scale with font size.\n- Line numbers sit on the body baseline, no longer riding above the first line by about 4px.\n- Heading spacing now hangs off the previous line's bottom edge, so numbers and fold arrows line up; body text still wraps edge to edge with no max width and no centring.\n- The editor stays transparent, so the frosted surface and wallpaper still show through.\n\n**Fixed**\n\n- Opaque inline-code chips and code-block cards no longer swallow the selection band; the selection layer is raised above content while keeping pointer pass-through, so clicks inside a selection still work.\n\n**Notes**\n\n- The installer is held in memory only; quit before restarting and it downloads again (about 27 MB).\n- The installer is signature-checked and refused if the signature does not match.\n\nThe update entry sits at the top right of the title bar, right of the announcement button. It appears only when a new version exists: first click downloads, second click restarts into the installer."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.4",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-11-04-v0-9-2",
       "kind": "update",
