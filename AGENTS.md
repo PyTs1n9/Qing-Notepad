@@ -219,6 +219,79 @@ An empty or one-line `UPDATE.md` (for example `修复已知问题`) is allowed o
 what the other two say. Any release that reuses an older version's notes (v0.9.2 did) must copy
 the full text, not a summary of it.
 
+## Release Runbook (Trigger: 「开始发行最新版vX.Y.Z」)
+
+When the user says **「开始发行最新版vX.Y.Z」**, that sentence is the whole instruction: the
+version is final, do not ask again, and run steps 1–8 below in order in the same turn,
+reporting each step as it lands. A step that fails stops the chain — report it instead of
+improvising. Anything the user must decide (dropping a section, shipping a known bug) is asked
+once, before step 4, never in the middle of a tag.
+
+**1. Pin the version**
+
+`npm run version:set -- vX.Y.Z`. It rewrites `package.json`, `package-lock.json`,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` together. Never
+hand-edit these: CI reruns the same script from the tag, so a half-bumped tree fails the build.
+
+**2. README**
+
+Update only the bullets whose behaviour changed since the last tag, in the existing
+numbered-emoji style. Do not add a version heading — the version badge reads live from GitHub.
+Data-layout changes must also update the `data/` tree in the README.
+
+**3. Release notes in three places**
+
+Write the body once, then paste the identical text into all three (see **Release Content
+Sync**): `UPDATE.md` is canonical, `releaseBody` in `.github/workflows/release.yml` carries it
+under `## 本次更新`, and `announcements.json` gets a new front item with id
+`YYYY-MM-DD-vX-Y-Z` and a real UTC `publishedAt`. Run the checklist above; all three print
+`ok`.
+
+**4. Commit**
+
+Two commits so the tag points at content that already builds: `docs(agents|release): …` when
+the runbook or decision log changed, then `chore(release): 发布 vX.Y.Z` for the bump plus
+notes. `git status` must be clean before step 6.
+
+**5. Push the branch**
+
+`git pushall` (origin, then gitee). Never tag a commit the remotes do not have.
+
+**6. Local build and WebView acceptance**
+
+Run **Build And WebView Acceptance** above, starting with `verify:webview:status`.
+`announcements.json` and `UPDATE.md` are imported with `?raw` / consumed by the manifest, so
+this step always triggers on a release. The window stays open.
+
+**7. Tag and publish**
+
+`git tag vX.Y.Z` (lightweight, matching the existing tags), then:
+
+- `git push origin vX.Y.Z` — this is the build trigger; `release.yml` fires on `v*`.
+- `git push gitee vX.Y.Z` — mirror only, no CI on Gitee.
+
+`npm run version:set` inside CI re-derives the version from the tag, so the tag and the tree
+must agree before pushing.
+
+**8. Verify the artefacts**
+
+Follow the run named `Qing Notepad vX.Y.Z` at
+`https://github.com/PyTs1n9/Qing-Notepad/actions`. Green means the Release holds the NSIS
+installer plus `latest.json` / `latest-gitee.json`, and `notes` in both manifests equals
+`UPDATE.md`. The updater manifest is generated from the CI `.sig` — a local build cannot stand
+in for it.
+
+**Failure notes**
+
+- `Access is denied` while rebuilding: the acceptance window still holds the exe. Run
+  `npm run verify:webview:close`, then rebuild.
+- `tag 'vX.Y.Z' already exists`: that version is already published. Roll forward with the next
+  patch; do not move or delete a tag that triggered a run.
+- The run is green but the in-app card shows older notes: the manifests were built before
+  `UPDATE.md` was final. Re-run the workflow **on the tag**; `workflow_dispatch` builds without
+  publishing.
+- Never force-push or re-create a released tag. A pushed `v*` tag is a public release.
+
 ## Git Remotes
 
 `origin` is GitHub and nothing else — a plain `git push origin` must never reach Gitee.
