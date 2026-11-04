@@ -448,6 +448,14 @@
   --glass-panel-side: var(--color-bg-sidebar);
   --glass-tint-light: 60;
 
+  /* Opaque "paper" behind editor text. Chromium only enables subpixel
+     antialiasing (ClearType) when text sits on an opaque backdrop, and every
+     shell card here is deliberately translucent — so the editor paints a solid
+     sheet instead of letting its glyphs land on the glass. The default is the
+     plain page colour (what the detached note window's body already uses); the
+     main card overrides it with the colour its tint *composites to*. */
+  --editor-paper: var(--color-bg-primary);
+
   /* Paper grain, 120px tile, painted only by `.surface-glass::before`. The two
      variants differ by a single number, but that number sits inside the data
      URI, so they cannot share one declaration. */
@@ -584,6 +592,34 @@
 .surface-glass--editor {
   --glass-panel: var(--color-bg-primary);
   --glass-tint-here: var(--glass-tint-editor);
+}
+
+/* The editor's opaque sheet is the *same colour the card composites to*:
+   `color-mix(bg-primary <tint>%, bg-shell)` is exactly what the translucent
+   `::before` above produces over the shell, so the sheet is invisible while the
+   text inside it becomes opaque-backed. The `1%` multiplier is what turns the
+   unitless tint token into a percentage — a bare `var()` there would make the
+   whole `color-mix` invalid and silently drop the declaration. */
+.app-root {
+  --editor-paper: color-mix(
+    in srgb,
+    var(--color-bg-primary) calc(var(--glass-tint-editor, 100) * 1%),
+    var(--color-bg-shell)
+  );
+}
+
+/* Behind a wallpaper there is no single colour to composite against, and seeing
+   the wallpaper through the page is the reason the wallpaper exists — so the
+   paper goes away there and the text keeps the (softer) translucent surface. */
+.app-root.app-has-custom-background {
+  --editor-paper: transparent;
+}
+
+/* Glass off means "no translucency": the card is the plain page colour, so the
+   sheet has to be that same colour. Last, so it also wins over the wallpaper
+   rule — an opaque card was explicitly asked for. */
+.app-root[data-glass="off"] {
+  --editor-paper: var(--color-bg-primary);
 }
 
 /* Dialogs, auth and about panels: transient surfaces stacked over the app.

@@ -10,9 +10,9 @@ import {
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { deleteMarkupBackward, markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { basicSetup } from "codemirror";
 import {
   codeMirrorTypographyTheme,
+  editorSetup,
   literalTabIndentation,
   themeAwareMarkdownHighlighting,
 } from "@/utils/codeMirror";
@@ -78,7 +78,7 @@ function runMarkdownCommand(
 /**
  * Structural Markdown shortcuts.
  *
- * `Prec.high` because `basicSetup` already binds several of these keys
+ * `Prec.high` because `editorSetup` already binds several of these keys
  * (`Mod-/`, `Mod-Enter`) and the editor's menu advertises the accelerators shown
  * here — a displayed shortcut that loses to a default would be a lie.
  *
@@ -130,7 +130,11 @@ const noteEditorTheme = EditorView.theme({
     height: "100%",
     minHeight: "0",
     color: "var(--color-text-primary)",
-    backgroundColor: "transparent",
+    // Opaque paper behind the text. A translucent surface makes Chromium fall
+    // back to grayscale antialiasing, which is what made 16px Chinese look soft;
+    // `--editor-paper` resolves to the *composited* colour of the card (see
+    // index.css), so the sheet is invisible but the glyphs get ClearType.
+    backgroundColor: "var(--editor-paper, transparent)",
   },
   ".cm-scroller": {
     lineHeight: "1.7",
@@ -140,6 +144,8 @@ const noteEditorTheme = EditorView.theme({
     minHeight: "100%",
     padding: "16px 20px",
   },
+  // Only painted if a gutter is ever mounted again (this editor no longer
+  // mounts `lineNumbers()`/`foldGutter()` — see `editorSetup`).
   ".cm-gutters": {
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-muted)",
@@ -204,7 +210,7 @@ export default function MarkdownSourceEditor({
     const state = EditorState.create({
       doc: latestValueRef.current,
       extensions: [
-        basicSetup,
+        editorSetup,
         // GFM base, not the CommonMark default: `~~del~~` only becomes a
         // Strikethrough node (and tables a Table node) with GFM enabled, and
         // `utils/editorBlocks.ts` parses with the same base. Two different

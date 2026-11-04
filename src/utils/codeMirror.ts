@@ -1,7 +1,32 @@
 import { EditorState, Prec, type Extension } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
-import { indentLess, insertTab } from "@codemirror/commands";
-import { HighlightStyle, indentUnit, syntaxHighlighting } from "@codemirror/language";
+import {
+  EditorView,
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightSpecialChars,
+  keymap,
+  rectangularSelection,
+} from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
+import {
+  HighlightStyle,
+  bracketMatching,
+  defaultHighlightStyle,
+  foldKeymap,
+  indentOnInput,
+  indentUnit,
+  syntaxHighlighting,
+} from "@codemirror/language";
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from "@codemirror/autocomplete";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { lintKeymap } from "@codemirror/lint";
 import { tags } from "@lezer/highlight";
 
 const themeAwareMarkdownHighlightStyle = HighlightStyle.define([
@@ -59,9 +84,17 @@ export const themeAwareMarkdownHighlighting = syntaxHighlighting(themeAwareMarkd
  * This is deliberately the UI sans stack and not a monospace one: a CJK glyph
  * has no monospace face on Windows, so a monospace body falls back per glyph to
  * a bitmap-era serif — which is exactly what made small sizes look pixelated.
- * Code keeps its own mono stack through `--font-mono` in CSS.
+ * Code keeps its own mono stack through `--editor-font-mono` in CSS.
+ *
+ * The CJK entries are ordered by *what Windows actually ships*: `PingFang SC`
+ * only exists on macOS and used to sit in front of `Microsoft YaHei`, which made
+ * every Chinese line fall through to the last family in the stack. `Microsoft
+ * YaHei UI` comes first because it is the hinting-tuned UI cut of the same face
+ * (sharper stems at 16px than plain YaHei), and `system-ui` keeps the Latin run
+ * on whatever the OS considers its UI face.
  */
-export const DEFAULT_BODY_FONT = '"Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif';
+export const DEFAULT_BODY_FONT =
+  'system-ui, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif';
 
 /**
  * `family` as a CSS `font-family` value, with the system stack behind it.
@@ -96,6 +129,13 @@ export function codeMirrorTypographyTheme(
       fontSize: `${fontSize}px`,
       ...(family ? { fontFamily: family } : {}),
     },
+    // The family has to be repeated here, and this is not belt-and-braces:
+    // CodeMirror's base theme declares `font-family: monospace` on
+    // `.cm-scroller` itself, which beats the value inherited from `.cm-editor`.
+    // Until this rule existed the body stack never reached a single glyph — CJK
+    // fell through `monospace` to SimSun, the bitmap-era serif that reads as
+    // "fuzzy" at 16px. `font-size` stays on `&` alone; the scroller inherits it.
+    ...(family ? { ".cm-scroller": { fontFamily: family } } : {}),
   });
 }
 
@@ -103,4 +143,50 @@ export const literalTabIndentation: Extension = [
   EditorState.tabSize.of(4),
   indentUnit.of("\t"),
   Prec.highest(keymap.of([{ key: "Tab", run: insertTab, shift: indentLess }])),
+];
+
+/**
+ * `basicSetup` minus the two gutter extensions.
+ *
+ * The editor is a writing surface, not an IDE: a line-number column and a fold
+ * gutter put `v` arrows and `1 2 3` in the left margin of every note, which is
+ * both visual noise and ~28px of the reading column. `basicSetup` cannot be
+ * configured, and its own docs say to copy the list and adjust it — so this is
+ * that copy. Two entries are missing on purpose:
+ *
+ * - `lineNumbers()` — the numbers;
+ * - `foldGutter()` — the arrows. `foldKeymap` stays, so folding still works
+ *   from the keyboard/commands; only the gutter UI is gone.
+ *
+ * `highlightActiveLineGutter()` is dropped with them (there is no gutter left
+ * to tint). Everything else is `codemirror@6.0.2`'s list, unchanged.
+ *
+ * The sub-packages below (`@codemirror/view`, `commands`, `language`,
+ * `autocomplete`, `search`, `lint`) are the ones `codemirror` itself depends on
+ * and the editor has always imported the first three directly.
+ */
+export const editorSetup: Extension = [
+  highlightSpecialChars(),
+  history(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...foldKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
 ];
