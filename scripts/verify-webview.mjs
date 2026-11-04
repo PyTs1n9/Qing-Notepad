@@ -367,9 +367,18 @@ if (!appPid) {
   log(`opened pid ${appPid} (build ${buildId})`);
 }
 
-const alreadyListening = await fetch(`http://127.0.0.1:${port}/json/version`)
-  .then(() => true)
-  .catch(() => false);
+// WebView2 binds the debugging port a moment after the process appears; on a
+// cold start that can take a second or two. Poll instead of checking once:
+// a single check turns a slow start into "this build cannot be inspected".
+let alreadyListening = false;
+const cdpDeadline = Date.now() + 10_000;
+while (Date.now() < cdpDeadline) {
+  alreadyListening = await fetch(`http://127.0.0.1:${port}/json/version`)
+    .then((response) => response.ok)
+    .catch(() => false);
+  if (alreadyListening) break;
+  await new Promise((done) => setTimeout(done, 200));
+}
 
 if (!alreadyListening) {
   // Only a window this script opened carries the CDP flag.

@@ -5,6 +5,7 @@ import { readFile } from "@tauri-apps/plugin-fs";
 import { useNoteStore } from "@/stores/noteStore";
 import { useTabStore } from "@/stores/tabStore";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { toast } from "@/stores/toastStore";
 import { t, tWithParams } from "@/utils/i18n";
 import {
   saveNoteContent,
@@ -185,7 +186,27 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
     isSavingRef.current = true;
     setIsSaving(true);
     try {
-      await saveNoteContent(noteId, contentToSave);
+      const result = await saveNoteContent(noteId, contentToSave);
+      if (result.status !== "ok") {
+        // A linked note's file can be changed or locked by another program. The
+        // tab strip must keep its dirty dot: reporting a write that never
+        // happened is the one failure mode this editor cannot recover from.
+        markDirty(noteId, true);
+        toast(
+          t(
+            lang,
+            result.status === "conflict"
+              ? "externalSaveConflictEditor"
+              : result.status === "missing"
+                ? "externalFileMissing"
+                : result.status === "unsupported"
+                  ? "externalEncodingUnsupported"
+                  : "externalFileReadOnly",
+          ),
+          "danger",
+        );
+        return;
+      }
       markDirty(noteId, false);
       // Notify open sticky windows to update
       emit("sticky:note-updated", { noteId, content: contentToSave });
@@ -198,7 +219,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       isSavingRef.current = false;
       setIsSaving(false);
     }
-  }, [getCurrentEditorContent, markDirty]);
+  }, [getCurrentEditorContent, lang, markDirty]);
 
   // Expose a flush hook so the sidebar can persist pending edits before deleting.
   useEffect(() => {
@@ -244,10 +265,14 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       const stillExists = useNoteStore.getState().notes.some((note) => note.id === prevId);
       if (!stillExists) return;
       try {
-        await saveNoteContent(prevId, pendingContent);
+        const result = await saveNoteContent(prevId, pendingContent);
         // Only clear the flag once the write landed, otherwise a failed save
         // would silently look saved in the tab strip.
-        markDirty(prevId, false);
+        if (result.status === "ok") {
+          markDirty(prevId, false);
+        } else {
+          console.error("Failed to save the previous note:", prevId, result.message);
+        }
       } catch (e) {
         console.error("Failed to save previous note:", e);
       }

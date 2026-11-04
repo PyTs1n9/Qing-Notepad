@@ -2,8 +2,9 @@
 
 > **TL;DR** 注册表只由 NSIS 安装器写一次 `HKCU` 的 `OpenWithProgids`，不抢 `.md` 默认程序；
 > 键名固定、值按名覆盖，所以重装/升级不需要先卸载，也不会出现重复项。
-> 从资源管理器打开的 `.md` 先进独立窗口的「草稿」，点「返回主软件」才由主窗口写入
-> `notes/` 与 `notes/index.json`，笔记 id 由规范化路径哈希得到，重复打开同一个文件不会重复添加。
+> 从资源管理器打开的 `.md` 由独立窗口**直接读写源文件**（编码与换行原样保留）；
+> 点「返回主软件」只是在 `notes/index.json` 里加一条带 `sourcePath` 的条目，
+> 此后每次保存同时更新源文件与 `notes/<id>.md` 镜像，源文件始终是权威。
 
 ## D1 只进「打开方式」，不改默认程序
 
@@ -69,7 +70,7 @@ HKCU\Software\Classes\Applications\qing-notepad.exe
 真正需要手工处理的只有一种情况：**从未安装过**的便携/dev 副本。它没有关联，
 这是刻意的（见 D2）。
 
-## D4 打开链路：argv → 队列 → 独立窗口 → 主窗口入库
+## D4 打开链路：直接编辑源文件
 
 ```text
 Explorer 双击/右键
@@ -78,46 +79,78 @@ Explorer 双击/右键
      └─ 已运行：single-instance 回调 external::enqueue(argv, cwd)
         → 队列 + "external-note:open" 事件
   → 主窗口 drain（挂载后 / 事件 / 获得焦点）
-     → external_open_path：Rust 读文件（UTF-8 → GB18030 兜底）、算 id
-     → 已在 notes 中：普通笔记窗口
-     → 不在：草稿窗口（?noteWindow=<id>&source=external）
-  → 草稿窗口自动保存到 <data>/external-drafts/<id>.md
-  → 「返回主软件」：flush → external_note_commit(id, content)
-     → Rust pending 队列 + "external-note:pending" 事件
-     → 主窗口 drain → 写 notes/<id>.md → addNote(categoryId: null)
-     → 切到笔记视图 + 选中「未分类笔记」→ 删草稿
+     → external_open_path：Rust 读文件（UTF-8 → GB18030 兜底）、记录编码/换行/基线、算 id
+     → 已在 notes 中且带 sourcePath：普通笔记窗口（正文仍读源文件）
+     → 已在 notes 中但无 sourcePath（旧版副本）：adoptLegacyCopy，见 D8
+     → 不在：独立窗口（?noteWindow=<id>&source=external）
+  → 窗口自动保存（800ms 防抖）→ saveNoteContent → external_note_write → 源文件
+  → 「返回主软件」：flush → "external-note:add" 事件
+     → 主窗口建索引条目（带 sourcePath）+ 写 notes/<id>.md 镜像
 ```
 
-**为什么草稿不直接写 `notes/`**：`loadNoteList()` 会把 `notes/` 下所有索引未收录的
-`.md` 当作「恢复笔记」加载。草稿若写在那里，用户只是看了一眼的文件会在下次启动时
-自动进笔记库，违反「点返回才入库」的约定。
+**为什么不再有草稿目录**：草稿存在的唯一理由是「不能让未入库的编辑落进 `notes/`」，
+因为 `loadNoteList()` 会把 `notes/` 下未被索引的 `.md` 恢复成笔记。现在未入库的编辑
+直接写源文件，根本不经过 `notes/`，这个中间态就没有存在必要了，`external-drafts/`
+与 `external_note_commit` / `external_take_pending` 一并删除。
 
-**为什么由主窗口入库**：`notes/index.json` 只能有一个写者。`App.tsx` 的自动保存
-effect 已经在写它；子窗口再写一次就可能「后写覆盖先写」，新笔记从索引里消失。
-Rust 队列让子窗口只表达意图，不碰索引。
+## D5 内容权威与镜像
 
-## D5 去重：路径决定 id，索引决定「已存在」
+- **源文件是唯一权威**。读：`external_note_read_path`；写：`external_note_write`。
+- **入库后**同时写 `notes/<id>.md` 作为**镜像**：同一个 `saveNoteContent` 里先源文件、
+  后镜像。镜像不是第二个编辑目标，只是数据目录丢失/源文件被移走时的兜底。
+- **读优先源文件**；源文件不可读时回退镜像（网盘掉线、文件被移动）。
+- 索引本来就不存正文（`NoteIndexEntry` 只有元数据），所以「链接」不产生第二份正文，
+  只是给 note 加了一个 `sourcePath`。
+- **删除链接笔记只删镜像与索引条目**，绝不删源文件；回收站条目保留 `sourcePath`，
+  还原后仍指向同一个文件。
 
-- id：`ext-<fnv1a64(小写化、正斜杠、去 \\?\ 前缀的规范路径)>`，16 位十六进制。
-  同一个文件的不同拼写（大小写、`\\?\`、相对路径）得到同一个 id。
-- 打开时：主窗口先查 Zustand `notes`（用 `getState()`，不是渲染期快照），
-  有则按普通笔记打开，无则开草稿。
-- 入库时：再查一次 `notes`，已有则跳过并删草稿；Rust 的 pending 队列对同一 id
-  也做覆盖而不是追加。
-- 跨重启：id 写在 `notes/index.json` 里，启动加载后同样命中。
-- 文件本身位于 `<data>/notes` 且文件名是合法 note id 时，直接沿用该 id，
-  避免把笔记文件再复制一份。
+## D6 冲突：写前比对内容哈希
 
-## D6 边界
+Rust 进程内维护 `path → {encoding, line_ending, mtime, size, hash}` 会话表，基线由本
+进程最后一次读或写决定，两个窗口共享同一份基线（不放在渲染层，避免窗口重载把基线
+重置掉）。
+
+- 写前重算磁盘哈希；与基线相同 → 正常写。
+- 不同 → `EXTERNAL_WRITE_CONFLICT`，**不写**，窗口暂停自动保存，顶部出现
+  「重新加载源文件 / 保留我的修改」二选一。
+- 只看哈希不看 mtime：OneDrive 之类的同步客户端会改 mtime 但不动内容，按时间戳判冲突
+  会天天误报。
+- 关闭窗口时若仍有未解决的冲突，`onCloseRequested` 不销毁窗口——没有草稿了，销毁等于
+  把缓冲区扔进黑洞。
+
+## D7 编码与换行原样写回
+
+`decode_text` 返回的编码标签此前被丢弃（`_encoding`），现在映射为
+`Utf8 | Utf8Bom | Gb18030 | Gb18030Lossy`，并额外记录主导换行（CRLF / LF）。
+
+- 写入时先 `\r\n`/`\r` 归一为 `\n`，再按原换行展开：CRLF 文件保存后仍是 CRLF，
+  git 不会出现整文件 diff。
+- UTF-8 BOM 保留；GB18030 用 `encoding_rs` 回编，出现无法表示的字符则拒绝保存
+  （`EXTERNAL_ENCODING_UNSUPPORTED`），不做有损写入。
+- `gb18030-lossy`（读入时已经出现替换字符）一律拒绝写回：原始字节已经不可逆，
+  再写一次会把损失固化。
+- 写入用同目录临时文件 + `rename` 原子替换；只读文件直接返回
+  `EXTERNAL_WRITE_DENIED`，不擅自改属性。
+
+## D8 旧副本迁移
+
+旧版把文件复制进 `notes/` 后**没有保存路径**（`Note` 与索引都没有该字段，
+`PendingExternalNote.path` 在入库时被丢弃），所以无法自动反查。唯一可靠信号是
+用户再次从资源管理器打开同一个文件：
+
+- 副本与源文件正文一致 → 直接补 `sourcePath`，镜像保持原样。
+- 正文不同 → 源文件成为权威；旧副本另存为一条独立笔记（标题加「（旧副本）」），
+  并弹 toast 告知，不覆盖任何一方。
+
+## D9 边界
 
 - 只接受 `.md` / `.markdown`，单文件上限 8 MiB；其它扩展名从 argv 里忽略。
-- 草稿窗口按 X 关闭不入库，草稿保留；下次打开同一路径优先读草稿（用户编辑优先于源文件）。
-- 未入库的草稿不参与回收站、知识库索引与图谱。
-- 手工「导入文件」仍生成随机 UUID 的副本，与「打开方式」的去重是两条路径；
-  同一个文件先手工导入、再右键打开，会出现两份内容。这是刻意保留的差异：
-  手工导入的语义就是「复制一份」，而右键打开是「打开这个文件」。
-- 关联只在安装版存在；`npm run tauri dev` 与 `--no-bundle` 构建不会写注册表，
-  本机验证需要手工装一次 NSIS 包，或用 `reg add` 临时复现（不要提交脚本）。
+- 未入库的文件不参与回收站、知识库索引与图谱；入库后才进入索引（正文仍从源文件读）。
+- 手工「导入文件」仍生成随机 UUID 的副本，与「打开方式」是两条路径：前者语义是
+  「复制一份」，后者是「编辑这个文件」。
+- 关联只在安装版存在；`npm run tauri dev` 与 `--no-bundle` 构建不会写注册表。
+- 没有文件监听：外部程序在应用打开期间改动文件，只会在下一次写入前被发现。写入前
+  检测能防丢数据，但不能做到实时同步；需要实时刷新时再加 `notify` watcher。
 
 ## 未验证 / 开放问题
 
@@ -125,4 +158,5 @@ Rust 队列让子窗口只表达意图，不碰索引。
   未在干净虚拟机上实机装/卸一轮。
 - Windows 11 新版右键菜单把「打开方式」折叠在「显示更多选项」里，这是系统行为，
   不是注册表缺项。
-- 草稿目录目前不做定期清理；未入库的草稿会一直留着（体积极小）。
+- 主编辑器里遇到冲突只有 toast + 保留脏标记，完整的二选一 UI 只在独立窗口提供。
+

@@ -36,6 +36,12 @@ export interface Note {
   content: string;
   tags: string[];
   categoryId?: string | null;
+  /**
+   * Absolute path of the file this note edits. Present only for a note that was
+   * imported from outside the notebook: its body lives there, and `notes/<id>.md`
+   * is a mirror kept in sync on every save.
+   */
+  sourcePath?: string | null;
   pinned?: boolean;
   order: number;
   createdAt: string;

@@ -28,14 +28,6 @@ const TODO_LISTS_FILE = "todo-lists.json";
 const NOTES_DIR = "notes";
 const NOTE_INDEX_FILE = "index.json";
 const NOTE_INDEX_BACKUP_FILE = "index.backup.json";
-/**
- * Drafts of files opened from Explorer that are not in the notebook yet.
- *
- * Deliberately outside `notes/`: `loadNoteList()` recovers every `.md` under
- * `notes/` that the index does not describe, so an autosaved draft stored there
- * would join the notebook without the user pressing "返回主软件".
- */
-const EXTERNAL_DRAFT_DIR = "external-drafts";
 const IMAGES_DIR = "img";
 const IMAGE_TRASH_DIR = "img-trash";
 const IMAGE_TRASH_PARTITION_DIRS = {
@@ -913,7 +905,7 @@ export async function saveTodoLists(data: TodoListData): Promise<void> {
   }
 }
 
-export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
+async function readNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
   const base = await ensureNotesDir();
   try {
     const indexPath = await join(base, NOTE_INDEX_FILE);
@@ -930,11 +922,14 @@ export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteC
     }
 
     // Coverage only needs the file names, which costs one readdir instead of a
-    // full body scan on every launch.
+    // full body scan on every launch. A linked note is covered by its
+    // `sourcePath`, not by a file in `notes/` — count it here or the backup
+    // selection below would happily drop every linked note in the primary.
     const fileIds = await listNoteFileIds(base);
     const fileIdSet = new Set(fileIds);
     const coverage = (candidate: NoteIndexPayload | null) =>
-      candidate?.notes.filter((note) => fileIdSet.has(note.id)).length ?? -1;
+      candidate?.notes.filter((note) => fileIdSet.has(note.id) || Boolean(note.sourcePath))
+        .length ?? -1;
     // Prefer the primary index unless the backup describes more content files.
     // This also restores category definitions and each note's categoryId link.
     const selected = coverage(backup) > coverage(primary) ? backup : primary;
@@ -955,11 +950,30 @@ export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteC
   return { notes: await recoverNoteListFromFiles(base), categories: [] };
 }
 
+/**
+ * The index is the only place that knows which notes are file-backed, so every
+ * load re-registers them for the two content chokepoints (`loadNoteContent`,
+ * `saveNoteContent`). Without this, opening a linked note in a fresh session
+ * would read and write the mirror and silently stop touching the source.
+ */
+export async function loadNoteList(): Promise<{ notes: Note[]; categories: NoteCategory[] }> {
+  const result = await readNoteList();
+  linkedSources.clear();
+  for (const note of result.notes) {
+    if (typeof note.sourcePath === "string" && note.sourcePath) {
+      linkedSources.set(note.id, { path: note.sourcePath, mirror: true });
+    }
+  }
+  return result;
+}
+
 interface NoteIndexEntry {
   id: string;
   title: string;
   tags: string[];
   categoryId?: string | null;
+  /** Absolute path of the file this note edits; absent for ordinary notes. */
+  sourcePath?: string | null;
   pinned?: boolean;
   order: number;
   createdAt: string;
@@ -1028,11 +1042,78 @@ async function writeNoteIndex(
   }
 }
 
+/**
+ * A note whose body lives in a file the user owns, not in `<data>/notes`.
+ *
+ * `mirror` says whether the notebook keeps a copy under `notes/<id>.md`. An
+ * un-imported file opened from Explorer has no mirror (writing one would make
+ * `loadNoteList()` recover it as a note the user never added); once the user
+ * imports it, every save updates the source and the mirror together, and the
+ * source stays the authority.
+ */
+interface LinkedSource {
+  path: string;
+  mirror: boolean;
+}
+
+const linkedSources = new Map<string, LinkedSource>();
+
+export function registerLinkedNoteSource(
+  id: string,
+  path: string,
+  options: { mirror?: boolean } = {},
+): void {
+  if (!isSafeNoteId(id) || !path) return;
+  linkedSources.set(id, { path, mirror: options.mirror ?? true });
+}
+
+export function unregisterLinkedNoteSource(id: string): void {
+  linkedSources.delete(id);
+}
+
+export function getLinkedNoteSource(id: string): LinkedSource | undefined {
+  return linkedSources.get(id);
+}
+
+interface ExternalNotePayload {
+  id: string;
+  path: string;
+  title: string;
+  content: string;
+}
+
+export type NoteSaveStatus = "ok" | "conflict" | "missing" | "denied" | "unsupported";
+
+export interface NoteSaveResult {
+  status: NoteSaveStatus;
+  /** Human-readable detail for the log and for the status bar. */
+  message?: string;
+  /** Only on `conflict`: what the file holds now, so "reload" needs no extra call. */
+  diskContent?: string;
+}
+
+async function readLinkedSource(path: string): Promise<string | null> {
+  try {
+    const info = await invoke<ExternalNotePayload>("external_note_read_path", { path });
+    return info.content;
+  } catch (error) {
+    // The file may be on an unplugged drive, renamed, or deleted. The mirror
+    // below is exactly for that case; the caller decides how to surface it.
+    console.warn("Failed to read the linked source file:", path, error);
+    return null;
+  }
+}
+
 export async function loadNoteContent(id: string): Promise<string> {
   // A single corrupt id must never break boot or a window load.
   if (!isSafeNoteId(id)) {
     console.warn("Refusing to load a note with an invalid id:", id);
     return "";
+  }
+  const link = linkedSources.get(id);
+  if (link) {
+    const fromSource = await readLinkedSource(link.path);
+    if (fromSource !== null) return fromSource;
   }
   try {
     const base = await ensureNotesDir();
@@ -1046,57 +1127,104 @@ export async function loadNoteContent(id: string): Promise<string> {
   return "";
 }
 
-export async function saveNoteContent(id: string, content: string): Promise<void> {
+function errorCode(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : "";
+  }
+  return "";
+}
+
+function errorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function saveLinkedNote(
+  id: string,
+  link: LinkedSource,
+  content: string,
+  force: boolean,
+): Promise<NoteSaveResult> {
+  try {
+    await invoke("external_note_write", { path: link.path, content, force });
+  } catch (error) {
+    const code = errorCode(error);
+    if (code === "EXTERNAL_WRITE_CONFLICT") {
+      let diskContent: string | undefined;
+      try {
+        const info = await invoke<ExternalNotePayload>("external_note_read_path", {
+          path: link.path,
+        });
+        diskContent = info.content;
+        registerLinkedNoteSource(id, info.path, { mirror: link.mirror });
+      } catch (readError) {
+        console.warn("Failed to read the conflicted file:", link.path, readError);
+      }
+      return { status: "conflict", message: errorMessage(error), diskContent };
+    }
+    if (code === "EXTERNAL_FILE_MISSING") {
+      return { status: "missing", message: errorMessage(error) };
+    }
+    if (code === "EXTERNAL_ENCODING_UNSUPPORTED") {
+      return { status: "unsupported", message: errorMessage(error) };
+    }
+    console.error("Failed to save the linked note:", link.path, error);
+    return { status: "denied", message: errorMessage(error) };
+  }
+
+  if (link.mirror) {
+    // The source already holds the text, so a failed mirror is a warning, not a
+    // lost edit: the next save rewrites it, and `loadNoteContent` reads the
+    // source anyway.
+    await writeNoteMirror(id, content);
+  }
+  markNoteContentDirty(id);
+  return { status: "ok" };
+}
+
+export async function saveNoteContent(id: string, content: string): Promise<NoteSaveResult> {
   assertSafeNoteId(id);
+  const link = linkedSources.get(id);
+  if (link) return saveLinkedNote(id, link, content, false);
+
   try {
     const base = await ensureNotesDir();
     const path = await join(base, `${id}.md`);
     await writeFileAtomic(path, content);
     // Name the note so the knowledge index only re-reads this one body.
     markNoteContentDirty(id);
+    return { status: "ok" };
   } catch (e) {
     console.error("Failed to save note content:", e);
+    return { status: "denied", message: errorMessage(e) };
   }
 }
 
-async function externalDraftPath(id: string): Promise<string> {
-  // No `ensureDirectory` here: reads must not create a folder in a data
-  // directory that may be unavailable (unplugged drive).
-  const base = await getDataDirectory();
-  return join(base, EXTERNAL_DRAFT_DIR, `${id}.md`);
+/** "Keep mine": the user decided the buffer wins over the file on disk. */
+export async function forceSaveNoteContent(id: string, content: string): Promise<NoteSaveResult> {
+  assertSafeNoteId(id);
+  const link = linkedSources.get(id);
+  if (!link) return saveNoteContent(id, content);
+  return saveLinkedNote(id, link, content, true);
 }
 
-/** `null` means "no draft"; an empty string is a real (cleared) draft. */
-export async function loadExternalDraft(id: string): Promise<string | null> {
-  if (!isSafeNoteId(id)) return null;
-  try {
-    const path = await externalDraftPath(id);
-    if (!(await exists(path))) return null;
-    return await readTextFile(path);
-  } catch (e) {
-    console.error("Failed to load the external draft:", e);
-    return null;
-  }
-}
-
-export async function saveExternalDraft(id: string, content: string): Promise<void> {
+/**
+ * Write `notes/<id>.md`. Used for a linked note's mirror and for the one-time
+ * migration that preserves an old imported copy.
+ */
+export async function writeNoteMirror(id: string, content: string): Promise<void> {
   assertSafeNoteId(id);
   try {
-    const directory = await join(await getDataDirectory(), EXTERNAL_DRAFT_DIR);
-    await ensureDirectory(directory);
-    await writeFileAtomic(await join(directory, `${id}.md`), content);
+    const base = await ensureNotesDir();
+    await writeFileAtomic(await join(base, `${id}.md`), content);
   } catch (e) {
-    console.error("Failed to save the external draft:", e);
-  }
-}
-
-export async function deleteExternalDraft(id: string): Promise<void> {
-  if (!isSafeNoteId(id)) return;
-  try {
-    const path = await externalDraftPath(id);
-    if (await exists(path)) await remove(path);
-  } catch (e) {
-    console.error("Failed to delete the external draft:", e);
+    console.error("Failed to write the note mirror:", id, e);
   }
 }
 
@@ -1334,6 +1462,9 @@ export async function deleteNoteFile(id: string): Promise<void> {
     if (await exists(path)) {
       await remove(path);
     }
+    // A linked note's mirror is what gets deleted here; the user's file at
+    // `sourcePath` is deliberately untouched.
+    linkedSources.delete(id);
     await cleanupUnusedImageAttachments();
   } catch (e) {
     console.error("Failed to delete note file:", e);
@@ -1350,6 +1481,8 @@ export interface TrashNoteEntry {
   tags: string[];
   categoryId: string | null;
   categoryName: string | null;
+  /** Kept so a restored linked note still edits the file it came from. */
+  sourcePath?: string | null;
   pinned: boolean;
   order: number;
   createdAt: string;
@@ -1385,6 +1518,7 @@ function normalizeTrashEntry(raw: unknown): TrashNoteEntry | null {
       : [],
     categoryId: typeof value.categoryId === "string" ? value.categoryId : null,
     categoryName: typeof value.categoryName === "string" ? value.categoryName : null,
+    sourcePath: typeof value.sourcePath === "string" ? value.sourcePath : null,
     pinned: value.pinned === true,
     order: typeof value.order === "number" && Number.isFinite(value.order) ? value.order : 0,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
@@ -1491,6 +1625,7 @@ export async function moveNoteToTrash(
     }
 
     if (hasSourceFile) await remove(sourcePath);
+    linkedSources.delete(note.id);
 
     const entry: TrashNoteEntry = {
       id: note.id,
@@ -1498,6 +1633,7 @@ export async function moveNoteToTrash(
       tags: note.tags ?? [],
       categoryId: note.categoryId ?? null,
       categoryName: categoryName ?? null,
+      sourcePath: note.sourcePath ?? null,
       pinned: note.pinned ?? false,
       order: typeof note.order === "number" ? note.order : 0,
       createdAt: note.createdAt,
@@ -1553,6 +1689,7 @@ export async function restoreTrashNote(id: string): Promise<RestoredTrashNote | 
 
     if (await exists(trashPath)) await remove(trashPath);
     await writeTrashIndex(trashNotesDir, entries.filter((item) => item.id !== id));
+    if (entry.sourcePath) registerLinkedNoteSource(entry.id, entry.sourcePath, { mirror: true });
 
     return {
       note: {
@@ -1561,6 +1698,7 @@ export async function restoreTrashNote(id: string): Promise<RestoredTrashNote | 
         content,
         tags: entry.tags,
         categoryId: entry.categoryId,
+        sourcePath: entry.sourcePath ?? null,
         pinned: entry.pinned,
         order: entry.order,
         createdAt: entry.createdAt,

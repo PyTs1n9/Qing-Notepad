@@ -49,9 +49,15 @@ const canvasTileId = params.get("canvasTile");
 const noteWindowId = params.get("noteWindow");
 /**
  * `external` = opened from Explorer, not in `notes/index.json` yet. The window
- * autosaves to `<data>/external-drafts` and commits on "返回主软件".
+ * edits the source file directly; "返回主软件" only adds the index entry.
  */
 const noteWindowSource = params.get("source") === "external" ? "external" : undefined;
+/**
+ * Set when the main window opens an already-linked note. The index is the usual
+ * source for this, but a note adopted moments ago may not be in `index.json`
+ * yet, and the window must not fall back to the mirror in that gap.
+ */
+const noteWindowSourcePath = params.get("path") ?? undefined;
 const wantsProbe = params.get("probe") === "1" && import.meta.env.DEV;
 
 // Applied before React mounts, not in an effect: the window is frameless and
@@ -66,7 +72,13 @@ if (wantsProbe) {
   void import("@/probe/workerProbe").then((module) => module.mountProbe());
   content = <div />;
 } else if (noteWindowId) {
-  content = <NoteWindowView noteId={noteWindowId} source={noteWindowSource} />;
+  content = (
+    <NoteWindowView
+      noteId={noteWindowId}
+      source={noteWindowSource}
+      sourcePath={noteWindowSourcePath}
+    />
+  );
 } else if (canvasTileId) {
   content = <CanvasTileView />;
 } else if (stickyNoteId) {

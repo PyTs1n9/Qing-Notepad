@@ -680,6 +680,15 @@ export type TranslationKeys = {
   returnToMainApp: string;
   externalNoteHint: string;
   externalNoteHintDetail: string;
+  externalSaveConflict: string;
+  externalSaveConflictEditor: string;
+  externalReloadSource: string;
+  externalKeepMine: string;
+  externalFileMissing: string;
+  externalFileReadOnly: string;
+  externalEncodingUnsupported: string;
+  externalRetry: string;
+  externalLegacyCopyKept: string;
   disabledNoAi: string;
   stickyNote: string;
   stickyEmptyHint: string;
@@ -1717,8 +1726,17 @@ const zh: TranslationKeys = {
   openInNewWindow: "在独立窗口中打开",
   closeNoteWindow: "关闭独立窗口",
   returnToMainApp: "返回主软件",
-  externalNoteHint: "外部文件 · 未入库",
-  externalNoteHintDetail: "点「返回主软件」后会加入「未分类笔记」；直接关闭窗口则保留为草稿。",
+  externalNoteHint: "直接编辑源文件",
+  externalNoteHintDetail: "改动会在停止输入后写入 {path}。",
+  externalSaveConflict: "源文件已被其他程序修改，自动保存已暂停",
+  externalSaveConflictEditor: "源文件已被其他程序修改，未能保存；请关闭并重新打开该笔记，或在独立窗口中处理",
+  externalReloadSource: "重新加载源文件",
+  externalKeepMine: "保留我的修改",
+  externalFileMissing: "源文件已被移动或删除，改动只存在于当前窗口",
+  externalFileReadOnly: "源文件不可写，请检查只读属性或文件占用",
+  externalEncodingUnsupported: "该文件的编码无法安全写回，请另存为副本",
+  externalRetry: "重试",
+  externalLegacyCopyKept: "源文件与旧副本内容不同，旧副本已保留为独立笔记",
   disabledNoAi: "独立窗口不支持 AI 润色",
   stickyNote: "磁贴笔记",
   stickyEmptyHint: "双击此处开始编辑…",
@@ -2756,8 +2774,17 @@ const en: TranslationKeys = {
   openInNewWindow: "Open in Separate Window",
   closeNoteWindow: "Close Detached Window",
   returnToMainApp: "Back to App",
-  externalNoteHint: "External file · not saved yet",
-  externalNoteHintDetail: "Press “Back to App” to add it under Uncategorized; closing the window keeps it as a draft.",
+  externalNoteHint: "Editing the source file",
+  externalNoteHintDetail: "Changes are written to {path} after you stop typing.",
+  externalSaveConflict: "Another program changed this file; autosave is paused",
+  externalSaveConflictEditor: "This file changed elsewhere and was not saved. Reopen the note, or resolve it in the separate window",
+  externalReloadSource: "Reload file",
+  externalKeepMine: "Keep my changes",
+  externalFileMissing: "The source file was moved or deleted; edits live only in this window",
+  externalFileReadOnly: "The source file is not writable — check its read-only flag or the program holding it",
+  externalEncodingUnsupported: "This file's encoding cannot be written back safely; save a copy instead",
+  externalRetry: "Retry",
+  externalLegacyCopyKept: "The source differs from the old copy, which was kept as its own note",
   disabledNoAi: "AI polish is unavailable in the separate window",
   stickyNote: "Sticky Note",
   stickyEmptyHint: "Double-click to start writing…",

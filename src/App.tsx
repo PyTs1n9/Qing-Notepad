@@ -81,11 +81,12 @@ import { PASSWORD_RECOVERY_REDIRECT_URL } from "@/utils/supabase";
 import { t, tWithParams } from "@/utils/i18n";
 import { flushActiveNote } from "@/utils/noteFlush";
 import {
+  EXTERNAL_ADD_EVENT,
   EXTERNAL_OPEN_EVENT,
-  EXTERNAL_PENDING_EVENT,
-  importPendingExternalNotes,
+  addToNotebook,
   openExternalPath,
   takeLaunchFiles,
+  type ExternalNoteInfo,
 } from "@/utils/externalNotes";
 import { CANVAS_OPEN_NOTE_EVENT } from "@/utils/canvasRefs";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -374,13 +375,6 @@ export default function App() {
   const drainExternalWork = useCallback(() => {
     externalDrainRef.current = externalDrainRef.current
       .then(async () => {
-        const { imported } = await importPendingExternalNotes();
-        if (imported > 0) {
-          // Land on 未分类笔记 rather than the folder the user was browsing:
-          // an import into a hidden folder looks like it did nothing.
-          setActiveCategoryId(UNCATEGORIZED_CATEGORY_ID);
-          setCurrentView("note");
-        }
         for (const file of await takeLaunchFiles()) {
           await openExternalPath(file);
         }
@@ -388,24 +382,36 @@ export default function App() {
       .catch((error) => {
         console.error("Failed to handle an external markdown file:", error);
       });
-  }, [setActiveCategoryId]);
+  }, []);
 
   useEffect(() => {
     if (!initialized || !isTauri()) return;
 
     drainExternalWork();
     const unlistenOpen = listen(EXTERNAL_OPEN_EVENT, () => drainExternalWork());
-    const unlistenPending = listen(EXTERNAL_PENDING_EVENT, () => drainExternalWork());
+    // "返回主软件" in a file-backed window: the text is already on disk, so this
+    // only adds the index entry (with `sourcePath`) and lands on 未分类笔记.
+    const unlistenAdd = listen<ExternalNoteInfo>(EXTERNAL_ADD_EVENT, (event) => {
+      void addToNotebook(event.payload)
+        .then((result) => {
+          if (result.outcome !== "imported") return;
+          // An import into a folder the user is not looking at looks like it
+          // did nothing.
+          setActiveCategoryId(UNCATEGORIZED_CATEGORY_ID);
+          setCurrentView("note");
+        })
+        .catch((error) => console.error("Failed to add the external note:", error));
+    });
     const unlistenFocus = getCurrentWindow().onFocusChanged(({ payload }) => {
       if (payload) drainExternalWork();
     });
 
     return () => {
       unlistenOpen.then((fn) => fn());
-      unlistenPending.then((fn) => fn());
+      unlistenAdd.then((fn) => fn());
       unlistenFocus.then((fn) => fn());
     };
-  }, [drainExternalWork, initialized]);
+  }, [drainExternalWork, initialized, setActiveCategoryId, setCurrentView]);
 
   // 更新链路的唯一挂载点：启动查一次、回到前台按 1h 限频重查、把下载进度写回 store。
   // 启动弹窗已下线，发现新版本只体现在标题栏的徽标上（decisions-updater.md D7/D11）。
@@ -675,8 +681,8 @@ export default function App() {
     if (noteIndexFingerprintRef.current === fingerprint) return;
     noteIndexFingerprintRef.current = fingerprint;
 
-    const index = notes.map(({ id, title, tags, categoryId, pinned, order, createdAt, updatedAt }) => ({
-      id, title, tags, categoryId, pinned, order, createdAt, updatedAt,
+    const index = notes.map(({ id, title, tags, categoryId, sourcePath, pinned, order, createdAt, updatedAt }) => ({
+      id, title, tags, categoryId, sourcePath, pinned, order, createdAt, updatedAt,
     }));
     // Was a bare call: a rejected write turned into an unhandled rejection.
     void saveNoteIndex(index, categories).catch((error) => {

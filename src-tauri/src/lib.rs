@@ -196,8 +196,8 @@ pub fn run() {
             external::external_take_launch,
             external::external_open_path,
             external::external_note_read,
-            external::external_note_commit,
-            external::external_take_pending,
+            external::external_note_read_path,
+            external::external_note_write,
         ])
         .setup(|app| {
             #[cfg(desktop)]

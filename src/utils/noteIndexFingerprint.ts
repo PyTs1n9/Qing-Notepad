@@ -16,6 +16,8 @@ export interface IndexedNoteMetadata {
   title: string;
   tags: string[];
   categoryId?: string | null;
+  /** Present once a note is linked to a file outside the notebook. */
+  sourcePath?: string | null;
   pinned?: boolean;
   order: number;
 }
@@ -38,8 +40,15 @@ export function noteIndexFingerprint(
 ): string {
   const notePart = notes
     .map((note) =>
-      [note.id, note.title, note.tags.join(","), note.categoryId ?? "", note.pinned ? 1 : 0, note.order]
-        .join(FIELD))
+      [
+        note.id,
+        note.title,
+        note.tags.join(","),
+        note.categoryId ?? "",
+        note.sourcePath ?? "",
+        note.pinned ? 1 : 0,
+        note.order,
+      ].join(FIELD))
     .join(NOTE);
   const categoryPart = categories
     .map((category) =>

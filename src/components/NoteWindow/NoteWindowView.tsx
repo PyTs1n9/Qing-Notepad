@@ -4,6 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { message, open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { AlertTriangle } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
 import EditorMenuBar, { type EditorViewMode } from "@/components/Editor/EditorMenuBar";
 import EditorStatusBar, { type SaveState } from "@/components/Editor/EditorStatusBar";
@@ -21,18 +22,19 @@ import {
   focusMainWindow,
 } from "@/utils/noteWindow";
 import { exportNoteFile } from "@/utils/exportNote";
-import { commitExternalNote, type ExternalNoteInfo } from "@/utils/externalNotes";
+import { requestAddToNotebook, type ExternalNoteInfo } from "@/utils/externalNotes";
 import { toggleVerticalFill } from "@/utils/windowFill";
 import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
 import { insertTable } from "@/utils/markdownCommands";
 import {
-  loadExternalDraft,
+  forceSaveNoteContent,
   loadNoteContent,
   loadNoteList,
   loadSettings,
-  saveExternalDraft,
+  registerLinkedNoteSource,
   saveImageAttachment,
   saveNoteContent,
+  type NoteSaveResult,
 } from "@/utils/storage";
 import { applyTheme } from "@/utils/theme";
 import { htmlToMarkdown, isStoredEditorHtml } from "@/utils/htmlToMarkdown";
@@ -44,14 +46,29 @@ const NO_HEADINGS: OutlineHeading[] = [];
 /** Quiet window: the main editor's debounce is 800ms as well. */
 const AUTOSAVE_DELAY = 800;
 
+/**
+ * A write that did not land. `conflict` is the only one that can be resolved
+ * here (reload or overwrite); the rest mean the file is gone or not writable.
+ */
+type SaveIssue =
+  | { kind: "conflict"; diskContent?: string }
+  | { kind: "missing" }
+  | { kind: "denied"; message?: string }
+  | { kind: "unsupported"; message?: string };
+
+const ISSUE_BUTTON_CLASS =
+  "shrink-0 rounded-md border border-border px-2 py-0.5 text-[11px] font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary";
+
 interface NoteWindowViewProps {
   noteId: string;
   /**
    * `"external"` = the file came from Explorer and is not in the notebook yet.
-   * Content is read from the source file, autosave goes to
-   * `<data>/external-drafts`, and only "返回主软件" adds it to 未分类笔记.
+   * The window edits that file in place; "返回主软件" only adds the index entry,
+   * it does not move the text anywhere.
    */
   source?: "external";
+  /** Path of an already-linked note, passed for the window that adopted it. */
+  sourcePath?: string;
 }
 
 /**
@@ -70,12 +87,16 @@ interface NoteWindowViewProps {
  * merge UI: the rule is "whoever typed last keeps the text until the other one
  * starts typing", which is predictable and never discards an active edit.
  *
- * The one exception is `source === "external"`: the file is not a note yet, so
- * there is no peer window and no index entry. Saves go to a draft file, and
- * "返回主软件" hands the buffer to the main window, which alone writes
- * `notes/index.json`.
+ * `source === "external"` adds one rule on top: the bytes go to the file the
+ * user double-clicked, through `saveNoteContent`'s linked branch. A file that
+ * another program changed in the meantime is never overwritten silently; the
+ * bar above the editor asks first.
  */
-export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) {
+export default function NoteWindowView({
+  noteId,
+  source,
+  sourcePath: initialSourcePath,
+}: NoteWindowViewProps) {
   const isExternal = source === "external";
   const [lang, setLang] = useState<LangType>("zh");
   const [title, setTitle] = useState("");
@@ -90,13 +111,21 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
   const [canRedo, setCanRedo] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [editorFontFamily, setEditorFontFamily] = useState("");
+  const [filePath, setFilePath] = useState("");
+  const [saveIssue, setSaveIssue] = useState<SaveIssue | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const contentRef = useRef("");
   const dirtyRef = useRef(false);
+  const issueRef = useRef<SaveIssue | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const savePromiseRef = useRef<Promise<NoteSaveResult> | null>(null);
+
+  const setIssue = useCallback((issue: SaveIssue | null) => {
+    issueRef.current = issue;
+    setSaveIssue(issue);
+  }, []);
 
   const { fontSize, zoomIn, zoomOut, resetZoom } = useEditorZoom(containerRef, { initialSize: 16 });
 
@@ -120,38 +149,65 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
    * Write the buffer. Concurrent callers queue behind the in-flight write, so a
    * debounce that fires while an explicit Ctrl+S is running cannot interleave
    * two writes of different revisions.
+   *
+   * The result is returned rather than swallowed: a linked file can be changed
+   * by another program, and the close handler must not destroy the window on
+   * top of an unresolved conflict.
    */
-  const saveNow = useCallback(async (): Promise<void> => {
+  const saveNow = useCallback(async (): Promise<NoteSaveResult> => {
     if (savePromiseRef.current) {
       await savePromiseRef.current.catch(() => undefined);
     }
-    if (!dirtyRef.current) return;
+    // An unresolved conflict blocks autosave: retrying would either overwrite
+    // the other program's text or fail forever. The user decides below.
+    if (issueRef.current?.kind === "conflict") {
+      return { status: "conflict" };
+    }
+    if (!dirtyRef.current) return { status: "ok" };
 
     const content = contentRef.current;
     dirtyRef.current = false;
     setIsDirty(false);
     setIsSaving(true);
 
-    const promise = (async () => {
+    const promise = (async (): Promise<NoteSaveResult> => {
       try {
-        if (isExternal) {
-          // Not a note yet: keep the edits recoverable without making the file
-          // visible to `loadNoteList()` (which recovers every `.md` in notes/).
-          await saveExternalDraft(noteId, content);
+        const result = await saveNoteContent(noteId, content);
+        if (result.status === "ok") {
           setSavedAt(Date.now());
-        } else {
-          await saveNoteContent(noteId, content);
-          setSavedAt(Date.now());
-          // The main editor reloads only if it has no unsaved edits; see the
-          // class comment. It also drives the tab strip's dirty dot.
-          await emit(NOTE_WINDOW_SAVED_EVENT, { noteId, content });
+          setIssue(null);
+          try {
+            // The main editor reloads only if it has no unsaved edits; see the
+            // class comment. It also drives the tab strip's dirty dot.
+            await emit(NOTE_WINDOW_SAVED_EVENT, { noteId, content });
+          } catch (error) {
+            // The text is already on disk; a failed broadcast only delays the
+            // other window's refresh.
+            console.error("Failed to broadcast the detached note save:", error);
+          }
+          return result;
         }
+
+        dirtyRef.current = true;
+        setIsDirty(true);
+        if (result.status === "conflict") {
+          setIssue({ kind: "conflict", diskContent: result.diskContent });
+        } else if (result.status === "missing") {
+          setIssue({ kind: "missing" });
+        } else if (result.status === "unsupported") {
+          setIssue({ kind: "unsupported", message: result.message });
+        } else {
+          setIssue({ kind: "denied", message: result.message });
+        }
+        return result;
       } catch (error) {
-        // `saveNoteContent` reports its own failures; this branch still matters
-        // because a failed broadcast must not look like a successful save.
         dirtyRef.current = true;
         setIsDirty(true);
         console.error("Failed to save the detached note:", error);
+        return {
+          status: "denied",
+          message: error instanceof Error ? error.message : String(error),
+        };
       } finally {
         setIsSaving(false);
       }
@@ -159,11 +215,11 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
 
     savePromiseRef.current = promise;
     try {
-      await promise;
+      return await promise;
     } finally {
       if (savePromiseRef.current === promise) savePromiseRef.current = null;
     }
-  }, [isExternal, noteId]);
+  }, [noteId, setIssue]);
 
   const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -196,12 +252,12 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
     viewRef.current = view;
   }, []);
 
-  const flushSave = useCallback(async () => {
+  const flushSave = useCallback(async (): Promise<NoteSaveResult> => {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
-    await saveNow();
+    return saveNow();
   }, [saveNow]);
 
   // ---------------------------------------------------------------- window --
@@ -224,26 +280,30 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
   }, []);
 
   const returnToMain = useCallback(async () => {
+    const result = await flushSave();
+    // Adding a file whose buffer never reached the source would index the old
+    // text; keep the window open on any failed write.
+    if (result.status !== "ok") return;
+
     try {
-      await flushSave();
       if (isExternal) {
-        // Hand over the buffer we just flushed rather than letting the main
-        // window read the draft: the debounce may not have fired yet, and an
-        // unedited file has no draft at all.
-        try {
-          await commitExternalNote(noteId, contentRef.current);
-        } catch (error) {
-          // The draft is still on disk, so reopening the file resumes the work.
-          console.error("Failed to queue the external note for import:", error);
-        }
+        await requestAddToNotebook({
+          id: noteId,
+          path: filePath,
+          title,
+          content: contentRef.current,
+        });
       }
       await focusMainWindow();
-    } finally {
-      // `destroy` rather than `close`: the close-requested handler would try to
-      // flush again, and the write already happened above.
-      await getCurrentWindow().destroy().catch(() => undefined);
+    } catch (error) {
+      console.error("Failed to hand the external note to the main window:", error);
+      return;
     }
-  }, [flushSave, isExternal, noteId]);
+
+    // `destroy` rather than `close`: the close-requested handler would try to
+    // flush again, and the write already happened above.
+    await getCurrentWindow().destroy().catch(() => undefined);
+  }, [filePath, flushSave, isExternal, noteId, title]);
 
   // --------------------------------------------------------------- loading --
   useEffect(() => {
@@ -265,24 +325,18 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
 
         if (isExternal) {
           // The source file is read through Rust (the renderer has no fs scope
-          // for arbitrary paths); an unreadable file must still show the draft.
-          let info: ExternalNoteInfo | null = null;
+          // for arbitrary paths). Registering it as a link is what makes the
+          // autosave below land in that file instead of `notes/<id>.md`.
           try {
-            info = await invoke<ExternalNoteInfo>("external_note_read", { id: noteId });
+            const info = await invoke<ExternalNoteInfo>("external_note_read", { id: noteId });
+            if (cancelled) return;
+            setTitle(info.title || "");
+            setFilePath(info.path);
+            registerLinkedNoteSource(noteId, info.path, { mirror: false });
+            initialContent = info.content;
           } catch (error) {
             console.warn("The external markdown file is no longer readable:", error);
-          }
-          const draft = await loadExternalDraft(noteId);
-          if (cancelled) return;
-          if (info) setTitle(info.title || "");
-          if (draft !== null) {
-            // Unsaved work from a previous visit beats the file on disk. That
-            // is the whole point of the draft: closing the window without
-            // pressing "返回主软件" must not lose the edit.
-            initialContent = draft;
-            setSavedAt(Date.now());
-          } else if (info) {
-            initialContent = info.content;
+            if (!cancelled) setIssue({ kind: "missing" });
           }
         } else {
           const index = await loadNoteList();
@@ -290,8 +344,15 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
           if (cancelled) return;
           if (meta) {
             setTitle(meta.title || "");
+            if (meta.sourcePath) setFilePath(meta.sourcePath);
             const parsed = Date.parse(meta.updatedAt);
             setSavedAt(Number.isNaN(parsed) ? null : parsed);
+          }
+          if (initialSourcePath) {
+            // `loadNoteList` rebuilds the registry from the index; override with
+            // the path the main window just handed over, which may be newer.
+            setFilePath(initialSourcePath);
+            registerLinkedNoteSource(noteId, initialSourcePath, { mirror: true });
           }
 
           const stored = await loadNoteContent(noteId);
@@ -314,7 +375,7 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
       cancelled = true;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [isExternal, noteId]);
+  }, [initialSourcePath, isExternal, noteId, setIssue]);
 
   // ---------------------------------------------------------------- syncing --
   // Main window → this window. Unsaved local edits win; otherwise the disk
@@ -363,7 +424,11 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
     void appWindow
       .onCloseRequested(async (event) => {
         event.preventDefault();
-        await flushSave();
+        const result = await flushSave();
+        // A conflict means the file holds someone else's text. Destroying the
+        // window here would leave the buffer with nowhere to go: keep it open
+        // until the user picks "reload" or "keep mine".
+        if (result.status === "conflict") return;
         if (!disposed) await appWindow.destroy().catch(() => undefined);
       })
       .then((fn) => {
@@ -511,13 +576,57 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
     await exportNoteFile({ title, content: contentRef.current, lang });
   }, [flushSave, lang, title]);
 
+  /** Conflict action 1: discard the buffer and take what the file holds. */
+  const reloadFromDisk = useCallback(async () => {
+    const content = await loadNoteContent(noteId);
+    // Reading also refreshes the Rust session's baseline, which is why this goes
+    // through the normal loader instead of the snapshot carried by the error.
+    if (!content && contentRef.current) {
+      // The file disappeared between the conflict and this click. Emptying the
+      // buffer here would destroy the only copy left.
+      setIssue({ kind: "missing" });
+      return;
+    }
+    contentRef.current = content;
+    setMdContent(content);
+    dirtyRef.current = false;
+    setIsDirty(false);
+    setIssue(null);
+    setSavedAt(Date.now());
+  }, [noteId, setIssue]);
+
+  /** Conflict action 2: the buffer wins, overwrite the other program's text. */
+  const keepMine = useCallback(async () => {
+    const result = await forceSaveNoteContent(noteId, contentRef.current);
+    if (result.status !== "ok") {
+      setIssue({ kind: "denied", message: result.message });
+      return;
+    }
+    dirtyRef.current = false;
+    setIsDirty(false);
+    setIssue(null);
+    setSavedAt(Date.now());
+  }, [noteId, setIssue]);
+
+  const issueMessage = saveIssue
+    ? saveIssue.kind === "conflict"
+      ? t(lang, "externalSaveConflict")
+      : saveIssue.kind === "missing"
+        ? t(lang, "externalFileMissing")
+        : saveIssue.kind === "unsupported"
+          ? t(lang, "externalEncodingUnsupported")
+          : t(lang, "externalFileReadOnly")
+    : "";
+
   return (
     <div ref={containerRef} className="h-screen w-screen">
       <NoteWindowChrome
         lang={lang}
         title={title}
-        hint={isExternal ? t(lang, "externalNoteHint") : undefined}
-        hintDetail={isExternal ? t(lang, "externalNoteHintDetail") : undefined}
+        hint={filePath ? t(lang, "externalNoteHint") : undefined}
+        hintDetail={
+          filePath ? tWithParams(lang, "externalNoteHintDetail", { path: filePath }) : undefined
+        }
         isMaximized={isMaximized}
         onMinimize={minimizeWindow}
         onToggleMaximize={toggleMaximize}
@@ -557,6 +666,44 @@ export default function NoteWindowView({ noteId, source }: NoteWindowViewProps) 
           />
         }
       >
+        {saveIssue && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-border bg-bg-secondary px-4 py-1.5">
+            <AlertTriangle size={12} className="shrink-0 text-danger" aria-hidden="true" />
+            <span
+              className="min-w-0 flex-1 truncate text-[11px] text-text-secondary"
+              title={issueMessage}
+            >
+              {issueMessage}
+            </span>
+            {saveIssue.kind === "conflict" ? (
+              <>
+                <button
+                  type="button"
+                  className={ISSUE_BUTTON_CLASS}
+                  onClick={() => void reloadFromDisk()}
+                >
+                  {t(lang, "externalReloadSource")}
+                </button>
+                <button type="button" className={ISSUE_BUTTON_CLASS} onClick={() => void keepMine()}>
+                  {t(lang, "externalKeepMine")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button type="button" className={ISSUE_BUTTON_CLASS} onClick={() => void saveNow()}>
+                  {t(lang, "externalRetry")}
+                </button>
+                <button
+                  type="button"
+                  className={ISSUE_BUTTON_CLASS}
+                  onClick={() => void handleExport()}
+                >
+                  {t(lang, "exportFile")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div className="note-body relative flex min-h-0 flex-1 overflow-hidden">
           {outlineOpen && ready && (
             <NoteOutlinePanel

@@ -70,13 +70,18 @@ function currentPageColor(): [number, number, number] | undefined {
  * chrome would be a second, differently styled title bar above it.
  *
  * `external` marks a file opened from Explorer that is not in the notebook yet:
- * the window reads it through the Rust registry and autosaves to a draft, and
- * only "返回主软件" adds it to 未分类笔记.
+ * the window reads it through the Rust registry and writes changes back to the
+ * file; only "返回主软件" adds it to 未分类笔记.
+ *
+ * `sourcePath` is passed for an already-linked note. The index is normally the
+ * source of truth for that path, but a note adopted seconds ago may not have
+ * reached `index.json` yet, and the window would then read the mirror instead
+ * of the user's file.
  */
 export async function openNoteWindow(
   noteId: string,
   title: string,
-  options?: { external?: boolean },
+  options?: { external?: boolean; sourcePath?: string },
 ): Promise<void> {
   const label = windowLabelFor(noteId);
   const existing = await WebviewWindow.getByLabel(label);
@@ -104,8 +109,11 @@ export async function openNoteWindow(
     // Position is cosmetic; fall back to the OS default.
   }
 
+  const sourceParam = options?.sourcePath
+    ? `&path=${encodeURIComponent(options.sourcePath)}`
+    : "";
   const win = new WebviewWindow(label, {
-    url: `/?noteWindow=${encodeURIComponent(noteId)}${options?.external ? "&source=external" : ""}`,
+    url: `/?noteWindow=${encodeURIComponent(noteId)}${options?.external ? "&source=external" : ""}${sourceParam}`,
     title: title || "Qing Notepad",
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
