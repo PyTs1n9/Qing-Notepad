@@ -142,14 +142,28 @@ const fixtures = [
     expect: ["hide:0-1:", "hide:1-3:", "mark:1-7:cm-md-em", "mark:3-5:cm-md-strong", "hide:5-7:", "hide:7-8:"],
   },
   {
-    name: "标题：按级别加行样式，不隐藏 #",
+    name: "标题：按级别加行样式，`#` 与后随空格一并隐藏",
     doc: "# 一级\n\n## 二级\n\n###### 六级\n",
-    expect: ["line:0:cm-md-h1", "line:6:cm-md-h2", "line:13:cm-md-h6"],
+    expect: [
+      "line:0:cm-md-h1",
+      "hide:0-2:",
+      "line:6:cm-md-h2",
+      "hide:6-9:",
+      "line:13:cm-md-h6",
+      "hide:13-20:",
+    ],
   },
   {
-    name: "引用：左侧竖线加在每一行，> 保持可见",
+    // The `===` underline is a HeaderMark on the next line; hiding it would
+    // leave an empty line where it used to be, so Setext keeps its underline.
+    name: "Setext 标题：只加行样式，不隐藏下划线",
+    doc: "标题\n===\n",
+    expect: ["line:0:cm-md-h1"],
+  },
+  {
+    name: "引用：左侧竖线加在每一行，`>` 与后随空格隐藏",
     doc: "> 引用一\n> 引用二\n",
-    expect: ["line:0:cm-md-quote", "line:6:cm-md-quote"],
+    expect: ["line:0:cm-md-quote", "hide:0-2:", "line:6:cm-md-quote", "hide:6-8:"],
   },
   {
     // First/last lines carry their own class so CSS can round the card, and each
@@ -369,6 +383,25 @@ section("L3 当前块回退（块内 hide 撤销，块级视觉保留）");
   const span = { from: Math.min(spanStart.from, spanEnd.from), to: Math.max(spanStart.to, spanEnd.to) };
   const spanned = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: span }).map(format);
   check("跨块选区把整段都回退为源码", !spanned.some((spec) => spec.startsWith("hide:")), JSON.stringify(spanned));
+}
+
+section("块级标记：光标进入块时回退源码");
+
+{
+  const doc = "# 标题\n\n> 引用 **乙**\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+
+  const heading = blockAtPosition(state, 2);
+  const inHeading = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: heading }).map(format);
+  check("标题块回退：`#` 重新出现", !inHeading.includes("hide:0-2:"), JSON.stringify(inHeading));
+  check("标题块外引用仍隐藏 `>`", inHeading.includes("hide:6-8:"), JSON.stringify(inHeading));
+
+  const quote = blockAtPosition(state, doc.indexOf("引用") + 1);
+  const inQuote = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: quote }).map(format);
+  check("引用块回退：`>` 重新出现", !inQuote.includes("hide:6-8:"), JSON.stringify(inQuote));
+  check("引用块回退后左侧竖线仍在", inQuote.includes("line:6:cm-md-quote"), JSON.stringify(inQuote));
+  check("引用块外标题仍隐藏 `#`", inQuote.includes("hide:0-2:"), JSON.stringify(inQuote));
 }
 
 section("列表符号：光标进入该项时回退源码");

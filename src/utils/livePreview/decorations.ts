@@ -256,6 +256,15 @@ function visitNode(
     case "TaskMarker":
       addTaskCheckbox(node, state, visible, push);
       return false;
+    // Block markers are hidden only outside the caret's block: `push` drops
+    // hides inside `reveal`, so the caret's heading shows its `#` and its quote
+    // shows its `>` again — the same rule list markers and inline marks obey.
+    case "HeaderMark":
+      addHeaderMark(node, state, visible, push);
+      return false;
+    case "QuoteMark":
+      addQuoteMark(node, state, visible, push);
+      return false;
     default:
       break;
   }
@@ -361,6 +370,39 @@ function addListMark(node: SyntaxNode, state: EditorState, visible: VisibleRange
     className: "cm-md-bullet",
     text: BULLET_GLYPHS[(level - 1) % BULLET_GLYPHS.length],
   });
+}
+
+/**
+ * The `#` run of an ATX heading (and a closing `###`), hidden together with the
+ * single space after it so the text starts at the line's left edge.
+ *
+ * A Setext heading's `HeaderMark` is the `===` underline, which sits on the
+ * *next* line; hiding it would leave an empty line where it was, so the line
+ * check below keeps Setext headings as they are. Only `#` is in scope here.
+ */
+function addHeaderMark(node: SyntaxNode, state: EditorState, visible: VisibleRange, push: Push): void {
+  const heading = node.parent;
+  if (!heading || headingLevelOf(heading.name) === 0) return;
+  const markLine = state.doc.lineAt(node.from).number;
+  if (markLine !== state.doc.lineAt(heading.from).number) return;
+  const end = includeTrailingSpace(state, node.to);
+  if (!contains(visible, node.from, end)) return;
+  push({ kind: "hide", from: node.from, to: end });
+}
+
+/**
+ * `>` plus the space after it. The line keeps `.cm-md-quote` (left bar +
+ * indent), which is what replaces the marker visually — hiding `>` without
+ * that indent would leave the text glued to the bar.
+ *
+ * Multi-line quotes have one `QuoteMark` per line, and a lazily continued line's
+ * mark lives *inside* the paragraph; hiding them all is what makes a quote read
+ * as one block instead of a stack of `>`.
+ */
+function addQuoteMark(node: SyntaxNode, state: EditorState, visible: VisibleRange, push: Push): void {
+  const end = includeTrailingSpace(state, node.to);
+  if (!contains(visible, node.from, end)) return;
+  push({ kind: "hide", from: node.from, to: end });
 }
 
 /** `[ ]` / `[x]` → a checkbox; the `- ` in front of it is hidden above. */
