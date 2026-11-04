@@ -3435,104 +3435,41 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   text-underline-offset: 0.15em;
 }
 
-/* Headings: size, weight, and the small gap *below* them. The gap **above** a
-   heading is not declared here — see the `:has(+ ...)` block underneath.
-   `padding`, never `margin`: CodeMirror measures a line's height from its box,
-   and a margin would sit outside that measurement — the height map then
-   disagrees with the DOM and the scroll position drifts on every re-measure.
-
-   The `.cm-content` + `.cm-line` prefix is load-bearing, not decoration: the
-   base theme ships `.ͼ1 .cm-line { padding: 0 2px 0 6px }` — two classes, and
-   its stylesheet is injected at runtime *after* this one — so a single-class
-   `.cm-md-h1` padding was silently reset to 0 and the headings had no gap at
-   all. Three classes outrank it, whatever the injection order. `.cm-md-quote`
-   and the code-block card below had the same dead padding for the same reason. */
-.cm-content .cm-line.cm-md-h1 {
+.cm-md-h1 {
   font-size: 1.85em;
   font-weight: 700;
   line-height: 1.4;
-  padding-bottom: 0.32em;
 }
 
-.cm-content .cm-line.cm-md-h2 {
+.cm-md-h2 {
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.45;
-  padding-bottom: 0.3em;
 }
 
-.cm-content .cm-line.cm-md-h3 {
+.cm-md-h3 {
   font-size: 1.32em;
   font-weight: 600;
   line-height: 1.5;
-  padding-bottom: 0.26em;
 }
 
-.cm-content .cm-line.cm-md-h4 {
+.cm-md-h4 {
   font-size: 1.16em;
   font-weight: 600;
-  padding-bottom: 0.2em;
 }
 
-.cm-content .cm-line.cm-md-h5 {
+.cm-md-h5 {
   font-size: 1.06em;
   font-weight: 600;
-  padding-bottom: 0.16em;
 }
 
-.cm-content .cm-line.cm-md-h6 {
+.cm-md-h6 {
   font-size: 1em;
   font-weight: 600;
   color: var(--color-text-secondary);
-  padding-bottom: 0.16em;
 }
 
-/* The gap above a heading sits on the line **before** it.
-   Not a stylistic choice: CodeMirror pins each line number and fold arrow to
-   the *top* of its row, so a `padding-top` on the heading pushed the text down
-   while its own number stayed at the top — the numbers read as if they belonged
-   to the previous line, and a tall heading collected a crowd of numbers above
-   it. A `padding-bottom` on the preceding line moves the real boundary instead,
-   so text, number and arrow stay together, and the height is still inside a
-   measured line box.
-   The values are `em` of the *preceding* line — 16px in the normal case (blank
-   line or paragraph), which is what these numbers are tuned against. */
-.cm-content .cm-line:has(+ .cm-md-h1) {
-  padding-bottom: 1.5em;
-}
-
-.cm-content .cm-line:has(+ .cm-md-h2) {
-  padding-bottom: 1em;
-}
-
-.cm-content .cm-line:has(+ .cm-md-h3) {
-  padding-bottom: 0.75em;
-}
-
-.cm-content .cm-line:has(+ .cm-md-h4) {
-  padding-bottom: 0.5em;
-}
-
-.cm-content .cm-line:has(+ .cm-md-h5),
-.cm-content .cm-line:has(+ .cm-md-h6) {
-  padding-bottom: 0.4em;
-}
-
-/* A blank source line *is* the paragraph break. At the scroller's 1.7
-   line-height it took a full 27px, which made the gap between two paragraphs
-   larger than the gap before a heading — the rhythm read backwards. One em is
-   Typora's paragraph gap and keeps 段间距 < 标题前间距. */
-.cm-line:has(> br:only-child) {
-  line-height: 1;
-}
-
-/* Inside a fenced block the blank line is part of the card, not a separator:
-   collapsing it would break the block's background into stripes. */
-.cm-line.cm-md-code-block:has(> br:only-child) {
-  line-height: inherit;
-}
-
-.cm-content .cm-line.cm-md-quote {
+.cm-md-quote {
   border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
   padding-left: 0.7em;
   color: var(--color-text-secondary);
@@ -3548,7 +3485,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 /* styles `.cm-line` at the same single-class specificity, and its    */
 /* stylesheet is injected after this file.                            */
 /* ---------------------------------------------------------------- */
-.cm-content .cm-line.cm-md-code-block {
+.cm-line.cm-md-code-block {
   background-color: var(--color-bg-secondary);
   /* Code is the one place a monospace face is correct; the body no longer is. */
   font-family: var(--editor-font-mono);

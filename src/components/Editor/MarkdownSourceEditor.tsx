@@ -130,8 +130,6 @@ const noteEditorTheme = EditorView.theme({
     height: "100%",
     minHeight: "0",
     color: "var(--color-text-primary)",
-    // Deliberately transparent: the editor is a surface *on* the glass card, so
-    // the tint, the blur and a wallpaper all read through the text.
     backgroundColor: "transparent",
   },
   ".cm-scroller": {
@@ -140,16 +138,8 @@ const noteEditorTheme = EditorView.theme({
   },
   ".cm-content": {
     minHeight: "100%",
-    // Typora's first-line inset: the text starts 40px below the card's edge.
-    padding: "40px 24px 96px",
-    // 44em ≈ 704px at 16px, i.e. 60–80 Chinese characters per line. `em`, not
-    // px, so zooming keeps the *line length* instead of the column width.
-    // The column stays **left-aligned** — the text begins right after the gutter
-    // and the surplus width is simply empty, as in the source view.
-    maxWidth: "44em",
+    padding: "16px 20px",
   },
-  // The self-made gutter has to keep its own surface: CodeMirror's default is a
-  // transparent strip, and over the glass the numbers would sit on the blur.
   ".cm-gutters": {
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-muted)",
