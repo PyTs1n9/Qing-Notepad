@@ -3435,13 +3435,11 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   text-underline-offset: 0.15em;
 }
 
-/* Headings carry their own gap above (`padding-top`), decreasing by level, so
-   the eye reads h1 → h2 → h3 as one descending ladder.
+/* Headings: size, weight, and the small gap *below* them. The gap **above** a
+   heading is not declared here — see the `:has(+ ...)` block underneath.
    `padding`, never `margin`: CodeMirror measures a line's height from its box,
    and a margin would sit outside that measurement — the height map then
    disagrees with the DOM and the scroll position drifts on every re-measure.
-   The values are `em` of the heading's own size (h1's padding is 1.85× the body
-   em), which is why they look small for h1: 0.8em there is ~24px at 16px body.
 
    The `.cm-content` + `.cm-line` prefix is load-bearing, not decoration: the
    base theme ships `.ͼ1 .cm-line { padding: 0 2px 0 6px }` — two classes, and
@@ -3453,7 +3451,6 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-size: 1.85em;
   font-weight: 700;
   line-height: 1.4;
-  padding-top: 0.8em;
   padding-bottom: 0.32em;
 }
 
@@ -3461,7 +3458,6 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.45;
-  padding-top: 0.65em;
   padding-bottom: 0.3em;
 }
 
@@ -3469,21 +3465,18 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-size: 1.32em;
   font-weight: 600;
   line-height: 1.5;
-  padding-top: 0.55em;
   padding-bottom: 0.26em;
 }
 
 .cm-content .cm-line.cm-md-h4 {
   font-size: 1.16em;
   font-weight: 600;
-  padding-top: 0.45em;
   padding-bottom: 0.2em;
 }
 
 .cm-content .cm-line.cm-md-h5 {
   font-size: 1.06em;
   font-weight: 600;
-  padding-top: 0.38em;
   padding-bottom: 0.16em;
 }
 
@@ -3491,15 +3484,38 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-size: 1em;
   font-weight: 600;
   color: var(--color-text-secondary);
-  padding-top: 0.32em;
   padding-bottom: 0.16em;
 }
 
-/* The 40px inset already *is* the page's top margin; a heading on the first
-   line must not add a second gap on top of it. Two classes + a pseudo-class,
-   so this outranks every `.cm-md-h*` above without `!important`. */
-.cm-content > .cm-line:first-child {
-  padding-top: 0;
+/* The gap above a heading sits on the line **before** it.
+   Not a stylistic choice: CodeMirror pins each line number and fold arrow to
+   the *top* of its row, so a `padding-top` on the heading pushed the text down
+   while its own number stayed at the top — the numbers read as if they belonged
+   to the previous line, and a tall heading collected a crowd of numbers above
+   it. A `padding-bottom` on the preceding line moves the real boundary instead,
+   so text, number and arrow stay together, and the height is still inside a
+   measured line box.
+   The values are `em` of the *preceding* line — 16px in the normal case (blank
+   line or paragraph), which is what these numbers are tuned against. */
+.cm-content .cm-line:has(+ .cm-md-h1) {
+  padding-bottom: 1.5em;
+}
+
+.cm-content .cm-line:has(+ .cm-md-h2) {
+  padding-bottom: 1em;
+}
+
+.cm-content .cm-line:has(+ .cm-md-h3) {
+  padding-bottom: 0.75em;
+}
+
+.cm-content .cm-line:has(+ .cm-md-h4) {
+  padding-bottom: 0.5em;
+}
+
+.cm-content .cm-line:has(+ .cm-md-h5),
+.cm-content .cm-line:has(+ .cm-md-h6) {
+  padding-bottom: 0.4em;
 }
 
 /* A blank source line *is* the paragraph break. At the scroller's 1.7
