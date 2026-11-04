@@ -144,6 +144,25 @@ const noteEditorTheme = EditorView.theme({
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-muted)",
     borderRight: "1px solid var(--color-border)",
+    // The gutter must not track the body size 1:1: at 16px body the numbers are
+    // as tall as the prose, which reads as a slab and costs ~36px of a card that
+    // is already narrow. 0.78em keeps them legible (12.5px at the default body)
+    // and scales with the user's font-size setting because it is relative.
+    // Width is content-driven (CodeMirror measures a hidden spacer holding the
+    // digits of the last line), so shrinking the type is the only lever that
+    // does not clip a four-digit document.
+    fontSize: "0.78em",
+    fontVariantNumeric: "tabular-nums",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 2px 0 4px",
+    minWidth: "18px",
+    // Line-height must stay at the *body* line height (1.7 × body), not
+    // 1.7 × 0.78em: CodeMirror gives every gutter row the line's full height,
+    // and a shorter internal line box leaves the digits stranded at the top of
+    // it. 1.7 / 0.78 — keep in sync with `.cm-scroller` lineHeight and the
+    // `.cm-gutters` font-size above.
+    lineHeight: "2.18",
   },
   ".cm-activeLine": {
     backgroundColor: "transparent",

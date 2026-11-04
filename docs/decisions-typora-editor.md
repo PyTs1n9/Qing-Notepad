@@ -724,3 +724,24 @@ D2 的间距/宽度整组已回滚（提交 `4283453`），只保留字体修复
   升到 `.cm-content .cm-line.cm-md-quote` 并把缩进提到 0.9em。
 - 验证：`verify:live-preview` 54 项全过（新增 Setext 不隐藏、标题/引用回退、引用竖线
   仍在）；WebView2 实测标题不显示 `#`、引用只剩竖线、光标所在行回到 `- **…**` 源码态。
+
+### 行号槽收窄（2026-11-04 追加）
+
+用户报「行号槽太宽」。收窄的是**槽本身的排版**，不是隐藏功能：行号与折叠箭头都保留
+（D2-5 的结论不变，用户当时明确要这两样）。
+
+- **结论**：`.cm-gutters` 字号 `0.78em` + `tabular-nums`；`.cm-lineNumbers .cm-gutterElement`
+  `padding: 0 2px 0 4px`、`min-width: 18px`、`line-height: 2.18`。两个编辑器同值
+  （`MarkdownSourceEditor` 与 `CloudNoteEditor` 各有自己的 `EditorView.theme`，不复用）。
+- **理由一：宽度是内容驱动的，字号是唯一安全的杠杆。** CodeMirror 用一个隐藏 spacer
+  量「最后一行行号」的字宽来定列宽，`padding` 只占 8px；写死 `width` 会在四位数的长文档里
+  裁掉高位数字。0.78em 在默认 16px 正文下是 12.48px，仍是可读尺寸，且随用户字号设置等比放大。
+- **理由二：行号行高必须等于正文行高。** `.cm-gutterElement` 的 `height` 由 CodeMirror
+  内联写成该行块高度（16px 正文 × 1.7 = 27.2px），元素自己的 `line-height` 却按 12.48px
+  算成 21.2px，数字会顶在行首、比正文基线高约 4px。`line-height: 2.18` 就是
+  `1.7 / 0.78`，改正文行高或字号时两个数必须一起改。
+- **不要用 `padding-top` 调垂直**：见上文坑 3，会让行号与折叠箭头整体上浮错位。
+- **实测**（release exe + `--eval`）：槽总宽 47.69 → 37.53px（−21%），行号列 36.16 → 27.95px，
+  折叠槽 10.86 → 8.92px；行号 `line-height` 27.21px 与行块高度一致。
+- **未覆盖**：四位数行号（≥1000 行）的实测、独立笔记窗口内的观感、自定义字号（如 20px）
+  下的比例。

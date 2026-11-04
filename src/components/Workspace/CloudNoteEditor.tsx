@@ -572,6 +572,15 @@ const editorTheme = EditorView.theme({
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-muted)",
     borderRight: "1px solid var(--color-border)",
+    // Kept identical to the note editor's gutter (see MarkdownSourceEditor):
+    // 0.78em + tighter padding instead of body-size digits.
+    fontSize: "0.78em",
+    fontVariantNumeric: "tabular-nums",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    padding: "0 2px 0 4px",
+    minWidth: "18px",
+    lineHeight: "2.18",
   },
   ".cm-activeLine": {
     backgroundColor: "transparent",
