@@ -3645,13 +3645,65 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   text-underline-offset: 0.15em;
 }
 
-/* `-` and `1.` share one fixed column so the text after them starts at the
-   same offset; the source space after the marker supplies the gap. */
-.cm-md-list-mark {
+/* Rendered list markers. The source `-` / `1.` is replaced by a widget, so the
+   marker is ordinary DOM inside the line — no more dimmed raw characters. One
+   fixed cell keeps every item's text on the same column no matter how wide its
+   bullet or number is; the gap comes from the widget's own margin, because the
+   space after the marker is part of the replaced range. */
+.cm-md-list-widget {
   display: inline-block;
-  min-width: 2ch;
+  min-width: 1.15em;
+  margin-right: 0.45em;
+  color: var(--color-text-secondary);
+  /* Right-aligned so `9.` and `10.` do not shift the text column apart. */
   text-align: right;
-  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.cm-md-bullet {
+  text-align: center;
+  font-size: 0.95em;
+}
+
+/* Task list: `- [ ]` renders as a checkbox with no bullet in front of it. The
+   box is drawn, not a glyph — a `✓` character would depend on whichever font
+   happens to carry one, and it would not scale cleanly with the editor zoom. */
+.cm-md-task-checkbox {
+  display: inline-block;
+  box-sizing: border-box;
+  position: relative;
+  width: 0.92em;
+  height: 0.92em;
+  margin-right: 0.5em;
+  vertical-align: -0.06em;
+  border: 1.5px solid color-mix(in srgb, var(--color-text-muted) 65%, transparent);
+  border-radius: 0.22em;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.cm-md-task-checkbox:hover {
+  border-color: var(--color-accent);
+}
+
+.cm-md-task-checkbox[data-checked="true"] {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.cm-md-task-checkbox[data-checked="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0.28em;
+  top: 0.1em;
+  width: 0.22em;
+  height: 0.42em;
+  border: solid var(--color-on-accent);
+  border-width: 0 0.12em 0.12em 0;
+  transform: rotate(45deg);
 }
 
 

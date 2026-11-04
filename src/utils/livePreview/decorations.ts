@@ -3,6 +3,7 @@ import { syntaxTree } from "@codemirror/language";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { highlightRanges } from "../highlight";
+import { ListMarkerWidget, TaskCheckboxWidget } from "./listWidget";
 
 /**
  * Live preview (L1) decoration specs, sorted by document position.
@@ -19,7 +20,20 @@ export type LivePreviewRange =
   /** Inline styling over the content a marker used to wrap. */
   | { kind: "mark"; from: number; to: number; className: string }
   /** Whole-line styling; `from` is always a line start. */
-  | { kind: "line"; from: number; className: string };
+  | { kind: "line"; from: number; className: string }
+  /**
+   * A marker replaced by rendered DOM: the list bullet, the ordinal, or the task
+   * checkbox. `text` is what the widget shows (`""` for a checkbox) and
+   * `checked` only means something for `cm-md-task`.
+   */
+  | {
+      kind: "widget";
+      from: number;
+      to: number;
+      className: string;
+      text: string;
+      checked?: boolean;
+    };
 
 /** The slice of `view.visibleRanges` this layer needs. */
 export interface VisibleRange {
@@ -73,13 +87,23 @@ export function collectLivePreviewRanges(
   const seen = new Set<string>();
 
   const push = (range: LivePreviewRange): void => {
-    // The block being edited shows its source: hides inside it are dropped, so
-    // the caret can reach every character. Marks and line styles stay.
-    if (range.kind === "hide" && reveal && range.from >= reveal.from && range.to <= reveal.to) return;
+    // The block being edited shows its source: hides and marker widgets inside
+    // it are dropped, so the caret can reach every character. Marks and line
+    // styles stay.
+    if (
+      (range.kind === "hide" || range.kind === "widget") &&
+      reveal &&
+      range.from >= reveal.from &&
+      range.to <= reveal.to
+    ) {
+      return;
+    }
     const key =
       range.kind === "line"
         ? `line:${range.from}:${range.className}`
-        : `${range.kind}:${range.from}:${range.to}:${range.kind === "mark" ? range.className : ""}`;
+        : range.kind === "widget"
+          ? `widget:${range.from}:${range.to}:${range.className}:${range.text}:${range.checked ? "x" : "-"}`
+          : `${range.kind}:${range.from}:${range.to}:${range.kind === "mark" ? range.className : ""}`;
     // Two visible ranges can meet inside one block (the tree is walked once per
     // range), and a line can be shared by a quote and a code block.
     if (seen.has(key)) return;
@@ -137,6 +161,8 @@ export function toDecorationRanges(specs: readonly LivePreviewRange[]): Range<De
         return markDecoration(range.className).range(range.from, range.to);
       case "line":
         return lineDecoration(range.className).range(range.from);
+      case "widget":
+        return decorationWithWidget(range).range(range.from, range.to);
     }
   });
 }
@@ -145,6 +171,19 @@ export function toDecorationRanges(specs: readonly LivePreviewRange[]): Range<De
 const HIDE = Decoration.replace({});
 const marks = new Map<string, Decoration>();
 const lines = new Map<string, Decoration>();
+
+/**
+ * A marker replaced by its rendered form. Not cached: the widget carries the
+ * ordinal / checked state, and `WidgetType.eq` is what decides whether the DOM
+ * is reused, not decoration identity.
+ */
+function decorationWithWidget(range: Extract<LivePreviewRange, { kind: "widget" }>): Decoration {
+  const widget =
+    range.className === "cm-md-task"
+      ? new TaskCheckboxWidget(range.from, Boolean(range.checked))
+      : new ListMarkerWidget(range.text, range.className);
+  return Decoration.replace({ widget });
+}
 
 function markDecoration(className: string): Decoration {
   let decoration = marks.get(className);
@@ -212,9 +251,10 @@ function visitNode(
     // A fixed-width marker column is what makes `-` and `1.` line up with the
     // text that follows them instead of each shifting it by its own width.
     case "ListMark":
-      if (contains(visible, node.from, node.to)) {
-        push({ kind: "mark", from: node.from, to: node.to, className: "cm-md-list-mark" });
-      }
+      addListMark(node, state, visible, push);
+      return false;
+    case "TaskMarker":
+      addTaskCheckbox(node, state, visible, push);
       return false;
     default:
       break;
@@ -276,6 +316,115 @@ function secondLinkMarkFrom(children: readonly SyntaxNode[], fallback: number): 
     seenFirst = true;
   }
   return fallback;
+}
+
+/** Bullet glyph by nesting level — the three Typora cycles through. */
+const BULLET_GLYPHS = ["•", "◦", "▪"];
+
+/**
+ * A list marker (`-`, `*`, `+`, `1.`, `1)`) and the single space after it become
+ * rendered DOM: a bullet, an incrementing ordinal, or — for a task item —
+ * nothing, because the checkbox that follows is the marker.
+ *
+ * Only outside the caret's block: `push` drops widgets inside the revealed
+ * range, so the source `-` comes back when the caret enters the item. That is
+ * not cosmetic — `Decoration.replace` makes its own range unreachable for the
+ * caret, so a marker that stayed a widget could never be edited or deleted.
+ */
+function addListMark(node: SyntaxNode, state: EditorState, visible: VisibleRange, push: Push): void {
+  const item = node.parent;
+  // Defensive: a `ListMark` outside a `ListItem` has no list to classify.
+  if (!item || item.name !== "ListItem") return;
+  // Include the space after the marker: the widget supplies its own gap, so
+  // leaving the source space in place would double it.
+  const end = includeTrailingSpace(state, node.to);
+  if (!contains(visible, node.from, end)) return;
+
+  if (hasChildNamed(item, "Task")) {
+    // `- [ ]` renders as a checkbox, not as "• ☐".
+    push({ kind: "hide", from: node.from, to: end });
+    return;
+  }
+
+  const list = item.parent;
+  if (list?.name === "OrderedList") {
+    const text = `${orderedOrdinal(state, item)}${delimiterOf(state, node)}`;
+    push({ kind: "widget", from: node.from, to: end, className: "cm-md-ordered", text });
+    return;
+  }
+
+  const level = listDepthOf(node);
+  push({
+    kind: "widget",
+    from: node.from,
+    to: end,
+    className: "cm-md-bullet",
+    text: BULLET_GLYPHS[(level - 1) % BULLET_GLYPHS.length],
+  });
+}
+
+/** `[ ]` / `[x]` → a checkbox; the `- ` in front of it is hidden above. */
+function addTaskCheckbox(node: SyntaxNode, state: EditorState, visible: VisibleRange, push: Push): void {
+  // `TaskMarker` → `Task` → `ListItem`; anything else is not a checkbox.
+  const item = node.parent?.parent;
+  if (!item || item.name !== "ListItem") return;
+  const end = includeTrailingSpace(state, node.to);
+  if (!contains(visible, node.from, end)) return;
+  push({
+    kind: "widget",
+    from: node.from,
+    to: end,
+    className: "cm-md-task",
+    text: "",
+    checked: state.sliceDoc(node.from + 1, node.from + 2) !== " ",
+  });
+}
+
+/** `to` plus one following space/tab, if there is one. */
+function includeTrailingSpace(state: EditorState, to: number): number {
+  const next = state.sliceDoc(to, Math.min(to + 1, state.doc.length));
+  return next === " " || next === "\t" ? to + 1 : to;
+}
+
+function hasChildNamed(node: SyntaxNode, name: string): boolean {
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name === name) return true;
+  }
+  return false;
+}
+
+/** 1-based nesting of the list a marker belongs to. */
+function listDepthOf(node: SyntaxNode): number {
+  let depth = 0;
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (parent.name === "BulletList" || parent.name === "OrderedList") depth += 1;
+  }
+  return Math.max(1, depth);
+}
+
+/**
+ * The number the *reader* sees: the list's start plus the item's index.
+ * `1. 1. 1.` therefore renders 1. 2. 3., which is what the Markdown means —
+ * the digits in the source are only a hint to the parser.
+ */
+function orderedOrdinal(state: EditorState, item: SyntaxNode): number {
+  let index = 0;
+  for (let sibling = item.prevSibling; sibling; sibling = sibling.prevSibling) {
+    if (sibling.name === "ListItem") index += 1;
+  }
+  const list = item.parent;
+  const firstItem = list?.firstChild;
+  const firstMark = firstItem?.name === "ListItem" ? firstItem.firstChild : null;
+  const start =
+    firstMark?.name === "ListMark"
+      ? Number.parseInt(state.sliceDoc(firstMark.from, firstMark.to), 10)
+      : 1;
+  return (Number.isFinite(start) ? start : 1) + index;
+}
+
+/** `.` or `)` — kept as written, so `1)` does not silently become `1.`. */
+function delimiterOf(state: EditorState, mark: SyntaxNode): string {
+  return state.sliceDoc(Math.max(mark.from, mark.to - 1), mark.to);
 }
 
 /**

@@ -650,3 +650,58 @@ CM 只允许 **StateField** 提供 block 装饰，因为块替换会改变文档
 2. 表格 widget 与滚动：`estimatedHeight` 是估算（34 + 行数×34），长表格首次进入视口可能有一次高度跳动。
 3. 字体下拉里用户上传的字体是否即时可选（`@font-face` 在主窗口注入，贴窗是独立 webview）。
 4. 切换字体后行高/光标位置是否立即正确（`Compartment` 重配应触发 remeasure）。
+
+## M10 实施记录（2026-11-04，排版对齐 Typora）
+
+任务书：`docs/typora-typography-task.md`。这轮只碰编辑器表面（字体、间距、列表符号），
+不动数据层与导出链路。
+
+### 最终落地的三件事
+
+1. **字体栈终于生效（D1-1）**。根因不是雅黑本身，而是 `CodeMirror` 基础主题在
+   `.cm-scroller` 上直接声明 `font-family: monospace`，压过从 `.cm-editor` 继承的栈：
+   实测 `.cm-content` 的计算字体是 `monospace`，中文落到系统等宽回退字体（Windows 上是
+   宋体/SimSun，字宽 112px @16px 与 `monospace` 完全相同）。修法是让
+   `codeMirrorTypographyTheme` 把字体族同时写到 `.cm-scroller`；字体栈按「Windows 实际
+   有什么」重排（system-ui → Segoe UI Variable Text → Segoe UI → Microsoft YaHei UI →
+   Microsoft YaHei → PingFang SC）。改后同串字宽 117.49px（= 雅黑），截图内无衬线、
+   笔画均匀。**这一条是「正文发虚」的唯一实质修复。**
+2. **列表符号渲染（D3）**。`ListMark` 从「淡色原字符」改为 `Decoration.replace` +
+   widget：无序渲染 `•`/`◦`/`▪`（按嵌套层级），有序渲染**递增序号**（列表起始号 +
+   项序号，`1. 1. 1.` 显示 1. 2. 3.），`1)` 保留右括号；任务列表隐藏 `- ` 并把
+   `[ ]`/`[x]` 换成可点击复选框（复用 `taskToggleAt`，点击不移动光标）。widget 落在
+   `push` 的 reveal 规则里，光标进入该项时自动回退源码，与标题 `#` 的降级同一套机制。
+3. **标题间距（仅 `padding-bottom`）**。上间距在回滚后不再实现（见下）。
+
+### 用户当面否决的三项（任务书里写的，但作废）
+
+| 任务书 | 用户决定 | 结果 |
+| --- | --- | --- |
+| D2-5 默认关闭行号与折叠槽 | **需要**行号与折叠槽 | `basicSetup` 原样，`editorSetup` 已删 |
+| D1-2 垫不透明纸层换 ClearType | **要透明**，磨砂必须透 | `.cm-editor` 背景 `transparent`，`--editor-paper` 已删 |
+| D2-4 正文最大宽度 + 居中 | **不限宽、不居中**，到边换行 | `.cm-content` 无 `max-width`，`padding: 16px 20px` |
+
+D2 的间距/宽度整组已回滚（提交 `4283453`），只保留字体修复与 D3。
+
+### 踩到的三个坑（都会静默失败）
+
+1. **`.cm-scroller` 上的 `monospace`**：见上。改 `.cm-editor` 的字体无效，必须改
+   scroller；同理任何「继承了却看不到效果」的字体问题先查这一层。
+2. **`.ͼ1 .cm-line { padding: 0 2px 0 6px }` 是两个类**：基础主题的样式表在运行时注入、
+   排在本文件之后，所以单类的 `.cm-md-h1`（甚至 `.cm-line.cm-md-code-block`）设的 padding
+   会被静默清零，标题一度完全没有间距。行级 padding 一律用
+   `.cm-content .cm-line.X`（三个类）才压得住。
+3. **`padding-top` 与行号互斥**：CodeMirror 把行号和折叠箭头钉在**行顶**，`.cm-line`
+   的 `padding-top` 会把文字压下去而标记留在原处——表现为「行号堆在标题上方、高度错乱」
+   （用户当场报的问题）。要加标题上间距只能挂在**前一行**的 `padding-bottom` 上
+   （`.cm-line:has(+ .cm-md-hN)`），或者干脆不加；不要回到 `padding-top`。
+
+### 验证
+
+- `npm run verify:live-preview`：48 项全过（含递增序号、嵌套字形、任务复选框、
+  reveal 回退）。
+- release exe + WebView2：`.cm-content` 无 `max-width`（998/1053px 铺满）、`.cm-editor`
+  透明、行号与 `.cm-line` 的 top/height 逐项相等、列表渲染 10 个 `•` 与 `1.`/`2.`
+  序号、点击列表项后该行回到 `- **…**` 源码态且无 widget。
+- **未验证**：任务复选框的实际外观（当前笔记无任务列表）与点击切换（会改用户笔记，
+  没有点）、嵌套列表在真机上的观感、贴窗/卡片窗内的新标记样式。

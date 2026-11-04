@@ -92,6 +92,10 @@ function specsFor(doc, ranges, options) {
 
 const format = (spec) => {
   if (spec.kind === "line") return `line:${spec.from}:${spec.className}`;
+  if (spec.kind === "widget") {
+    const box = spec.className === "cm-md-task" ? (spec.checked ? ":x" : ":o") : "";
+    return `widget:${spec.from}-${spec.to}:${spec.className}:${spec.text}${box}`;
+  }
   return `${spec.kind}:${spec.from}-${spec.to}:${spec.className ?? ""}`;
 };
 
@@ -171,9 +175,29 @@ const fixtures = [
     expect: ["line:0:cm-md-hr", "hide:0-3:"],
   },
   {
-    name: "列表：符号列固定宽度",
-    doc: "- 甲\n1. 乙\n",
-    expect: ["mark:0-1:cm-md-list-mark", "mark:4-6:cm-md-list-mark"],
+    name: "无序列表：`-` 隐藏并渲染圆点，嵌套换字形",
+    doc: "- 甲\n  - 乙\n",
+    expect: ["widget:0-2:cm-md-bullet:•", "widget:6-8:cm-md-bullet:◦"],
+  },
+  {
+    // The source says 1. three times; the reader must see 1. 2. 3.
+    name: "有序列表：渲染递增序号，不是复现源数字",
+    doc: "1. 甲\n1. 乙\n1. 丙\n",
+    expect: [
+      "widget:0-3:cm-md-ordered:1.",
+      "widget:5-8:cm-md-ordered:2.",
+      "widget:10-13:cm-md-ordered:3.",
+    ],
+  },
+  {
+    name: "有序列表：起始号 3 从 3 递增，`1)` 保留右括号",
+    doc: "3) 甲\n9) 乙\n",
+    expect: ["widget:0-3:cm-md-ordered:3)", "widget:5-8:cm-md-ordered:4)"],
+  },
+  {
+    name: "任务列表：`- ` 隐藏，`[ ]`/`[x]` 渲染成复选框",
+    doc: "- [ ] 甲\n- [x] 乙\n",
+    expect: ["hide:0-2:", "widget:2-6:cm-md-task::o", "hide:8-10:", "widget:10-14:cm-md-task::x"],
   },
 ];
 
@@ -345,6 +369,32 @@ section("L3 当前块回退（块内 hide 撤销，块级视觉保留）");
   const span = { from: Math.min(spanStart.from, spanEnd.from), to: Math.max(spanStart.to, spanEnd.to) };
   const spanned = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: span }).map(format);
   check("跨块选区把整段都回退为源码", !spanned.some((spec) => spec.startsWith("hide:")), JSON.stringify(spanned));
+}
+
+section("列表符号：光标进入该项时回退源码");
+
+{
+  const doc = "- 甲\n- 乙\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const item = blockAtPosition(state, 1);
+  const specs = collectLivePreviewRanges(state, [{ from: 0, to: doc.length }], { reveal: item }).map(format);
+
+  // Only the revealed item loses its marker: the sibling below keeps its bullet,
+  // so the assertion is scoped to `[item.from, item.to)` rather than "no widgets".
+  const insideItem = specs.filter((spec) => {
+    const start = Number(spec.split(":")[1].split("-")[0]);
+    return start >= item.from && start < item.to;
+  });
+  check("当前列表项不再有 widget / hide（`-` 可被光标进入）", insideItem.length === 0, JSON.stringify(specs));
+  check("另一项仍然显示圆点", specs.includes("widget:4-6:cm-md-bullet:•"), JSON.stringify(specs));
+
+  const taskDoc = "- [ ] 甲\n";
+  const taskState = EditorState.create({ doc: taskDoc, extensions: [language] });
+  ensureSyntaxTree(taskState, taskDoc.length, 5000);
+  const taskItem = blockAtPosition(taskState, 1);
+  const taskSpecs = collectLivePreviewRanges(taskState, [{ from: 0, to: taskDoc.length }], { reveal: taskItem }).map(format);
+  check("任务项回退后复选框消失、源码可见", taskSpecs.length === 0, JSON.stringify(taskSpecs));
 }
 
 section("blockAtPosition 与 blocks()+blockAt 结果一致");
