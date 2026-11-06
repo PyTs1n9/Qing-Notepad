@@ -75,6 +75,11 @@ IDEA.md
 # Scratch output from design/AI generation runs (never shipped, never tracked)
 /outputs/
 
+# Scratch used while testing a fix (probe scripts, one-off .py/.mjs, sample .md).
+# Create these under `test_temp/` at the repo root instead of the OS temp folder,
+# then delete them when the round ends; nothing here is ever a deliverable.
+/test_temp/
+
 # Ad-hoc screenshot / probe scratch from UI verification rounds (`.tmp-*.png`,
 # `.tmp-*.mjs`, `.tmp-*.sh`). These are one-shot artefacts, never deliverables.
 /.tmp-*
