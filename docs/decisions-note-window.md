@@ -105,7 +105,7 @@
   「返回主软件」关闭窗口后再次从主窗口打开成功（单例标签复用）。
 - 抗锯齿一致性（2026-11-06）：release exe 以 `--app-arg` 打开样本 md，取正文行的
   `getBoundingClientRect()` × `devicePixelRatio` 裁图，量过渡像素对色轴的垂距——加标志前后
-  52.91 → 0.55，`local_img/.tmp-aa-before.png` / `.tmp-aa-after.png` 放大图肉眼同判：
+  52.91 → 0.55，`local_img/note-window-aa-before.png` / `note-window-aa-after.png` 放大图肉眼同判：
   彩色毛边消失，笔画回到中性灰阶。`Page.captureScreenshot` 前后都是 `1440×1080`（dpr 1.5），
   说明修的不是分辨率，是抗锯齿通路。
 
