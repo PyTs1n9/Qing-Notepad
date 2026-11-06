@@ -6,6 +6,7 @@ import StickyNote from "./components/Sticky/StickyNote";
 import CanvasTileView from "./components/Canvas/CanvasTileView";
 import NoteWindowView from "./components/NoteWindow/NoteWindowView";
 import RootErrorBoundary from "./components/Layout/RootErrorBoundary";
+import WindowBindingLayer from "./components/Layout/WindowBindingLayer";
 import "./index.css";
 
 // Disable the WebView's default context menu. A custom app menu can be mounted here later.
@@ -91,6 +92,10 @@ if (wantsProbe) {
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RootErrorBoundary>{content}</RootErrorBoundary>
+    <RootErrorBoundary>
+      {/* 挂在根上而不是各视图里：主窗口、笔记窗口、贴纸、磁贴都从这里过一遍，
+          只有 `main` 与 `note-window-*` 会真的连上成组状态。 */}
+      <WindowBindingLayer>{content}</WindowBindingLayer>
+    </RootErrorBoundary>
   </React.StrictMode>,
 );

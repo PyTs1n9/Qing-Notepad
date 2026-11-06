@@ -125,3 +125,4 @@
 | 导出 / PDF / Word | `decisions-export-docx-pdf.md` | `user-manual.md` |
 | 发布 / tag / CI | （不在 docs）`topics/git-release.md` | `topics/verify-runbook.md`（产物与验收） |
 | 软件内自动更新 / 签名密钥 | `decisions-updater.md` | `decisions-announcements.md`（Gitee raw 通道的实测数据） |
+| 窗口贴合 / 双击缝隙成组 | `decisions-window-binding.md` | `decisions-note-window.md`（窗口生命周期）+ `topics/ui-rules.md`（不可见缩放边框） |

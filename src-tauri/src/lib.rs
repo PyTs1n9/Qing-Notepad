@@ -17,6 +17,7 @@ mod storage;
 mod update;
 mod vault;
 mod window_bg;
+mod window_binding;
 
 // Global flag: whether we are truly quitting the app
 static QUITTING: AtomicBool = AtomicBool::new(false);
@@ -163,6 +164,9 @@ pub fn run() {
         // 更新链路的跨命令状态：检查得到的 `Update` 句柄与已下载的安装包。
         // 只活在本进程内，退出即丢（见 `update.rs` 的 `UpdateState`）。
         .manage(update::UpdateState::default())
+        // 窗口贴合的成组表。只活在本进程内：绑定的是 HWND 级关系，
+        // 重启后窗口位置已变，恢复一个旧关系比不恢复更让人意外。
+        .manage(window_binding::WindowBindingState::default())
         // `qing-plugin-rpc`: the hidden extension-host webview's only way out.
         // `capabilities: []` rules out Tauri IPC there, so the conversation has
         // to ride a custom scheme — which needs no capability and is still
@@ -207,6 +211,9 @@ pub fn run() {
             storage::storage_migrate,
             storage::open_data_path,
             window_bg::set_window_background,
+            window_binding::window_binding_toggle,
+            window_binding::window_binding_status,
+            window_binding::window_binding_release,
             clipboard::clipboard_read,
             clipboard::clipboard_write,
             plugin::plugin_list_installed,
@@ -320,6 +327,8 @@ pub fn run() {
                     let _ = window.hide();
                 }
             }
+            // 成组关系的维护点：移动/缩放一方时把另一方一起放到正确位置。
+            window_binding::handle_window_event(window.app_handle(), window, event);
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
