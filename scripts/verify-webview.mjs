@@ -210,16 +210,23 @@ async function waitFor(check, { timeout = timeoutMs, interval = 300 } = {}) {
   }
 }
 
+/**
+ * Query parameters that identify one of the detached surfaces (note window,
+ * sticky note, tile, canvas tile). They load the same `index.html` as the shell
+ * and may sit *before* it in the target list, so "first page without a note
+ * window" would silently run every assertion and `--eval` inside a sticky note.
+ */
+const DETACHED_WINDOW = /[?&](noteWindow|sticky|tile|canvasTile)=/;
+
 function pickPage(targets) {
   const pages = targets.filter((target) => target.type === "page");
   if (targetFilter) {
     return pages.find((target) => (target.url ?? "").includes(targetFilter)) ?? null;
   }
-  // Prefer the shell: with a detached note window open (or opened by
-  // `--app-arg`), both pages load `index.html`, and the shell is the one the
-  // assertions below describe.
+  // Prefer the shell: a detached window loads the same page, and the shell is the
+  // one the assertions below describe.
   return (
-    pages.find((target) => /tauri\.localhost|index\.html/.test(target.url ?? "") && !/[?&]noteWindow=/.test(target.url ?? "")) ??
+    pages.find((target) => /tauri\.localhost|index\.html/.test(target.url ?? "") && !DETACHED_WINDOW.test(target.url ?? "")) ??
     pages.find((target) => /tauri\.localhost|index\.html/.test(target.url ?? "")) ??
     pages.find((target) => !/^(devtools|chrome)/.test(target.url ?? "")) ??
     null
