@@ -71,11 +71,25 @@
    之后 `tauri://created` 里的 `show()` 只落到 `ShowWindow(SW_SHOW)`，前台锁（foreground lock）在别的顶层窗口
    挡在前面时会让它失败：窗口画出来了、任务栏图标闪一下、但仍停在后面。`set_focus` 是唯一会走到
    tao `force_window_active`（`SetForegroundWindow` + 合成 Alt 按键兜底）的入口，而它在窗口不可见时直接跳过，
-   因此顺序必须是 `show` → `unminimize` → `setFocus`，三步收进 `activateWindow()`，新建窗口 / 已存在窗口 /
-   `focusMainWindow()` 三处共用。**只写 `show()` 的窗口在「已有若干窗口 + 应用在后台」时必然不置顶。**
+   因此顺序必须是 `show` → `unminimize` → `setFocus`，三步收进 `utils/windowActivation.ts` 的
+   `activateWindow()`。同一个缺陷在 `tile.ts`（`alwaysOnTop` 用 `SWP_NOACTIVATE` 抬升，只置顶不取焦点）、
+   `canvasTile.ts`、`stickyManager.ts`（同样 `visible: false`）里各有一份，四处共 9 个调用点统一走这个函数。**只写 `show()` 的窗口在「已有若干窗口 + 应用在后台」时必然不置顶。**
    证据（release exe，前台窗口轮询 50ms）：旧代码热启动开 md 后 5 秒内前台仍是 Chrome/VS Code，
    新代码在启动后约 250ms 拿到前台（`focus-e`，pid 为本进程），重复开同一文件则复用并前置已有窗口（`focus-b`）。
    冷启动带文件这一路径旧代码也能置顶——主窗口刚拿到前台，进程仍有前台权限——所以只测冷启动会漏掉这个 bug。
+
+8. **全进程关闭 LCD 子像素抗锯齿**（2026-11-06 修「独立窗口字体发糊」）。主窗口的字一直走灰度抗锯齿，
+   因为编辑器卡片在 `.surface-glass`（`backdrop-filter`）子树里——Chromium 只给「能证明自身不透明且未变形」
+   的文字开 LCD 抗锯齿，滤镜/透明度会把它关掉。独立窗口没有任何玻璃层，于是它是全应用唯一真的开了 LCD 的
+   表面；在 150% 显示缩放下字干被拆到 RGB 条纹上，同一段 16px 正文就带上彩色毛边，和软件内页面一比就是「糊」。
+   量化口径：取抗锯齿过渡像素到「背景色 → 文字色」色轴的垂距均值（0 = 纯灰度）。同一 release 构建、
+   同一段正文：软件内侧栏 1.07，独立窗口 52.91（最大 128）。加 `--disable-lcd-text` 后独立窗口降到 0.55
+   （最大 1.27），与内侧栏同性质。
+   落地方式是 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 环境变量（`lib.rs::force_grayscale_text()`，在任何
+   webview 创建之前写入），**不用每窗口 `additionalBrowserArgs`**：WebView2 要求浏览器参数不同的 webview
+   使用不同数据目录，而这些窗口共用同一个（localStorage、设置缓存）。变量只追加不覆盖——验收脚本把
+   `--remote-debugging-port` 放在同一变量里，覆盖会让整条验收链静默失效。副作用是贴纸/画布等其余窗口
+   一并变成灰度抗锯齿，与主窗口一致，这正是要的结果。
 
 ## 验证
 
@@ -89,6 +103,11 @@
   实测：`960×720`；头部 `36px`、菜单行 `28px`、底栏 `28px`（`y=692`，窗口高 720）；
   菜单 5 项 + 返回按钮；底栏 2 个按钮 + 更新时间 + 保存状态 + 四项统计；`overflowX = 0`；
   「返回主软件」关闭窗口后再次从主窗口打开成功（单例标签复用）。
+- 抗锯齿一致性（2026-11-06）：release exe 以 `--app-arg` 打开样本 md，取正文行的
+  `getBoundingClientRect()` × `devicePixelRatio` 裁图，量过渡像素对色轴的垂距——加标志前后
+  52.91 → 0.55，`local_img/.tmp-aa-before.png` / `.tmp-aa-after.png` 放大图肉眼同判：
+  彩色毛边消失，笔画回到中性灰阶。`Page.captureScreenshot` 前后都是 `1440×1080`（dpr 1.5），
+  说明修的不是分辨率，是抗锯齿通路。
 
 ### 双窗口同步的补充说明
 

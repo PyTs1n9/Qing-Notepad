@@ -81,8 +81,49 @@ fn set_tray_language(app: tauri::AppHandle, lang: String) -> Result<(), String> 
     Ok(())
 }
 
+/// Force grayscale text antialiasing in every WebView.
+///
+/// Chromium only enables LCD (subpixel) antialiasing for text whose layer it can
+/// prove is opaque and untransformed. The shell never qualifies — the editor
+/// card sits under `.surface-glass`, whose `backdrop-filter` disables LCD text —
+/// so the app has always been rendered with grayscale AA. A detached note window
+/// has no glass in its ancestry, so it *did* qualify, and at 150% display
+/// scaling that splits glyph stems across the RGB stripes: the same 16px text
+/// picks up coloured fringes and reads as blurred next to the in-app page.
+///
+/// Measured on the release build (mean distance of antialiased edge pixels from
+/// the background→text colour axis, 0 = pure grayscale): in-app sidebar text
+/// 1.07, detached note window 62.82. `--disable-lcd-text` makes the second match
+/// the first, so every surface of the product is antialiased the same way
+/// instead of each new window type rediscovering the shell's accident.
+///
+/// This must be an environment variable rather than a per-window
+/// `additionalBrowserArgs`: WebView2 requires webviews with *different* browser
+/// arguments to use different data directories, and these windows share one
+/// (localStorage, settings cache). The variable is appended to, never replaced —
+/// `scripts/verify-webview.mjs` puts `--remote-debugging-port` here, and
+/// overwriting it would silently disable the whole acceptance harness.
+fn force_grayscale_text() {
+    const FLAG: &str = "--disable-lcd-text";
+    const KEY: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+    let existing = std::env::var(KEY).unwrap_or_default();
+    if existing.split_whitespace().any(|arg| arg == FLAG) {
+        return;
+    }
+    let merged = if existing.trim().is_empty() {
+        FLAG.to_string()
+    } else {
+        format!("{} {}", existing.trim(), FLAG)
+    };
+    std::env::set_var(KEY, merged);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any webview exists: WebView2 reads this when the environment is
+    // created, and every window in the process shares that environment.
+    force_grayscale_text();
+
     // The extension host's only door. Held as `Arc<HostBridge>` so the protocol
     // handler and `plugin_ext_host_send` reach the same queue; the poll itself
     // blocks, so it runs on its own thread rather than the protocol thread.
