@@ -32,6 +32,30 @@ const WINDOW_HEIGHT = 720;
 const WINDOW_MIN_WIDTH = 560;
 const WINDOW_MIN_HEIGHT = 420;
 
+/**
+ * Show a window and give it the keyboard, in that order.
+ *
+ * `show()` alone is not enough for a window this module creates. It is built
+ * with `visible: false`, and while a window is hidden tao never runs the
+ * activation path — `ShowWindow(SW_SHOW)` is the only activation attempt left,
+ * and it loses to the OS foreground lock whenever another window is already in
+ * front (another note window, the main window, or Explorer, when the file was
+ * opened from there). The window then appears behind everything with the
+ * taskbar button merely flashing.
+ *
+ * `setFocus()` is the one call that reaches tao's `force_window_active` —
+ * `SetForegroundWindow` plus the synthetic-key fallback that defeats the lock.
+ * It must come *after* `show()`: tao skips it outright while the window is not
+ * yet visible, so the reverse order is a silent no-op. `unminimize` sits in
+ * between for the same reason as in `focusMainWindow` — a window can be shown
+ * and still minimized, and activation is skipped in that state too.
+ */
+async function activateWindow(win: WebviewWindow | Window): Promise<void> {
+  await win.show().catch(() => undefined);
+  await win.unminimize().catch(() => undefined);
+  await win.setFocus().catch(() => undefined);
+}
+
 function windowLabelFor(noteId: string): string {
   // Note ids are `[A-Za-z0-9_-]{1,64}` (storage.ts), so no escaping is needed;
   // the fallback only guards a caller that bypassed that contract.
@@ -88,9 +112,7 @@ export async function openNoteWindow(
   if (existing) {
     // A window can be hidden (not just minimized) by the OS; `show` is the
     // difference between "bring it back" and "silently do nothing".
-    await existing.show().catch(() => undefined);
-    await existing.unminimize().catch(() => undefined);
-    await existing.setFocus();
+    await activateWindow(existing);
     return;
   }
 
@@ -128,7 +150,10 @@ export async function openNoteWindow(
   });
 
   win.once("tauri://created", () => {
-    void win.show().catch(() => undefined);
+    // Show-and-activate, never bare `show`: this is the only moment the window
+    // can claim the foreground, and a note opened from Explorer may arrive while
+    // the app itself is behind.
+    void activateWindow(win);
     // The page reads the persisted settings on mount; this push only keeps a
     // freshly created window in step with an unsaved appearance change.
     const { theme, customColors, lang } = useSettingsStore.getState();
@@ -145,13 +170,12 @@ export async function openNoteWindow(
  * Bring the main app back to the foreground.
  *
  * The main window is close-to-tray, so it may be hidden rather than merely
- * behind: `show` first, then un-minimize, then focus. `unminimize` rejects when
- * the window is not minimized, which is the normal case and not an error.
+ * behind: `activateWindow` shows it first, then un-minimizes, then focuses.
+ * `unminimize` rejects when the window is not minimized, which is the normal
+ * case and not an error.
  */
 export async function focusMainWindow(): Promise<void> {
   const main = await Window.getByLabel("main");
   if (!main) return;
-  await main.show().catch(() => undefined);
-  await main.unminimize().catch(() => undefined);
-  await main.setFocus().catch(() => undefined);
+  await activateWindow(main);
 }

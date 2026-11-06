@@ -49,7 +49,7 @@
 | `docs/user-manual.md` | 「记事」新增「独立窗口」一节（入口、窗口构成、同步规则、返回） |
 | `scripts/verify-architecture.mjs` | 白名单补 `noteWindow.ts`（下发主题/语言）与 `exportNote.ts`（失败弹窗）；顺手登记 `livePreview/index.ts` 桶文件（该规则原本就在红） |
 
-### 六个非显然的实现决定
+### 七个非显然的实现决定
 
 1. **不复制编辑器，只复制「壳」**。菜单栏、底栏、CodeMirror、目录面板全部复用现有组件；独立窗口新增的只有窗口头部与返回按钮。
    复制一份 editor 会在下一次改底栏时立刻分叉——「完整包含下方 bar」这条需求本身就在要求同一份实现。
@@ -66,6 +66,16 @@
    `preventDefault()` → flush → `destroy()`；「返回主软件」则 flush → `focusMainWindow()` → `destroy()`。
    三条路径共用一次写盘，不会出现「关得快就丢字」。
 6. **禁用 AI 润色而不是隐藏**。菜单结构是用户的心智地图；在独立窗口里删掉一项会让两份菜单看起来不是同一个编辑器。
+7. **新窗口必须显式 `setFocus()` 才算置顶**（2026-11-06 修）。窗口以 `visible: false` 创建，而 tao 在不可见时
+   根本不走激活路径——`Window::new` 里 `set_visible(false)` 直接跳过 `ShowWindow`，所以创建阶段拿不到前台。
+   之后 `tauri://created` 里的 `show()` 只落到 `ShowWindow(SW_SHOW)`，前台锁（foreground lock）在别的顶层窗口
+   挡在前面时会让它失败：窗口画出来了、任务栏图标闪一下、但仍停在后面。`set_focus` 是唯一会走到
+   tao `force_window_active`（`SetForegroundWindow` + 合成 Alt 按键兜底）的入口，而它在窗口不可见时直接跳过，
+   因此顺序必须是 `show` → `unminimize` → `setFocus`，三步收进 `activateWindow()`，新建窗口 / 已存在窗口 /
+   `focusMainWindow()` 三处共用。**只写 `show()` 的窗口在「已有若干窗口 + 应用在后台」时必然不置顶。**
+   证据（release exe，前台窗口轮询 50ms）：旧代码热启动开 md 后 5 秒内前台仍是 Chrome/VS Code，
+   新代码在启动后约 250ms 拿到前台（`focus-e`，pid 为本进程），重复开同一文件则复用并前置已有窗口（`focus-b`）。
+   冷启动带文件这一路径旧代码也能置顶——主窗口刚拿到前台，进程仍有前台权限——所以只测冷启动会漏掉这个 bug。
 
 ## 验证
 
