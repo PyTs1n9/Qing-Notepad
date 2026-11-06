@@ -1,7 +1,34 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-04T09:17:00Z",
+  "generatedAt": "2026-11-06T12:51:00Z",
   "items": [
+    {
+      "id": "2026-11-06-v0-9-5",
+      "kind": "update",
+      "publishedAt": "2026-11-06T12:51:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.5：窗口贴合、双击铺满热区与两处窗口修复",
+        "en": "v0.9.5: window binding, an easier fill gesture, two window fixes"
+      },
+      "body": {
+        "zh": "这一版的主角是窗口：两个窗口挨得够近时，双击它们之间的缝可以把二者成组，之后移动或缩放一方，另一方跟着走；贴着窗口最上沿的双击热区从 8px 提到 12px，纵向铺满不再频繁落空。另外修掉两处「窗口出来了但不对劲」——应用在后台时新建的便签与磁贴抢不到前台，独立笔记窗口的正文在 150% 缩放下带彩色毛边。\n\n**新增｜双击缝隙把两个窗口成组**\n\n- 把主窗口与一篇独立笔记窗口摆到贴边（允许压进去约 22 物理像素），双击两者之间的缝即成组；再双击同一条缝解绑。\n- 成组后拖动或缩放任一方，另一方跟着平移：位置按「当前几何 + 成组那一刻记下的偏移」从零重算，拖多久都不累积偏移。\n- 缩放只带平移、不改对方尺寸：对方有自己的最小尺寸（笔记窗口 560×420），强行改尺寸会在夹紧处错位。\n- 双击必须落在窗口内、且距靠缝那条边 12px 以内；窗口顶栏 34px 以内不参与判定，那里的双击仍归系统最大化。\n- 跨显示器、跨缩放比例、最大化、最小化、关窗，任一发生即自动解绑，不会把窗口拖成错位。\n- 一次只成一组、最多两窗；第三方软件的窗口不在范围内（提权窗口写不动，自绘边框的可见边界与真实矩形也对不上，两条都无解）。\n\n**改进｜标题栏纵向铺满热区 8px → 12px**\n\n- 窗口最顶上那条不可见缩放边框正好压在最自然的瞄准点上，8px 热区在 150% 缩放下只剩 12 物理像素，实测双击经常落空；热区加到 12px 后命中率明显提升，标题栏仍留 24px 给拖动与最大化。\n- 主窗口与独立笔记窗口同步改，两处手势一致。\n\n**修复｜应用在后台时新建窗口抢不到前台**\n\n- 便签与独立笔记窗口创建时不激活，磁贴又是「只置顶不取焦点」的抬升，原来只调一次 `show()`，应用处于后台时会输给前台锁：窗口只闪任务栏不出现。现在统一按「显示 → 还原最小化 → 取焦点」的顺序处理，四种窗口共用同一入口。\n- 已存在的窗口走同一条路径，顺带修掉「最小化后点一次只亮任务栏、不还原」。\n\n**修复｜独立笔记窗口字体发糊**\n\n- 主窗口的文字一直在磨砂层里，Chromium 对这类文字强制关闭 LCD 子像素抗锯齿；独立窗口没有这一层，成了全应用唯一真正开 LCD 的表面，150% 缩放下字干被拆到 RGB 条纹上，同一段正文带彩色毛边。现在整个进程关闭 LCD 文本抗锯齿，独立窗口与主窗口观感一致。\n\n**说明**\n\n- 安装包下载完成后只保存在内存里，重启前退出应用需要重新下载（约 27 MB）。\n- 安装包做签名校验，签名对不上直接拒绝安装。\n\n更新入口在标题栏右上角、公告喇叭右侧，只在有新版本时出现：第一次点击下载，第二次点击重启安装。",
+        "en": "This release is about windows: when two windows sit close enough, double-clicking the gap between them groups the pair, so moving or resizing one drags the other along; the double-click zone at the very top edge of the window goes from 8px to 12px, so filling the screen vertically stops missing. It also fixes two cases where a window came up but felt wrong — a sticky note or tile created while the app is in the background could not take the foreground, and the body text in a standalone note window carried colour fringes at 150% scaling.\n\n**New | Double-click the gap to group two windows**\n\n- Group and ungroup: place the main window and a standalone note window edge to edge (they may overlap by about 22 physical pixels) and double-click the seam between them to group; double-click the same seam again to ungroup.\n- Move and resize together: dragging or resizing either window translates the other. Positions are recomputed from scratch as current geometry plus the offset captured at grouping time, so nothing drifts however long you drag.\n- Resizing only translates: the partner keeps its own size, because it has its own minimum (560×420 for a note window) and forcing a resize would misalign at the clamp.\n- Hit area: the double-click must land inside a window and within 12px of the edge facing the seam. The top 34px of the title bar is excluded, where double-click still means system maximize.\n- Automatic ungroup: crossing monitors, crossing DPI, maximizing, minimizing or closing any member ungroups, so windows never get dragged out of alignment.\n- Scope: one group at a time, at most two windows; third-party windows are out of scope (an elevated window cannot be written to, and a self-drawn frame's visible edge does not match its real rectangle — neither has a fix).\n\n**Improved | Vertical fill zone 8px → 12px**\n\n- The invisible resize border at the very top of the window sits exactly on the most natural aiming point, and an 8px zone is only 12 physical pixels at 150% scaling, so double-clicks missed often in testing. At 12px the hit rate improves markedly while the title bar still keeps 24px for dragging and maximizing.\n- The main window and the standalone note window changed together, so the gesture is the same in both.\n\n**Fixed | A new window could not take the foreground while the app was in the background**\n\n- Sticky notes and standalone note windows are created without activation, and tiles are raised without taking focus, so a single `show()` used to lose to the foreground lock whenever the app was in the background: the window only blinked in the taskbar. All four kinds now go through show → restore from minimized → take focus.\n- Windows that already exist take the same path, which also fixes \"clicking a minimized one only flashes the taskbar\".\n\n**Fixed | Blurry text in standalone note windows**\n\n- Text in the main window always lives inside the frosted-glass layer, where Chromium forces LCD subpixel antialiasing off; the standalone window has no such layer and became the only surface in the app with LCD text on, so at 150% scaling glyph stems were split across RGB stripes and the same body text carried colour fringes. The whole process now disables LCD text antialiasing, so the standalone window matches the main window.\n\n**Notes**\n\n- The installer is held in memory only; quit before restarting and it downloads again (about 27 MB).\n- The installer is signature-checked and refused if the signature does not match.\n\nThe update entry sits at the top right of the title bar, right of the announcement button. It appears only when a new version exists: first click downloads, second click restarts into the installer."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.5",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-11-04-v0-9-4",
       "kind": "update",

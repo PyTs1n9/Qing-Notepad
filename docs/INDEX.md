@@ -37,7 +37,7 @@
 | `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
-| `decisions-window-fill.md` | 双击标题栏顶部 8px 纵向铺满（宽度不变）；外框/客户区补偿与还原语义 | 动标题栏双击、窗口几何 | 5.5 KB |
+| `decisions-window-fill.md` | 双击标题栏顶部 12px 纵向铺满（宽度不变）；外框/客户区补偿与还原语义 | 动标题栏双击、窗口几何 | 5.5 KB |
 | `decisions-glass-layering.md` | 有壁纸时主卡更透、侧栏更深的分层规则 | 动磨砂 tint 分层 | 3.7 KB |
 | `decisions-glass-blur.md` | 磨砂"滑块没反应"四轮排查的最终结论（含构建期前缀折叠） | 动 blur/saturate、或怀疑磨砂失效 | 4.2 KB |
 | `decisions-ui-polish.md` | **0.6.2 结论唯一真源**：前景 token、动效三曲线、滚动条、字体闸门、sash 三版定稿 | 改主题色 / 动效 / 滚动条 / 空态 | 15.9 KB |
