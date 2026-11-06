@@ -2,6 +2,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { emit } from "@tauri-apps/api/event";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { activateWindow } from "@/utils/windowActivation";
 
 const TILE_WIDTH = 400;
 const TILE_HEIGHT = 500;
@@ -14,7 +15,7 @@ export async function openTileWindow(noteId: string): Promise<void> {
   // Check if tile already exists — focus it instead of creating a new one
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) {
-    await existing.setFocus();
+    await activateWindow(existing);
     return;
   }
 
@@ -44,8 +45,11 @@ export async function openTileWindow(noteId: string): Promise<void> {
     title: "Note Tile",
   });
 
-  // Wait for the window to be created, then sync theme
+  // Wait for the window to be created, then sync theme. `alwaysOnTop` raises
+  // the window without activating it, so the focus call is what puts it in
+  // front of the app instead of merely on top of it.
   tile.once("tauri://created", () => {
+    void activateWindow(tile);
     const { theme, customColors } = useSettingsStore.getState();
     emit("tile-theme-sync", { theme, customColors });
   });

@@ -1,5 +1,6 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emitTo, listen } from "@tauri-apps/api/event";
+import { activateWindow } from "@/utils/windowActivation";
 
 // Track open sticky windows (key: noteId, value: window label)
 const openStickies = new Map<string, string>();
@@ -17,7 +18,7 @@ export async function createStickyNote(noteId: string): Promise<void> {
   if (existingLabel) {
     try {
       const existing = new WebviewWindow(existingLabel);
-      await existing.setFocus();
+      await activateWindow(existing);
       return;
     } catch {
       // Window no longer exists, remove from tracking
@@ -46,12 +47,10 @@ export async function createStickyNote(noteId: string): Promise<void> {
     visible: false, // Hidden initially to avoid flash
   });
 
-  webview.once("tauri://created", async () => {
-    try {
-      await webview.show();
-    } catch {
-      // ignore
-    }
+  webview.once("tauri://created", () => {
+    // `visible: false` was used to avoid the white flash, which also rules out
+    // the activation tao would otherwise do at creation — see `windowActivation`.
+    void activateWindow(webview);
   });
 
   webview.once("tauri://error", (e) => {

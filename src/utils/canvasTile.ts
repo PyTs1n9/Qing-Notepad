@@ -2,6 +2,7 @@ import { emit } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { activateWindow } from "@/utils/windowActivation";
 
 const CANVAS_TILE_WIDTH = 680;
 const CANVAS_TILE_HEIGHT = 520;
@@ -11,7 +12,7 @@ export async function openCanvasTileWindow(canvasId: string): Promise<void> {
   const label = `canvas-tile-${safeId}`;
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) {
-    await existing.setFocus();
+    await activateWindow(existing);
     return;
   }
 
@@ -40,6 +41,9 @@ export async function openCanvasTileWindow(canvasId: string): Promise<void> {
   });
 
   tile.once("tauri://created", () => {
+    // See `windowActivation`: a topmost window is raised without activation,
+    // so the focus call is what brings it in front of the app.
+    void activateWindow(tile);
     const { theme, customColors } = useSettingsStore.getState();
     void emit("tile-theme-sync", { theme, customColors });
   });

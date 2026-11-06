@@ -15,6 +15,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Window, getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { activateWindow } from "@/utils/windowActivation";
 
 /** Must match the `note-window-*` entry in `src-tauri/capabilities/default.json`. */
 const NOTE_WINDOW_PREFIX = "note-window-";
@@ -31,30 +32,6 @@ const WINDOW_HEIGHT = 720;
 /** A window narrower than this would fold the menu bar and the status bar. */
 const WINDOW_MIN_WIDTH = 560;
 const WINDOW_MIN_HEIGHT = 420;
-
-/**
- * Show a window and give it the keyboard, in that order.
- *
- * `show()` alone is not enough for a window this module creates. It is built
- * with `visible: false`, and while a window is hidden tao never runs the
- * activation path — `ShowWindow(SW_SHOW)` is the only activation attempt left,
- * and it loses to the OS foreground lock whenever another window is already in
- * front (another note window, the main window, or Explorer, when the file was
- * opened from there). The window then appears behind everything with the
- * taskbar button merely flashing.
- *
- * `setFocus()` is the one call that reaches tao's `force_window_active` —
- * `SetForegroundWindow` plus the synthetic-key fallback that defeats the lock.
- * It must come *after* `show()`: tao skips it outright while the window is not
- * yet visible, so the reverse order is a silent no-op. `unminimize` sits in
- * between for the same reason as in `focusMainWindow` — a window can be shown
- * and still minimized, and activation is skipped in that state too.
- */
-async function activateWindow(win: WebviewWindow | Window): Promise<void> {
-  await win.show().catch(() => undefined);
-  await win.unminimize().catch(() => undefined);
-  await win.setFocus().catch(() => undefined);
-}
 
 function windowLabelFor(noteId: string): string {
   // Note ids are `[A-Za-z0-9_-]{1,64}` (storage.ts), so no escaping is needed;
