@@ -21,9 +21,14 @@
 
 ### 2. 触发区域
 
-结论：只把标题栏**最顶部 8px**（`h-2`）作为新手势热区；标题栏其余区域双击仍是最大化/还原。
+结论：只把标题栏**最顶部 12px**（`h-3`）作为新手势热区；标题栏其余区域双击仍是最大化/还原。
 理由：双击标题栏最大化是 Windows 通用预期，整条替换会让习惯手势的用户误以为窗口坏了。
-8px 与仓库既有的 8px 视觉节奏（landing margin）一致，150% 缩放下约 12 物理像素。
+
+高度是 2026-11-06 从 8px 调高的，属于命中率问题而不是观感问题：
+`decorations: false` 并不消除外框（§5 实测仍有 22×13 物理像素），顶部那条不可见的
+缩放边框正好压在「窗口最顶上」这个最自然的瞄准点上，8px 热区被它吃掉余量后实测「难点到」。
+12px 在 150% 缩放下约 18 物理像素，同时仍给下方留 24px 给拖窗与最大化手势；
+与标题栏 36px 的比约 1/3，和 Windows「贴边即铺满」的手感量级一致。
 
 ### 3. 还原语义
 
@@ -64,10 +69,10 @@ Tauri 直接拒绝整条命令（实测报错：`invalid type: floating point -6
 
 ### 7. 与 Tauri 内置拖拽区的冲突
 
-结论：8px 热区**不带** `data-tauri-drag-region`。
+结论：12px 热区**不带** `data-tauri-drag-region`。
 理由：Tauri 2.12 的 `drag.js` 在 `mousedown`（`detail === 2`）上调用
 `internal_toggle_maximize`，且只认 `composedPath()[0]` 上的 `data-tauri-drag-region` 属性。
-热区不带该属性，内置行为不会抢跑；代价是这 8px 内无法拖窗，下方 28px 仍可拖，
+热区不带该属性，内置行为不会抢跑；代价是这 12px 内无法拖窗，下方 24px 仍可拖，
 且热区本身用 `cursor: ns-resize` 表明它是一块不同的区域。
 
 ### 8. 从最大化状态进入
@@ -79,7 +84,7 @@ Tauri 直接拒绝整条命令（实测报错：`invalid type: floating point -6
 
 - `src/utils/windowFill.ts`：`toggleVerticalFill()`、`readFrame()`（读 inner/outer 与外框差值）、
   `applyGeometry()`（取整 + 半边框补偿）、`nextResize()`。
-- `src/components/Layout/TitleBar.tsx`：drag-region 容器内新增 `h-2 cursor-ns-resize` 热区，
+- `src/components/Layout/TitleBar.tsx`：drag-region 容器内新增 `h-3 cursor-ns-resize` 热区，
   `onDoubleClick` 先 `stopPropagation` 再调用。
 - `src/components/NoteWindow/NoteWindowChrome.tsx`：新增 `onToggleVerticalFill` prop 与同构热区。
 - `src/components/NoteWindow/NoteWindowView.tsx`：提供 `toggleFill` 回调。
@@ -95,9 +100,19 @@ Tauri 直接拒绝整条命令（实测报错：`invalid type: floating point -6
 - 标题栏其余区域双击仍能最大化/还原（`isMaximized` false → true → false），回归通过。
 - 全程零控制台错误；截图判读标题栏无遮挡、无多余线条。
 
+## 验收记录（2026-11-06，8px → 12px 复测，release exe + WebView2，1200×800 客户区 @150%）
+
+| 项 | 实测 |
+| --- | --- |
+| 热区矩形 | `top: 0`、`height: 12`、宽 877.6（1200 宽的 73%，左右各让出 logo / 控件） |
+| 命中测试（x=600） | y=4 / 9 / 11 落在热区；y=13 / 20 落在 drag-region 容器（最大化手势） |
+| 合成双击 | 800 → 1019（= `screen.availHeight`，顶边 −3 CSS）→ 再双击回到 800 |
+| 控制台 | 零错误；截图标尺下标题栏无遮挡、无新增视觉元素 |
+
 ## 暂未确定
 
-- 8px 热区依赖鼠标定位精度，没有 hover 提示（只有 `ns-resize` 光标）；若实测命中率低，
-  可扩到 10–12px，但会挤压可拖拽区域。
+- 热区只有 `ns-resize` 光标、没有 hover 提示，12px 之外的可发现性依赖用户记住位置。
+- 热区宽度受限于中间 drag-region 容器：窗口很窄时（如 548px 宽）只覆盖顶部约 41%，
+  左右两端双击仍走最大化。若后续仍嫌难命中，可考虑把热区左扩到 logo 区（那块无点击行为）。
 - 没有任何键盘入口（快捷键/菜单项）。当前只作为鼠标手势存在。
 - 铺满后手动拖拽/缩放窗口，再次双击仍会还原到「铺满前」的旧矩形，而不是保留手动调整后的尺寸。

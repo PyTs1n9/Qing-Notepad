@@ -167,14 +167,18 @@ export default function TitleBar({
 
         {/* Drag region */}
         <div data-tauri-drag-region className="relative flex h-full flex-1 items-center justify-center text-sm font-semibold text-text-primary">
-          {/* The top 8px is its own hit area: double-clicking it fills the screen
-              vertically (width untouched), while the rest of the bar keeps the
-              Windows maximise gesture. It deliberately carries no
+          {/* The top 12px is its own hit area: double-clicking it fills the
+              screen vertically (width untouched), while the rest of the bar
+              keeps the Windows maximise gesture. It deliberately carries no
               `data-tauri-drag-region` — Tauri toggles maximise on the
-              `mousedown` of a drag region, which would fire before this. */}
+              `mousedown` of a drag region, which would fire before this.
+              Height is a hit-rate problem, not a visual one: at 8px the band
+              lost its slack to the invisible resize frame Windows still reports
+              for a `decorations: false` window, and aiming at "the very top"
+              kept landing on that frame instead. See decisions-window-fill.md §2. */}
           <div
             aria-hidden="true"
-            className="absolute inset-x-0 top-0 z-10 h-2 cursor-ns-resize"
+            className="absolute inset-x-0 top-0 z-10 h-3 cursor-ns-resize"
             onDoubleClick={(event) => {
               event.stopPropagation();
               void runWindowCommand("vertical fill", () => toggleVerticalFill());
