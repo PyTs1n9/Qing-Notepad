@@ -229,6 +229,7 @@ const UTILS_TO_STORES_WHITELIST = new Map([
   ["src/utils/i18n.ts", "仅 `import type { LangType }`，编译后擦除"],
   ["src/utils/theme.ts", "仅 `import type { ThemeType, CustomColors }`，编译后擦除"],
   ["src/utils/noteWindow.ts", "开窗前读当前主题/语言下发给独立窗口（值导入）；与 tile/canvasTile 同形态"],
+  ["src/utils/externalNotes.ts", "外部 md 打开要查 noteStore 判断是否已入库、读语言设置出提示（值导入）；与 noteWindow 同形态"],
   ["src/utils/exportNote.ts", "导出失败与图片丢弃提示沿用 `alertDialog`（原在 App.tsx 内直接调用），抽取后仍需弹窗"],
   ["src/utils/shortcutManager.ts", "仅 `import type { AppShortcuts }`，编译后擦除"],
   ["src/utils/ai/emptyState.ts", "仅 `import type { LangType }`，编译后擦除"],
