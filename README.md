@@ -26,6 +26,22 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 [![Gitee Star](https://gitee.com/PyTs1n9/Qing-Notepad/badge/star.svg?theme=dark)](https://gitee.com/PyTs1n9/Qing-Notepad/stargazers)
 [![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github)](https://github.com/PyTs1n9/Qing-Notepad)
 [![Downloads](https://img.shields.io/github/downloads/PyTs1n9/Qing-Notepad/total?label=下载量)](https://github.com/PyTs1n9/Qing-Notepad/releases)
+
+<!-- 1. flat 圆角（最常用，和你现在React/Tauri徽章风格统一，推荐） -->
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=flat)](https://github.com/PyTs1n9/Qing-Notepad)
+
+<!-- 2. flat-square 直角扁平，无圆角 -->
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=flat-square)](https://github.com/PyTs1n9/Qing-Notepad)
+
+<!-- 3. plastic 老式立体塑料质感 -->
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=plastic)](https://github.com/PyTs1n9/Qing-Notepad)
+
+<!-- 4. for-the-badge 粗大写、长徽章，很醒目（很多开源首页用） -->
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=STARS&logo=github&style=for-the-badge)](https://github.com/PyTs1n9/Qing-Notepad)
+
+<!-- 5. social 社交样式（默认，带github小卡片感） -->
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=social)](https://github.com/PyTs1n9/Qing-Notepad)
+
 </div>
 
 <!-- markdownlint-restore -->
