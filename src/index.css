@@ -387,8 +387,41 @@
   /* Monospace is a *code* choice, not a body choice: the editor body defaults to
      the UI sans stack (a monospace body falls back per-glyph for CJK, which is
      what made small sizes look pixelated). Code keeps this one everywhere —
-     fenced blocks, inline code, the language label. */
-  --editor-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace;
+     fenced blocks, inline code, the language label.
+     The CJK faces are part of this stack on purpose: a Chinese comment inside a
+     fenced block has no glyph in Cascadia/Consolas, so it fell through
+     `monospace` to SimSun — a serif with thin horizontals that reads as
+     "fuzzy" next to the Latin run at 16px. Listing the UI sans CJK before the
+     generic keyword keeps one weight and one skeleton across both scripts. */
+  --editor-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI",
+    "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Courier New", monospace;
+  /* How much of a brand hue survives in a code token; the rest is mixed back
+     toward the body ink. `--color-success` / `--color-warning` / `--color-danger`
+     are *fill* colours, and as glyphs they fail on every light theme — #22c55e
+     measures 1.87 on a blue-theme code card, yellow's warning 1.65. 30% keeps
+     the hue recognisable and clears 4.5 everywhere (worst case 4.96, yellow
+     warning); the dark theme overrides it to 100% because its palette already
+     measures 5.0-9.5 against the night card. */
+  --code-token-hue: 30%;
+  /* Comments are read as prose, so they sit one step above `--color-text-muted`
+     (4.66 on the night card, i.e. exactly on the WCAG line) without competing
+     with the body colour: 5.7-6.2 across the four themes. */
+  --color-code-comment: color-mix(in srgb, var(--color-text-secondary) 60%, var(--color-text-muted));
+  --color-code-string: color-mix(
+    in srgb,
+    var(--color-success) var(--code-token-hue),
+    var(--color-text-primary)
+  );
+  --color-code-number: color-mix(
+    in srgb,
+    var(--color-warning) var(--code-token-hue),
+    var(--color-text-primary)
+  );
+  --color-code-danger: color-mix(
+    in srgb,
+    var(--color-danger) var(--code-token-hue),
+    var(--color-text-primary)
+  );
   --shell-gutter: 6px;
   /* Space above the card row, below the title bar. Kept apart from the gutter
      so the cards keep the same floating margin as the other three sides
@@ -466,6 +499,17 @@
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --dur-slow: 280ms;
+}
+
+/* The night palette is already measured against its own code card (keyword
+   5.03, string 7.62, number 9.50), so its syntax hues stay at full strength;
+   the light presets take the mix-back declared above. Written as
+   `:root.theme-dark` and *after* the token block on purpose: the four
+   `.theme-*` palettes sit above `:root` in this file, so a plain `.theme-dark`
+   there would lose the cascade tie at equal specificity and the 30% default
+   would win. */
+:root.theme-dark {
+  --code-token-hue: 100%;
 }
 
 /* Both breakpoints currently carry the same 6px rhythm, so this block is a
@@ -2739,7 +2783,7 @@ body.note-window-body {
   background: color-mix(in srgb, var(--color-bg-secondary) 90%, var(--color-bg-primary));
   padding: 0;
   box-shadow: inset 0 1px color-mix(in srgb, white 16%, transparent);
-  line-height: 1.7;
+  line-height: 1.6;
   tab-size: 4;
 }
 
@@ -2768,15 +2812,23 @@ body.note-window-body {
   background: transparent !important;
   color: var(--color-text-primary);
   padding: 0.85em 1em !important;
-  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  /* One stack for every code surface: the local one, the readonly preview and
+     the printed sheet. Duplicating the Latin-only list here is what sent a
+     Chinese comment back to SimSun while the editor two inches away used it. */
+  font-family: var(--editor-font-mono);
   font-size: 1em;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .hljs-comment,
 .hljs-quote {
-  color: var(--color-text-muted);
-  font-style: italic;
+  /* Comments are the one token that is read as prose, so they get the raised
+     tier rather than the muted one (4.66 = on the WCAG line on the night card).
+     `normal` is explicit: a parent can hand down `italic` (markdown source
+     emphasis, a quoted passage) and synthetic obliques are what made the glyphs
+     look soft in the first place. */
+  color: var(--color-code-comment);
+  font-style: normal;
 }
 
 .hljs-keyword,
@@ -2796,7 +2848,7 @@ body.note-window-body {
 .hljs-symbol,
 .hljs-bullet,
 .hljs-addition {
-  color: var(--color-success);
+  color: var(--color-code-string);
 }
 
 .hljs-number,
@@ -2804,14 +2856,14 @@ body.note-window-body {
 .hljs-built_in,
 .hljs-variable,
 .hljs-template-variable {
-  color: var(--color-warning);
+  color: var(--color-code-number);
 }
 
 .hljs-regexp,
 .hljs-selector-attr,
 .hljs-selector-pseudo,
 .hljs-deletion {
-  color: var(--color-danger);
+  color: var(--color-code-danger);
 }
 
 .hljs-params,
@@ -3102,7 +3154,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   background: transparent !important;
   color: #1f2937 !important;
   padding: 8pt 10pt !important;
-  font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  font-family: var(--editor-font-mono);
   font-size: 9.5pt;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -3120,8 +3172,12 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   font-weight: 700;
 }
 
+/* Paper has no theme, so this pair is a literal. #6b7280 measured 4.6 on the
+   #f4f4f5 sheet — the same "technically passing" grey that read as washed out
+   on screen. #4b5563 is 7.1 and still reads as a quieter tier than the body
+   ink; upright for the same reason as the screen rules above. */
 .print-sheet .hljs-comment,
-.print-sheet .hljs-quote { color: #6b7280 !important; font-style: italic; }
+.print-sheet .hljs-quote { color: #4b5563 !important; font-style: normal; }
 
 .print-sheet .hljs-keyword,
 .print-sheet .hljs-selector-tag,
@@ -3528,6 +3584,10 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   background-color: var(--color-bg-secondary);
   /* Code is the one place a monospace face is correct; the body no longer is. */
   font-family: var(--editor-font-mono);
+  /* Matches the preview card. CodeMirror measures every line for its own
+     height, so this value is also what the caret and the hit-testing use — keep
+     it in step with `.markdown-code-block` or the two surfaces drift apart. */
+  line-height: 1.6;
   border-left: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   padding-left: 1em;
@@ -3562,8 +3622,8 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
    The palette is the same one the preview and the exporters use. */
 .cm-line.cm-md-code-block .hljs-comment,
 .cm-line.cm-md-code-block .hljs-quote {
-  color: var(--color-text-muted) !important;
-  font-style: italic;
+  color: var(--color-code-comment) !important;
+  font-style: normal;
 }
 
 .cm-line.cm-md-code-block .hljs-keyword,
@@ -3583,7 +3643,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 .cm-line.cm-md-code-block .hljs-symbol,
 .cm-line.cm-md-code-block .hljs-bullet,
 .cm-line.cm-md-code-block .hljs-addition {
-  color: var(--color-success) !important;
+  color: var(--color-code-string) !important;
 }
 
 .cm-line.cm-md-code-block .hljs-number,
@@ -3591,14 +3651,14 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 .cm-line.cm-md-code-block .hljs-built_in,
 .cm-line.cm-md-code-block .hljs-variable,
 .cm-line.cm-md-code-block .hljs-template-variable {
-  color: var(--color-warning) !important;
+  color: var(--color-code-number) !important;
 }
 
 .cm-line.cm-md-code-block .hljs-regexp,
 .cm-line.cm-md-code-block .hljs-selector-attr,
 .cm-line.cm-md-code-block .hljs-selector-pseudo,
 .cm-line.cm-md-code-block .hljs-deletion {
-  color: var(--color-danger) !important;
+  color: var(--color-code-danger) !important;
 }
 
 .cm-line.cm-md-code-block .hljs-params,
