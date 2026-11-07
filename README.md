@@ -10,7 +10,8 @@
 
 安装包 <strong><em><font color="#1f6feb">约 40MB</font></em></strong>，轻量级桌面应用<br>
 QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br>
-本地优先的 Markdown 记事、待办、画布、便签、知识图谱、插件与离线 AI 助手<br>
+<strong>写 Markdown 不用切视图</strong>：光标离开即排版，回到那一段自动退回源码<br>
+笔记、待办、画布、便签与知识图谱收在一处；免登录、数据可整目录搬走，需要时再开多人协作<br>
 基于 **Tauri v2 + React 19 + TypeScript** 构建
 
 [反馈问题](https://github.com/PyTs1n9/Qing-Notepad/issues) · [更新日志](https://github.com/PyTs1n9/Qing-Notepad/releases)<br>
@@ -22,6 +23,10 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 ![React 19](https://img.shields.io/badge/React-19-blue?logo=react)
 ![Tauri v2](https://img.shields.io/badge/Tauri-v2-%2324C8D8?logo=tauri)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-%233178C6?logo=typescript)
+</br>
+[![Gitee Star](https://svg.hamm.cn/gitee.svg?user=PyTs1n9&project=Qing-Notepad&type=star&logo=yes)](https://gitee.com/PyTs1n9/Qing-Notepad/stargazers)
+[![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=flat)](https://github.com/PyTs1n9/Qing-Notepad)
+[![Downloads](https://img.shields.io/github/downloads/PyTs1n9/Qing-Notepad/total?label=下载量)](https://github.com/PyTs1n9/Qing-Notepad/releases)
 
 </div>
 
@@ -31,9 +36,18 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 
 ## 项目简介
 
-QingNotepad 是一个面向 Windows 桌面的轻量工作台。它把 Markdown 记事、待办清单、自由画布、桌面便签、知识图谱与离线 AI 助手放在同一个应用中：本地内容无需登录即可使用，联网工作台则用于跨设备保存和多人协作。
+QingNotepad 是 Windows 上的轻量桌面工作台，**不登录也能用**：打开就能写，所有本地内容落在一个 `data/` 目录里，复制这个目录就是完整备份，也能在设置里迁移到任意磁盘。
 
-编辑器采用**实时渲染**：Markdown 标记在光标离开后隐藏，只留排版结果；光标回到段落里时该段自动退回源码。写与看不再需要切换两个视图。
+它把「记下来 → 摆清楚 → 找得到」收进同一个窗口：Markdown 实时渲染编辑器负责写，待办清单、自由画布与置顶便签负责摆，知识图谱把本应用笔记和磁盘上任意只读资料库连成一张图（`[[wiki 链接]]`、反链与断链检查都现成）。AI 助手「小青」全程离线，在这些本地内容里检索作答，不联网也不消耗额度；需要生成式回答时，可接自己的 DeepSeek 或任意 OpenAI 兼容端点，回答会标注来源。在线工作台用于跨设备保存与多人实时协作，是**可选项**，不配置服务不影响上述任何本地能力。
+
+编辑器采用**实时渲染**：Markdown 标记在光标离开后隐藏，只留排版结果；光标回到段落里时该段自动退回源码。标题、引用、列表、表格、代码块与任务复选框都按语法树渲染，`Ctrl+/` 可随时切回纯源码视图。
+
+### 为什么值得试试
+
+- **磁盘上的 `.md` 就是那一份**：从资源管理器用 Qing Notepad 打开，编辑的直接是源文件，UTF-8 / UTF-8 BOM / GB18030 与 CRLF / LF 原样保留，同目录临时文件 + 原子替换写入，保存后 git 不会出现整文件 diff，也不会抢走你原有的默认程序。
+- **窗口跟着你的手走**：当前笔记可拆成独立窗口（菜单栏、目录列、状态栏一个不少），两个窗口贴边后双击缝隙即可成组联动；便签与磁贴能置顶常驻，应用在后台新建小窗也会直接拿到焦点。
+- **AI 先读你的资料，再回答**：小青离线检索功能手册、常见问答、笔记、便签、待办与画布文本；云端模型以检索结果作答并标注来源，API Key 经 Windows 加密后只存本机。选中文字可润色，让 AI 改动笔记前会自动留快照、支持逐条撤销。
+- **扩展与外观都可控**：插件代码在独立 Worker 沙箱里运行，拿不到 `window` / `document` 与系统能力，安装前逐条确认权限、命令集中在命令面板；四套预设主题、自定义配色与背景、中英即时切换、应用内更新与数据目录迁移都是现成的。
 
 ## 功能特点
 
