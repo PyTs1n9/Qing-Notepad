@@ -395,6 +395,12 @@
      generic keyword keeps one weight and one skeleton across both scripts. */
   --editor-font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "Microsoft YaHei UI",
     "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Courier New", monospace;
+  /* Code sits one step under the body size. At parity the mono face reads
+     *larger* than the prose around it: a wider advance and a taller x-height on
+     the same 16px. One token so the editor card, the readonly preview and any
+     future surface stay in step; paper keeps its own 9.5pt because it has its
+     own scale. */
+  --code-font-size: 0.9em;
   /* How much of a brand hue survives in a code token; the rest is mixed back
      toward the body ink. `--color-success` / `--color-warning` / `--color-danger`
      are *fill* colours, and as glyphs they fail on every light theme — #22c55e
@@ -2816,7 +2822,7 @@ body.note-window-body {
      the printed sheet. Duplicating the Latin-only list here is what sent a
      Chinese comment back to SimSun while the editor two inches away used it. */
   font-family: var(--editor-font-mono);
-  font-size: 1em;
+  font-size: var(--code-font-size);
   line-height: 1.6;
 }
 
@@ -3587,6 +3593,7 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   /* Matches the preview card. CodeMirror measures every line for its own
      height, so this value is also what the caret and the hit-testing use — keep
      it in step with `.markdown-code-block` or the two surfaces drift apart. */
+  font-size: var(--code-font-size);
   line-height: 1.6;
   border-left: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
