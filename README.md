@@ -23,7 +23,7 @@ QQ 讨论群 <strong><em><font color="#1f6feb">902898359</font></em></strong><br
 ![Tauri v2](https://img.shields.io/badge/Tauri-v2-%2324C8D8?logo=tauri)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-%233178C6?logo=typescript)
 </br>
-[![Gitee Stars](https://svg.hamm.cn/gitee.svg?user=PyTs1n9&project=Qing-Notepad&type=star&logo=yes&radius=3)](https://gitee.com/PyTs1n9/Qing-Notepad/stargazers)
+[![Gitee Stars](https://svg.hamm.cn/gitee.svg?user=PyTs1n9&project=Qing-Notepad&type=star&logo=yes&radius=3&bg=%23444444&color=%23007ec6)](https://gitee.com/PyTs1n9/Qing-Notepad/stargazers)
 [![Stars](https://img.shields.io/github/stars/PyTs1n9/Qing-Notepad?label=Stars&logo=github&style=flat)](https://github.com/PyTs1n9/Qing-Notepad)
 [![Downloads](https://img.shields.io/github/downloads/PyTs1n9/Qing-Notepad/total?label=下载量)](https://github.com/PyTs1n9/Qing-Notepad/releases)
 
