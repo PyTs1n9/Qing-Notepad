@@ -55,6 +55,8 @@ env.ps1
 IDEA.md
 .workbuddy/
 .agents/
+# 自定义专家团：项目内 experts/ 为唯一真源，C 盘只留目录联接与运行时缓存
+**/.created-by-session
 
 # WorkBuddy 网页版发布指针：内容是 appId + 本机绝对路径，换机器即失效，不入库
 .wbapp_*.genie

@@ -1,0 +1,12 @@
+{
+  "name": "my-experts",
+  "description": "my-experts marketplace (auto-generated)",
+  "plugins": [
+    {
+      "name": "qing-dev",
+      "source": "./plugins/qing-dev",
+      "description": "A tailored multi-agent delivery team for the Qing Notepad Tauri v2 desktop app",
+      "version": "1.0.0"
+    }
+  ]
+}

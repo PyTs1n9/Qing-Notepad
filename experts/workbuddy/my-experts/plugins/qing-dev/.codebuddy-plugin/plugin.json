@@ -1,0 +1,217 @@
+{
+  "name": "qing-dev",
+  "version": "1.0.0",
+  "description": "A tailored multi-agent delivery team for the Qing Notepad Tauri v2 desktop app",
+  "author": {
+    "name": "PyTsING"
+  },
+  "agents": [
+    "./agents/qing-dev-team-lead.md",
+    "./agents/qing-dev-frontend-engineer.md",
+    "./agents/qing-dev-rule-guardian.md",
+    "./agents/qing-dev-quality-officer.md",
+    "./agents/qing-dev-architect.md",
+    "./agents/qing-dev-tauri-engineer.md",
+    "./agents/qing-dev-visual-designer.md",
+    "./agents/qing-dev-release-steward.md"
+  ],
+  "expertType": "team",
+  "agentName": "qing-dev-team-lead",
+  "teamInfo": {
+    "leadAgent": "qing-dev-team-lead",
+    "memberAgents": [
+      "qing-dev-frontend-engineer",
+      "qing-dev-rule-guardian",
+      "qing-dev-quality-officer",
+      "qing-dev-architect",
+      "qing-dev-tauri-engineer",
+      "qing-dev-visual-designer",
+      "qing-dev-release-steward"
+    ]
+  },
+  "displayName": {
+    "en": "Qing Dev Team",
+    "zh": "青笺研发团"
+  },
+  "profession": {
+    "en": "Qing Dev Team",
+    "zh": "青笺研发团"
+  },
+  "displayDescription": {
+    "en": "A bespoke delivery team for Qing Notepad: requirement triage, React and Tauri implementation, repository guardrails, and real WebView2 acceptance.",
+    "zh": "为青笺笔记量身定制的桌面应用研发团，覆盖需求澄清、前后端实现、硬规则守门与真实窗口验收交付全链路。"
+  },
+  "avatar": "avatars/team.png",
+  "categoryId": "02-Engineering",
+  "defaultInitPrompt": {
+    "zh": "按工作流判定本次改动该走哪条路径，并列出参与角色与可判定验收条件",
+    "en": "Route this change through the workflow decision table and list the participating roles with verifiable acceptance criteria"
+  },
+  "plugin": "qing-dev",
+  "tags": [
+    {
+      "en": "Tauri Desktop",
+      "zh": "Tauri 桌面应用"
+    },
+    {
+      "en": "Repo Guardrails",
+      "zh": "仓库硬规则"
+    },
+    {
+      "en": "WebView Acceptance",
+      "zh": "WebView 验收"
+    }
+  ],
+  "quickPrompts": [
+    {
+      "en": "Route this change through the workflow decision table and list the participating roles with verifiable acceptance criteria",
+      "zh": "按工作流判定本次改动该走哪条路径，并列出参与角色与可判定验收条件"
+    },
+    {
+      "en": "Run the full build and WebView2 acceptance chain for a dist-bound change and list every unverified item",
+      "zh": "改动能进 dist 时跑一遍完整构建与 WebView2 验收，并列出所有未验证项"
+    },
+    {
+      "en": "Start releasing version vX.Y.Z following the release runbook",
+      "zh": "按发版 Runbook 开始发行最新版 vX.Y.Z"
+    }
+  ],
+  "members": [
+    {
+      "id": "qing-dev-team-lead",
+      "name": {
+        "en": "PyTsING",
+        "zh": "柏青"
+      },
+      "displayName": {
+        "en": "PyTsING",
+        "zh": "柏青"
+      },
+      "profession": {
+        "en": "Delivery Director",
+        "zh": "交付调度总监"
+      },
+      "avatar": "avatars/qing-dev-team-lead.png",
+      "role": "lead"
+    },
+    {
+      "id": "qing-dev-frontend-engineer",
+      "name": {
+        "en": "Frontend Chief",
+        "zh": "前端大佬"
+      },
+      "displayName": {
+        "en": "Frontend Chief",
+        "zh": "前端大佬"
+      },
+      "profession": {
+        "en": "Frontend Engineer",
+        "zh": "前端工程师"
+      },
+      "avatar": "avatars/qing-dev-frontend-engineer.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-rule-guardian",
+      "name": {
+        "en": "Repo Keeper",
+        "zh": "仓管"
+      },
+      "displayName": {
+        "en": "Repo Keeper",
+        "zh": "仓管"
+      },
+      "profession": {
+        "en": "Repo Guardrail Auditor",
+        "zh": "仓库规则守门员"
+      },
+      "avatar": "avatars/qing-dev-rule-guardian.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-quality-officer",
+      "name": {
+        "en": "WebView Chief",
+        "zh": "Webview大佬"
+      },
+      "displayName": {
+        "en": "WebView Chief",
+        "zh": "Webview大佬"
+      },
+      "profession": {
+        "en": "Quality & Acceptance Officer",
+        "zh": "质量与验收官"
+      },
+      "avatar": "avatars/qing-dev-quality-officer.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-architect",
+      "name": {
+        "en": "Architecture Chief",
+        "zh": "架构大佬"
+      },
+      "displayName": {
+        "en": "Architecture Chief",
+        "zh": "架构大佬"
+      },
+      "profession": {
+        "en": "Architecture & Task Planner",
+        "zh": "架构与任务拆分师"
+      },
+      "avatar": "avatars/qing-dev-architect.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-tauri-engineer",
+      "name": {
+        "en": "Rust Chief",
+        "zh": "Rust大佬"
+      },
+      "displayName": {
+        "en": "Rust Chief",
+        "zh": "Rust大佬"
+      },
+      "profession": {
+        "en": "Rust Shell Engineer",
+        "zh": "Rust 外壳工程师"
+      },
+      "avatar": "avatars/qing-dev-tauri-engineer.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-visual-designer",
+      "name": {
+        "en": "Visual Chief",
+        "zh": "视觉大佬"
+      },
+      "displayName": {
+        "en": "Visual Chief",
+        "zh": "视觉大佬"
+      },
+      "profession": {
+        "en": "Visual System Designer",
+        "zh": "视觉系统设计师"
+      },
+      "avatar": "avatars/qing-dev-visual-designer.png",
+      "role": "member"
+    },
+    {
+      "id": "qing-dev-release-steward",
+      "name": {
+        "en": "Release Chief",
+        "zh": "发版大佬"
+      },
+      "displayName": {
+        "en": "Release Chief",
+        "zh": "发版大佬"
+      },
+      "profession": {
+        "en": "Release Steward",
+        "zh": "发版专员"
+      },
+      "avatar": "avatars/qing-dev-release-steward.png",
+      "role": "member"
+    }
+  ]
+}

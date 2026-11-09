@@ -22,8 +22,9 @@
 | `user-faq.md` | 「小青」问答语料，`## Qn｜question` 即分块边界 | 改 AI 检索语料、加用户问答 | 6.0 KB |
 | `online-workspace.md` | Supabase 初始化步骤与工作台部署顺序 | 要摆在线工作台 / 跑 migration 时 | 3.3 KB |
 | `decisions-agent-dispatch.md` | 多智能体分派工作站：可行边界、三方案选型、3 人基线 + 只读守门员角色表、落地清单与开放问题 | 配置/改动团队分派规则前；或要判断「角色默认生效吗」时 | 6.3 KB |
-| `decisions-custom-expert-team.md` | **现行角色真源**：逐岗过问结论、8 岗花名与编制、P0–P6 工作流、提示词定制要点、双份同步机制 | 改角色 / 改系统提示词 / 判断某岗该不该拉起时 | 9.3 KB |
-| `agents/` | 8 个角色系统提示词的唯一编辑真源（与已注册 `qing-dev` 专家包同源）；改完跑 `node scripts/sync-expert-agents.mjs` | 要重写某个角色的系统提示词时 | 35.7 KB |
+| `decisions-custom-expert-team.md` | **现行角色真源**：逐岗过问结论、8 岗花名与编制、P0–P6 工作流、提示词定制要点、项目内管理与 Codex 适配 | 改角色 / 改系统提示词 / 判断某岗该不该拉起时 | 12.3 KB |
+| `agents/` | 8 个角色系统提示词的唯一编辑真源（与项目内 `qing-dev` 专家包同源）；改完跑 `node scripts/sync-expert-agents.mjs` | 要重写某个角色的系统提示词时 | 35.7 KB |
+| `experts/` | 两套适配的项目内真源：`workbuddy/`（完整专家包 + junction 目标）、`codex/`（映射说明 + DISPATCH）；`.codex/agents/qing-cx-*.toml` 为生成产物 | 搬迁路径、重建联接、做 Codex 适配时 | 53 KB |
 | `release-notes-titlebar.md` | 顶栏改版的用户侧迁移对照表（旧入口 → 新入口） | 写发布说明、或被问"某个功能去哪了" | 3.6 KB |
 | `team-collaboration-spec.md` | 开发团队协作规范：工作流路由、RACI、交接物格式、DoR/DoD、本仓库专属检查清单、文档与记忆规范 | 接手任何非 trivial 需求前；或要判断"这该走哪条流程"时 | 32.7 KB |
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // 单向同步：docs/agents/*.md（仓库内唯一编辑真源）
-//   → 注册源目录 marketplaces/my-experts/plugins/qing-dev/agents/
-//   → 所有安装缓存版本目录 plugins/cache/my-experts/qing-dev/<version>/agents/
-// 并把注册源目录的展示元数据（plugin.json / README.md）镜像到各缓存版本目录。
+//   → 项目内完整专家包 experts/workbuddy/my-experts/plugins/qing-dev/agents/
+//   → WorkBuddy 运行时安装缓存 plugins/cache/my-experts/qing-dev/<version>/agents/
+// C 盘的 marketplaces/my-experts 是指向项目内目录的 junction，无需单独同步。
+// 并把项目内专家包的展示元数据镜像到各缓存版本目录。
 // 用法：node scripts/sync-expert-agents.mjs
-// 同步后仍需重新运行 expert-manager 的 validate_expert.py 与 register_expert.py。
+// 同步后仍需运行 expert-manager 的 validate_expert.py 与 register_expert.py。
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -14,7 +15,7 @@ import { homedir } from 'node:os';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = join(repoRoot, 'docs', 'agents');
 const configDir = process.env.WORKBUDDY_CONFIG_DIR || join(homedir(), '.workbuddy');
-const sourcePkg = join(configDir, 'plugins', 'marketplaces', 'my-experts', 'plugins', 'qing-dev');
+const sourcePkg = join(repoRoot, 'experts', 'workbuddy', 'my-experts', 'plugins', 'qing-dev');
 const cacheRoot = join(configDir, 'plugins', 'cache', 'my-experts', 'qing-dev');
 
 const EXPECTED = 8;

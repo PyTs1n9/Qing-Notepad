@@ -123,3 +123,40 @@ P0 准入（读 MEMORY.md / topics / INDEX / decisions → `grill` → `architec
 4. 内置专家团是否需要卸载，还是长期保留为可回退选项。
 5. 本次改动只涉及 `docs/` 与 `scripts/`，不进 `dist`，按 `AGENTS.md` 跳过 build + WebView 验收；
    若之后把提示词接进运行时，需重跑验收链路。
+
+## 9. 项目内管理与 Codex 适配（2026-11-09 追加）
+
+**结论 D6｜专家包实体迁入项目，C 盘只留目录联接与运行时缓存。**
+理由：`init_expert.py:446-453` 与 `validate_expert.py:329-338` 硬检查专家必须位于
+`$WORKBUDDY_CONFIG_DIR/plugins/marketplaces/my-experts/plugins/`，直接放项目内无法被检测。
+实测 Python `Path.resolve()` 会跟随 Windows junction，因此**只链接 `qing-dev` 会让校验基准不一致**；
+正确做法是把**整个 `my-experts` 市场目录**迁入项目并让 C 盘同名路径成为 junction，
+这样校验两侧都解析到 `D:\Code\Qing-Notepad\experts\workbuddy\my-experts\` 同一子树。
+切换后 `validate_expert.py` 通过，注册脚本输出的 Marketplace 已是项目内路径。
+原 C 盘实体保留为 `my-experts.pre-junction-20261109` 备份，可回滚。
+
+**结论 D7｜Codex 是独立适配，内容可移植、编排不可移植。**
+WorkBuddy 专有格式（`.codebuddy-plugin/plugin.json`、YAML frontmatter、`marketplace.json` 注册、
+TeamCreate / SendMessage 编排、共享任务列表）Codex 均不识别。
+本机 `codex-cli 0.167.0` 的项目级自定义子智能体为 `.codex/agents/*.toml`，
+含 `name` / `description` / `developer_instructions`。因此：
+- 8 份角色正文从 `docs/agents/*.md` 生成 TOML，命名前缀 **`qing-cx-*`**；
+  WorkBuddy 版保持 **`qing-dev-*`**，两者严格区分、互不覆盖。
+- 主理人 SOP 改写为 `spawn_agent` / `wait_agent` 语义，落在 `experts/codex/DISPATCH.md`；
+  每份 TOML 末尾追加「Codex 运行时适配注记」，不改写原文。
+- Codex 的 `AGENTS.md` 约 32 KiB 上限，8 份正文合计约 36 KB，**不得整包塞进根 AGENTS.md**，
+  故保留在各自 TOML 的 `developer_instructions` 中，根 `AGENTS.md` 不改。
+
+**落地文件**：`experts/README.md`（两套适配总说明）、`experts/workbuddy/my-experts/`（完整包）、
+`experts/codex/README.md` + `DISPATCH.md`、`.codex/agents/qing-cx-*.toml`（8 个生成产物）、
+`scripts/ensure-expert-junction.mjs`（联接自检/重建，遇到真实目录只报警不删数据）、
+`scripts/build-codex-agents.mjs`（TOML 生成器）、`scripts/sync-expert-agents.mjs`（真源路径改为项目内）。
+`.gitignore` 新增 `**/.created-by-session` 排除注册态会话标记。
+
+**验证**：联接自检通过；同步脚本刷新项目包 + C 盘缓存两处；8 个 TOML 经 Python `tomllib`
+全部解析成功且 `name` 均为 `qing-cx-*`；专家包 `validate_expert.py` 通过并重新注册。
+**未验证**：Codex 运行时实际拉起子智能体（需 API 调用与真实会话）、`spawn_agent` / `wait_agent`
+在本机 config.toml 下的启用状态；这些如实标注为未验证，不写「已测试」。
+
+**新开放问题**：是否把 `.agents/skills/qing-cx-dispatch/` 也纳入（当前 `.gitignore` 忽略 `.agents/`）；
+是否在根 `AGENTS.md` 追加一行让 Codex 自动采用这套编排；C 盘备份目录何时清理。
