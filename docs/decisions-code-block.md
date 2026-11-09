@@ -150,7 +150,23 @@ Ctrl+A 与粘贴是**文档语义**，不是视图装饰。挂进 compartment �
 - `npm run verify:input-rules`：53 项 · 0 失败
 - `npm run verify:block-delete`：51 项 · 0 失败
 - `npm run verify:ui-polish`：152 组合 · 150 达 4.5:1 · 无失败
-- `npm run build` + `npm run tauri -- build --no-bundle` + `npm run verify:webview`：见本轮收尾记录
+- `npm run build`：通过（3652 modules，dist 里 `md-code-border` / `md-code-info` /
+  `cm-md-code-first` 三个新标记各 1 处）
+- `npm run tauri -- build --no-bundle`：**失败**，`linker link.exe not found`
+- `npm run verify:webview`：**未运行**（没有新 exe）
+
+### 验收状态：阻塞（2026-11-09）
+
+`tauri build` 失败的原因不是配置，是本机工具链被卸载：`C:\Program Files (x86)\Microsoft Visual
+Studio\2022` 与 `Windows Kits\10` 只剩空目录（mtime 均为 2026-11-08 15:12），`cl.exe`/`link.exe`/
+`rc.exe` 全部不存在，`vswhere` 返回空，`KitsRoot10` 注册表值为空；`env.ps1` 指向的四个路径今天
+全都不存在。`rustup` 只有 msvc target，没有 gnu 回退。
+
+因此本轮**没有真实 WebView2 证据，判定「未验收」**。旧 exe（11-07 08:51）不能顶替：二进制内
+`md-code-border` / `md-code-info` / `cm-md-code-first` 计数均为 0，dist 哈希已变而 exe 戳未变，
+跑出来的截图是上一版 UI。工具链恢复后补跑：`npm run build` → `tauri build --no-bundle` →
+`verify:webview`，并按 QA 清单量 `paddingLeft ≠ 6px`、边框对比度 ≥ 3、`--box-radius` = 10px、
+引用内 `3px/4px/text-primary`、`.cm-md-code-info` 内层 inherit。
 
 **需人工目视确认（本机无 GUI，一律未写「已验证」）**
 1. Ctrl+A 两段式的真实按键手感与 IM E/剪贴板路径（本机只能合成事件）；
