@@ -356,15 +356,26 @@ CSS 优先级问题没有第二种解法：把卡片填充也写成 `!important`
   首行/单行/折叠镜像行 `boxShadow` 含 `inset`，中间行 `none`；
   `.cm-selectionLayer` = `z-index:1` / `pointer-events:none`；
   描边 1px 且颜色仍为 30/70 派生值。夹具截图（临时、已删）确认卡片整块不透明、无横纹、无接缝。
-- **`verify:webview` 未完成（阻塞，不得写「已验收」）**：`build` 与 `tauri build` 后，
-  `verify:webview` 报 `another qing-notepad.exe is already running (pid 38416)`——
-  已安装的 `E:\QingNotepad\qing-notepad.exe`（带 `README.md` 启动）占着单实例锁且未开 CDP。
-  按 `AGENTS.md` 需由人从托盘退出后再跑；不得擅自结束用户进程。验收窗口当前处于关闭态
-  （`verify:webview:status` = `running:false / no-session`），下次会话须重走
-  build → tauri build → 开窗。
+- **`verify:webview`（真实 WebView2，release exe）通过**：复用已开窗口
+  （pid 36192 / CDP 9333，`reused: true`，buildId 指纹与 `dist/` + exe 一致），
+  `ok: true`、`failures: []`、`consoleErrors: []`、`consoleWarnings: []`、
+  `networkNoise: []`、`url: http://tauri.localhost/`、`keptOpen: true`、
+  `themeClass: theme-dark`、`editorCard 546×752`、`shellCards 3`、`fontsStatus: loaded`。
+  首次尝试曾被已安装实例 `E:\QingNotepad\qing-notepad.exe`（pid 38416，带 `README.md`
+  启动）占单实例锁挡住，**未 kill 任何用户进程**；该实例随后退出，并行线用同一份
+  release exe 开了窗口，故直接复用。窗口按规则保持常驻，收尾未关。
+- **真实 WebView2 计算样式探针**（`--eval --no-assert`，页面内临时构造同类
+  `.cm-editor` / `.cm-line` DOM、读完即移除，**不改任何笔记数据**）：dark / blue 两套下
+  代码块活动行 `rgb(37,38,43)` / `rgb(226,232,240)` 与同块非活动行**完全相同**，
+  块外活动行仍是 `rgba(0,0,0,0)`；所有代码行 `backdropFilter: none`；
+  首行 `inset` 高光、中间行 `none`；选区层 `z-index:1 / pointer-events:none`；
+  预览卡为 90/10 合成色且无 blur；描边 1px 仍是 30/70 派生值。
+  真实编辑器里 `.cm-line.cm-activeLine` 数量 = 1，证明 CodeMirror 确在聚焦时加类。
 
-**需人工目视（本机无 GUI，一律未验证）**：真实点击代码块后的光标与卡片观感、四套主题与
-真实壁纸下的边框观感、HiDPI 下顶高光与圆角贴合、折叠围栏时的接缝、长代码块滚动帧率、
+**需人工目视（本机无 GUI，一律未验证）**：验收时打开的笔记里没有围栏代码块，所以
+「真实点进代码块 → 光标落位 / 编辑输入 / IME / 选区拖拽」这条交互路径**没有被端到端覆盖**
+（计算样式探针用的是临时 DOM，不是真笔记）；四套主题与真实壁纸下的边框观感、
+HiDPI 下顶高光与圆角贴合、折叠围栏时的接缝、长代码块滚动帧率、
 语言条实底与卡片材质的层级、系统「减少透明效果」开关。
 
 ### 本轮新增的开放问题
