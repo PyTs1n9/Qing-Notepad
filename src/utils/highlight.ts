@@ -1,4 +1,5 @@
 import hljs from "highlight.js/lib/core";
+import type { LanguageFn } from "highlight.js";
 import bash from "highlight.js/lib/languages/bash";
 import c from "highlight.js/lib/languages/c";
 import cpp from "highlight.js/lib/languages/cpp";
@@ -22,21 +23,43 @@ import xml from "highlight.js/lib/languages/xml";
  * (which needs *offsets*, not HTML). Registering in both places would double the
  * module graph for no reason, and registering in only one would leave the other
  * silently unhighlighted — which is exactly the bug this file fixes.
+ *
+ * A record plus one loop instead of fourteen statements, because the same set is
+ * now also the *menu* of the code-block language picker (see `CODE_LANGUAGES`).
+ * Two hand-written lists — "what is registered" and "what the menu offers" —
+ * drift the moment one is edited, and the failure is silent: the menu lists a
+ * language that highlights nothing. One list, two readers.
  */
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("c", c);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("powershell", powershell);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("xml", xml);
+const LANGUAGES: Record<string, LanguageFn> = {
+  bash,
+  c,
+  cpp,
+  css,
+  java,
+  javascript,
+  json,
+  markdown,
+  powershell,
+  python,
+  rust,
+  sql,
+  typescript,
+  xml,
+};
+
+for (const [name, language] of Object.entries(LANGUAGES)) hljs.registerLanguage(name, language);
+
+/**
+ * Every registered language, in menu order.
+ *
+ * Derived from `LANGUAGES` on purpose — that is the "single source of truth"
+ * this file exists for. A second hand-written list would drift the moment a
+ * language is added to one and not the other, and the failure is silent: a menu
+ * entry that highlights nothing. `Object.keys` preserves string-key insertion
+ * order, so the literal above *is* the menu order; reordering it reorders the
+ * picker, which is the intended editing surface.
+ */
+export const CODE_LANGUAGES: readonly string[] = Object.keys(LANGUAGES);
 
 /** Aliases the fence info string may use instead of the canonical name. */
 const ALIASES: Record<string, string> = {

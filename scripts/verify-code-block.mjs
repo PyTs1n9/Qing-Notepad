@@ -41,8 +41,11 @@ const outfile = path.join(tmpDir, "codeBlock.bundle.mjs");
 await esbuild.build({
   stdin: {
     contents: [
-      `export { codeBlockAt, codeBlockSelectSpec, codeBlockPasteSpec, looksLikeCode } from ${JSON.stringify(
+      `export { codeBlockAt, codeBlockSelectSpec, codeBlockPasteSpec, looksLikeCode, codeFenceInfoAt, codeBlockLanguageSpec } from ${JSON.stringify(
         path.join(root, "src/utils/livePreview/codeBlock.ts"),
+      ).replaceAll("\\", "/")};`,
+      `export { CODE_LANGUAGES } from ${JSON.stringify(
+        path.join(root, "src/utils/highlight.ts"),
       ).replaceAll("\\", "/")};`,
       `export { EditorState } from "@codemirror/state";`,
       `export { ensureSyntaxTree } from "@codemirror/language";`,
@@ -59,7 +62,7 @@ await esbuild.build({
   logLevel: "silent",
 });
 
-const { codeBlockAt, codeBlockSelectSpec, codeBlockPasteSpec, looksLikeCode, EditorState, ensureSyntaxTree, markdown, markdownLanguage } =
+const { codeBlockAt, codeBlockSelectSpec, codeBlockPasteSpec, looksLikeCode, codeFenceInfoAt, codeBlockLanguageSpec, CODE_LANGUAGES, EditorState, ensureSyntaxTree, markdown, markdownLanguage } =
   await import(pathToFileURL(outfile).href);
 
 /** Same language the editor mounts (`MarkdownSourceEditor` uses the GFM base). */
@@ -164,6 +167,285 @@ section("codeBlockAt：正文口径（不含围栏 / 语言 / 缩进）");
     const actual = block ? `${block.from}-${block.to}|${block.contentFrom}-${block.contentTo}` : "null";
     check(`codeBlockAt ${JSON.stringify(item.doc)}`, actual === item.expect, `期望 ${item.expect}，实际 ${actual}`);
   }
+}
+
+// -------------------------------------------------------------- codeFenceInfoAt
+section("codeFenceInfoAt：语言词的三个区间");
+
+{
+  const info = (doc, pos) => {
+    const value = codeFenceInfoAt(makeState(doc, pos), pos);
+    if (!value) return null;
+    const { from, to, infoFrom, infoTo, wordFrom, wordTo, closed } = value;
+    return { from, to, infoFrom, infoTo, wordFrom, wordTo, closed, word: doc.slice(wordFrom, wordTo) };
+  };
+
+  // No info string at all: every range collapses onto the position right after
+  // the opening fence, which is exactly where a language would be typed.
+  check(
+    "无 CodeInfo：info 与 word 都塌陷在反引号之后（3-3）",
+    JSON.stringify(info("```\ncode\n```\n", 4)) ===
+      JSON.stringify({ from: 0, to: 12, infoFrom: 3, infoTo: 3, wordFrom: 3, wordTo: 3, closed: true, word: "" }),
+    JSON.stringify(info("```\ncode\n```\n", 4)),
+  );
+
+  // ```` ``` python ````: the parser trims, so `CodeInfo` starts after the space.
+  // `infoFrom` stays at the fence end so clearing can take the space with it.
+  const spaced = info("``` python\ncode\n```\n", 6);
+  check(
+    "` ``` python `：前导空格落在 infoFrom..wordFrom 之间",
+    spaced !== null && spaced.infoFrom === 3 && spaced.wordFrom === 4 && spaced.word === "python",
+    JSON.stringify(spaced),
+  );
+
+  const attrs = info('```js title="a b" hl_lines=1\ncode\n```\n', 6);
+  check(
+    "尾部参数：word 只覆盖 `js`，infoTo 覆盖整行 info",
+    attrs !== null && attrs.word === "js" && attrs.wordFrom === 3 && attrs.wordTo === 5 && attrs.infoTo === 28,
+    JSON.stringify(attrs),
+  );
+  check(
+    "尾部参数：infoFrom..infoTo 逐字等于整段 info",
+    attrs !== null && '```js title="a b" hl_lines=1\ncode\n```\n'.slice(attrs.infoFrom, attrs.infoTo) === 'js title="a b" hl_lines=1',
+    JSON.stringify(attrs && '```js title="a b" hl_lines=1\ncode\n```\n'.slice(attrs.infoFrom, attrs.infoTo)),
+  );
+
+  check("闭围栏：closed === true", info("```js\n```\n", 0)?.closed === true);
+  check("未闭合围栏：closed === false", info("```\nunclosed\n", 5)?.closed === false);
+  check(
+    "未闭合围栏：node.to 就是文档末尾（不凭空补围栏）",
+    info("```\nunclosed\n", 5)?.to === "```\nunclosed\n".length,
+    JSON.stringify(info("```\nunclosed\n", 5)),
+  );
+  check("缩进代码块：没有 fence info，返回 null", info("    indented\n    code\n", 6) === null);
+  check("普通段落：返回 null", info("普通段落", 2) === null);
+  check("四个反引号的围栏：word 仍只覆盖语言词", info("````js\nx\n````\n", 6)?.word === "js");
+  check("波浪号围栏：别名按原样取出（py）", info("~~~py\nx\n~~~\n", 5)?.word === "py");
+}
+
+// ------------------------------------------------------------------ language
+section("设语言：只换 fence info 的第一个词");
+
+/** Apply `codeBlockLanguageSpec` and report everything the assertions need. */
+function setLanguage(doc, pos, language) {
+  const state = makeState(doc, pos);
+  const before = codeBlockAt(state, pos);
+  const spec = codeBlockLanguageSpec(state, pos, language);
+  if (!spec) return { state, before, spec, tr: null, next: null, out: null, changes: [] };
+
+  const tr = state.update(spec);
+  const changes = [];
+  tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+    changes.push({ from: fromA, to: toA, removed: state.sliceDoc(fromA, toA), inserted: inserted.toString() });
+  });
+  const next = tr.state;
+  return { state, before, spec, tr, next, out: next.doc.toString(), changes, after: codeBlockAt(next, pos) };
+}
+
+/** A change may not cross a line break: the fence line is the only line touched. */
+function crossesLine(state, change) {
+  return state.doc.lineAt(change.from).to < change.to;
+}
+
+const languageCases = [
+  {
+    name: "无 info：插入 python（贴着反引号，不加空格）",
+    doc: "```\ncode\n```\n",
+    pos: 4,
+    lang: "python",
+    out: "```python\ncode\n```\n",
+  },
+  {
+    name: "`js` → typescript：整词替换，不是追加",
+    doc: "```js\nconst a = 1;\n```\n",
+    pos: 8,
+    lang: "typescript",
+    out: "```typescript\nconst a = 1;\n```\n",
+  },
+  {
+    name: "`py` → 写 canonical `python`（别名不落到 fence 上）",
+    doc: "```py\ncode\n```\n",
+    pos: 5,
+    lang: "python",
+    out: "```python\ncode\n```\n",
+  },
+  {
+    name: "null 清空：连同 word 前的分隔空格一起删",
+    doc: "``` python\ncode\n```\n",
+    pos: 6,
+    lang: null,
+    out: "```\ncode\n```\n",
+  },
+  {
+    name: "null 清空：多个前导空格一并删净",
+    doc: "```  py\ncode\n```\n",
+    pos: 6,
+    lang: null,
+    out: "```\ncode\n```\n",
+  },
+  {
+    name: "尾部参数：只换第一个词，`title` / `hl_lines` 原样",
+    doc: '```js title="a b" hl_lines=1\ncode\n```\n',
+    pos: 6,
+    lang: "typescript",
+    out: '```typescript title="a b" hl_lines=1\ncode\n```\n',
+  },
+  {
+    name: "未闭合围栏：改名后仍不闭合，不新增行",
+    doc: "```py\nunclosed\n",
+    pos: 5,
+    lang: "python",
+    out: "```python\nunclosed\n",
+  },
+  {
+    name: "波浪号围栏保留波浪号，只换词",
+    doc: "~~~py\nx\n~~~\n",
+    pos: 5,
+    lang: "python",
+    out: "~~~python\nx\n~~~\n",
+  },
+  {
+    name: "四个反引号保留四个，只换词",
+    doc: "````js\nx\n````\n",
+    pos: 6,
+    lang: "python",
+    out: "````python\nx\n````\n",
+  },
+];
+
+for (const item of languageCases) {
+  const result = setLanguage(item.doc, item.pos, item.lang);
+
+  check(`${item.name} — 产出 spec`, result.spec !== null);
+  if (!result.spec) continue;
+
+  check(
+    `${item.name} — 文档逐字`,
+    result.out === item.out,
+    `期望 ${JSON.stringify(item.out)}\n        实际 ${JSON.stringify(result.out)}`,
+  );
+  check(
+    `${item.name} — 正文内容逐字不变（只是整体位移）`,
+    result.before !== null &&
+      result.after !== null &&
+      result.state.sliceDoc(result.before.contentFrom, result.before.contentTo) ===
+        result.next.sliceDoc(result.after.contentFrom, result.after.contentTo),
+    `${JSON.stringify(result.state.sliceDoc(result.before.contentFrom, result.before.contentTo))} → ${JSON.stringify(
+      result.next.sliceDoc(result.after.contentFrom, result.after.contentTo),
+    )}`,
+  );
+  const crosses = result.changes.filter((change) => crossesLine(result.state, change));
+  check(
+    `${item.name} — changes 不跨行（不越过行尾 / 换行）`,
+    crosses.length === 0 && result.changes.every((c) => !c.inserted.includes("\n") && !c.removed.includes("\n")),
+    JSON.stringify(result.changes),
+  );
+  check(
+    `${item.name} — 正文长度只随插入词位移（fence 与正文未被吃掉）`,
+    result.before !== null &&
+      result.after !== null &&
+      result.after.contentTo - result.after.contentFrom === result.before.contentTo - result.before.contentFrom,
+    `${JSON.stringify(result.before)} → ${JSON.stringify(result.after)}`,
+  );
+  check(
+    `${item.name} — 一次性单处改动`,
+    result.changes.length === 1,
+    JSON.stringify(result.changes),
+  );
+}
+
+{
+  // Idempotency: re-picking the language a fence already shows must not push an
+  // undo step, or Ctrl+Z would appear dead once per click.
+  const same = setLanguage("```python\ncode\n```\n", 6, "python");
+  check("幂等：fence 已是 python，再选 python 返回 null", same.spec === null, JSON.stringify(same.spec));
+
+  // Aliases are *upgraded* to the canonical spelling the menu shows — that is
+  // the whole point of picking a row, and the `py` → `python` case above pins it.
+  const alias = setLanguage("```js\nconst a = 1;\n```\n", 8, "javascript");
+  check(
+    "别名归一：fence 写 `js`，选 `javascript` 写成 canonical",
+    alias.out === "```javascript\nconst a = 1;\n```\n",
+    JSON.stringify(alias.out),
+  );
+
+  // Clearing an already-empty fence is a no-op, not an empty undo step.
+  const emptyClear = setLanguage("```\ncode\n```\n", 4, null);
+  check("幂等：无语言时清除返回 null", emptyClear.spec === null, JSON.stringify(emptyClear.spec));
+
+  const alreadyEmpty = setLanguage("```js\n```\n", 4, null);
+  check("清空空正文块同样只删语言词", alreadyEmpty.out === "```\n```\n", JSON.stringify(alreadyEmpty.out));
+}
+
+{
+  // A language that is not registered must never reach the fence: the menu only
+  // lists canonical names, but an unknown word would silently kill the
+  // highlighting and read as "the app broke".
+  const unknown = ["ruby", "brainfuck", "c#", "  "];
+  for (const name of unknown) {
+    const result = setLanguage("```python\ncode\n```\n", 6, name);
+    check(`未注册语言 ${JSON.stringify(name)}：拒绝（返回 null）`, result.spec === null, JSON.stringify(result.spec));
+  }
+
+  // `c#` is *aliased* to `csharp`, which is not registered — having an alias
+  // entry is not the same as the language being available.
+  check("别名指向未注册语言同样拒绝（c# → csharp）", setLanguage("```python\ncode\n```\n", 6, "c#").spec === null);
+}
+
+{
+  // Outside a fence there is nothing to rename, and the spec must decline rather
+  // than write into a paragraph.
+  const paragraph = setLanguage("普通段落\n", 1, "python");
+  check("普通段落：返回 null 且文档不变", paragraph.spec === null && makeState("普通段落\n").doc.toString() === "普通段落\n");
+
+  const indented = setLanguage("    indented\n    code\n", 6, "python");
+  check("缩进代码块：返回 null（没有 info 可写）", indented.spec === null, JSON.stringify(indented.spec));
+}
+
+{
+  // `userEvent` is what makes the change one user-intent undo group; no
+  // `selection` and no `scrollIntoView`, so clicking a chip far off screen does
+  // not move the caret or the viewport.
+  const result = setLanguage("```js\nconst a = 1;\n```\n", 8, "python");
+  check("spec 带 userEvent=input.setLanguage", result.spec?.userEvent === "input.setLanguage", JSON.stringify(result.spec?.userEvent));
+  check("spec 不带 selection", result.spec?.selection === undefined, JSON.stringify(result.spec?.selection));
+  check("spec 不带 scrollIntoView", result.spec?.scrollIntoView === undefined, JSON.stringify(result.spec?.scrollIntoView));
+  check(
+    "一次 transaction = 一步撤销",
+    result.next !== null && makeState("```js\nconst a = 1;\n```\n", 8).update(result.spec).state.doc.toString() === "```python\nconst a = 1;\n```\n",
+  );
+}
+
+{
+  // The menu order is a contract the picker renders verbatim; deriving it from
+  // the registration table is what keeps the two from drifting, so pin the order.
+  const expected = [
+    "bash",
+    "c",
+    "cpp",
+    "css",
+    "java",
+    "javascript",
+    "json",
+    "markdown",
+    "powershell",
+    "python",
+    "rust",
+    "sql",
+    "typescript",
+    "xml",
+  ];
+  check(
+    `CODE_LANGUAGES 顺序即菜单顺序（${expected.length} 项）`,
+    JSON.stringify(CODE_LANGUAGES) === JSON.stringify(expected),
+    JSON.stringify(CODE_LANGUAGES),
+  );
+  check(
+    "CODE_LANGUAGES 与已注册语言一一对应（无漂移）",
+    CODE_LANGUAGES.length === expected.length &&
+      CODE_LANGUAGES.every((name) => codeBlockLanguageSpec(makeState("```\ncode\n```\n", 4), 4, name) !== null),
+    JSON.stringify(CODE_LANGUAGES),
+  );
 }
 
 // ------------------------------------------------------------------ looksLikeCode

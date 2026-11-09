@@ -37,6 +37,11 @@ import {
   toggleList,
   toggleQuote,
 } from "@/utils/markdownCommands";
+// Type-only: the editor needs the language *identifier*, not the store. Reaching
+// for `useSettingsStore` here would break `NoteWindowView`, which mounts this
+// component in the detached note window where the settings store is deliberately
+// never consulted (the window keeps its own local state).
+import type { LangType } from "@/stores/settingsStore";
 
 interface MarkdownSourceEditorProps {
   value: string;
@@ -69,35 +74,56 @@ interface MarkdownSourceEditorProps {
    * affected: fenced blocks and inline code pin `--font-mono` in CSS.
    */
   fontFamily?: string;
+  /**
+   * UI language, for the one piece of chrome this component renders itself: the
+   * "plain text" label on a code card's language chip. Passed in rather than read
+   * from the store — see the `LangType` import note.
+   */
+  lang?: LangType;
 }
 
 const externalDocumentUpdate = Annotation.define<boolean>();
 
 /**
- * Editable instance: the caret's block falls back to source, and tables get drag
- * handles — this is the only surface that may write column widths into the note.
- */
-const livePreviewExtension = livePreview({ resizable: true });
-
-/**
- * 纯预览编辑 (the status bar's third button).
+ * The two preview layers, memoised per UI language.
  *
- * Same surface as above, with two deliberate differences: nothing is revealed
- * under the caret (the whole point is that `**` and `#` never appear), and the
- * tables are `interactive`, i.e. they keep the pointer and edit a cell in place.
- * Drag handles stay on — the column-edge gesture is frozen behaviour and this
- * mode is still the same editor writing the same file.
+ * Memoised because `livePreview()` creates a `ViewPlugin` type on every call: a
+ * fresh instance handed to the `Compartment` would count as a different extension
+ * and reconfigure the whole view on every render. The language only changes the
+ * chip's "plain text" label, so there are at most four instances in the app's
+ * lifetime.
  */
-const previewEditingExtension = livePreview({
-  revealActiveBlock: false,
-  resizable: true,
-  interactive: true,
-});
+const previewLayers = new Map<string, Extension>();
 
 /** Which preview layer this pair of props asks for. */
-function previewLayer(live: boolean, editing: boolean): Extension {
+function previewLayer(live: boolean, editing: boolean, lang: LangType): Extension {
   if (!live) return [];
-  return editing ? previewEditingExtension : livePreviewExtension;
+  const key = `${editing ? "editing" : "live"}:${lang}`;
+  const cached = previewLayers.get(key);
+  if (cached) return cached;
+
+  const codeLanguage = {
+    mode: "menu" as const,
+    plainText: lang === "en" ? "Plain text" : "纯文本",
+  };
+  /**
+   * 纯预览编辑 (the status bar's third button).
+   *
+   * Same surface as the default one, with two deliberate differences: nothing is
+   * revealed under the caret (the whole point is that `**` and `#` never
+   * appear), and the tables are `interactive`, i.e. they keep the pointer and
+   * edit a cell in place. Drag handles stay on — the column-edge gesture is
+   * frozen behaviour and this mode is still the same editor writing the same
+   * file.
+   *
+   * Both keep the language chip: it is the only way to *set* a language, and a
+   * fence's info string is invisible in this mode by construction.
+   */
+  const extension = editing
+    ? livePreview({ revealActiveBlock: false, resizable: true, interactive: true, codeLanguage })
+    : livePreview({ resizable: true, codeLanguage });
+  previewLayers.set(key, extension);
+  return extension;
 }
 
 /** One command, one transaction; `false` lets the next binding try. */
@@ -231,6 +257,7 @@ export default function MarkdownSourceEditor({
   previewEditing = false,
   onPasteImage,
   fontFamily = "",
+  lang = "zh",
 }: MarkdownSourceEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -239,6 +266,7 @@ export default function MarkdownSourceEditor({
   const latestFontFamilyRef = useRef(fontFamily);
   const latestLivePreviewRef = useRef(livePreview);
   const latestPreviewEditingRef = useRef(previewEditing);
+  const latestLangRef = useRef(lang);
   /** The value the reconfigure effect saw last time, so a leave can be spotted. */
   const previousPreviewEditingRef = useRef(previewEditing);
   const latestPasteImageRef = useRef(onPasteImage);
@@ -256,6 +284,7 @@ export default function MarkdownSourceEditor({
   latestFontFamilyRef.current = fontFamily;
   latestLivePreviewRef.current = livePreview;
   latestPreviewEditingRef.current = previewEditing;
+  latestLangRef.current = lang;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -284,7 +313,13 @@ export default function MarkdownSourceEditor({
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
         pluginDecorations,
-        livePreviewCompartment.of(previewLayer(latestLivePreviewRef.current, latestPreviewEditingRef.current)),
+        livePreviewCompartment.of(
+          previewLayer(
+            latestLivePreviewRef.current,
+            latestPreviewEditingRef.current,
+            latestLangRef.current,
+          ),
+        ),
         markdownInputRules({ insertImage: (file) => latestPasteImageRef.current?.(file) }),
         // Not part of the preview layer: Ctrl+A scoping and "paste code as a
         // block" have to work in 源码 view too, where `livePreview` is unmounted.
@@ -388,9 +423,9 @@ export default function MarkdownSourceEditor({
     // its DOM — including the open cell — goes with it.
     if (wasEditing && !previewEditing) flushTableEdit(view);
     view.dispatch({
-      effects: livePreviewCompartment.reconfigure(previewLayer(livePreview, previewEditing)),
+      effects: livePreviewCompartment.reconfigure(previewLayer(livePreview, previewEditing, lang)),
     });
-  }, [livePreview, previewEditing, livePreviewCompartment]);
+  }, [livePreview, previewEditing, lang, livePreviewCompartment]);
 
   return <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden" />;
 }

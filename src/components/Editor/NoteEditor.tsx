@@ -850,6 +850,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
               previewEditing={markdownViewMode === "live" && purePreview}
               onPasteImage={insertImageFile}
               onInsertTable={handleInsertTable}
+              lang={lang}
             />
           </div>
 

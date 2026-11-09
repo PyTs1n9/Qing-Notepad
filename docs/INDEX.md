@@ -40,7 +40,8 @@
 | `decisions-editor-menubar.md` | 笔记编辑器改为 Typora 式五菜单：37 项清单、砍项理由、命令层与快捷键 | 改编辑器菜单 / 加排版命令 | 9 KB |
 | `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 纯预览编辑 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级；三枚开关的选中/按下/禁用态口径 | 改底栏、开关状态样式、字数口径、目录面板 | 15 KB |
 | `decisions-preview-edit.md` | 纯预览编辑档：全文不降级、表格常驻渲染、双击单元格就地编辑（Tab/Enter/Esc、位置现算、纯文本写回）；含独立笔记窗同为交互档与已知取舍 | 改表格交互、底栏第三按钮、或 `tableEditing.ts` / `tableWidget.ts` 的单元格模型时 | 12.2 KB |
-| `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定，或改 `codeBlock.ts` 时（配 `npm run verify:code-block`） | 12.0 KB |
+| `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别；D10 选区色带按内容列裁剪（0×0 图层须由 JS 写像素宽度 + 纵向负 inset）、卡片不透明与首行高光、研发团复核的像素证据与验收闭环缺口 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定、选区裁剪或卡片材质，或改 `codeBlock.ts` / `selectionClip.ts` 时（配 `npm run verify:code-block`） | 31.9 KB |
+| `decisions-code-language-picker.md` | 代码块右下角 Typora 式语言选择器 + 隐藏 ``` 围栏：零高度行（非 StateField）、revealed 分支保留按块降级、空块占位、hover 只 toggle class、浮层挂 body 避开 `container-type`、设语言纯 spec、语言表单一真源、只读面 static 双保险 | 动语言 chip / 菜单 / 围栏隐藏，或改 `codeLanguageMenu.ts` / `codeLanguageWidget.ts` / `addFencedCode` 时 | 12 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
 | `decisions-sidebar-search.md` | 侧栏全局搜索：内联搜索态（卸载树，顺带停掉 Delete 监听）、最多 10 篇、片段高亮、**冷启动正文按需补读**（`notes[].content` 为空的事实来源）、Enter 不绑定 | 动侧栏搜索 / 结果片段 / 正文来源，或怀疑"搜不到正文"时 | 6.4 KB |

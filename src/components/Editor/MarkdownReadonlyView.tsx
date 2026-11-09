@@ -21,12 +21,20 @@ import { linkUrlAt } from "@/utils/markdownLinks";
  *   editable behaviour the first block would sit permanently in source form.
  * - **no table drag handles** (`resizable: false`): a stored width is painted,
  *   but nothing here can write one — the file belongs to the editor.
+ * - **no language picker**: the code card's chip is `static`, i.e. a label only.
+ *   `EditorState.readOnly` blocks the *input* handlers, not `view.dispatch`, so a
+ *   chip that merely "checked" would be one refactor away from writing into
+ *   another window's note.
  *
  * Everything else — GFM base, the syntax highlight style, `em`-based heading
  * sizes scaling off the zoomed root size — is the editor's own configuration, so
  * the two surfaces cannot drift apart.
  */
-const READONLY_PREVIEW = livePreview({ revealActiveBlock: false, resizable: false });
+const READONLY_PREVIEW = livePreview({
+  revealActiveBlock: false,
+  resizable: false,
+  codeLanguage: { mode: "static" },
+});
 
 const readonlyTheme = EditorView.theme({
   // Auto height: the window owns scrolling, not the editor. A fixed-height

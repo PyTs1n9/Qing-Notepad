@@ -87,11 +87,19 @@ const {
 /** Same language the editor mounts (`MarkdownSourceEditor` uses the GFM base). */
 const language = markdown({ base: markdownLanguage });
 
+/**
+ * The language chip is on by default here: it is part of what the layer renders,
+ * and every fixture below that contains a fence has to account for it. Fixtures
+ * that want no chip pass `codeLanguage: undefined` explicitly.
+ */
+const DEFAULT_OPTIONS = { codeLanguage: { mode: "menu", plainText: "纯文本" } };
+
 function specsFor(doc, ranges, options) {
   const state = EditorState.create({ doc, extensions: [language] });
   ensureSyntaxTree(state, doc.length, 5000);
-  const specs = collectLivePreviewRanges(state, ranges ?? [{ from: 0, to: doc.length }], options);
-  return { state, specs };
+  const merged = { ...DEFAULT_OPTIONS, ...options };
+  const specs = collectLivePreviewRanges(state, ranges ?? [{ from: 0, to: doc.length }], merged);
+  return { state, specs, options: merged };
 }
 
 const format = (spec) => {
@@ -100,10 +108,16 @@ const format = (spec) => {
     const box = spec.className === "cm-md-task" ? (spec.checked ? ":x" : ":o") : "";
     return `widget:${spec.from}-${spec.to}:${spec.className}:${spec.text}${box}`;
   }
+  // A zero-width anchor: `from === to`, so both are printed. The chip's mode and
+  // owning block are part of the line — a chip that forgot its block would open a
+  // picker for the wrong fence, and the assertion would not see it.
+  if (spec.kind === "codeLang") {
+    return `codeLang:${spec.from}-${spec.to}:${spec.label}:${spec.mode}:${spec.blockFrom}`;
+  }
   return `${spec.kind}:${spec.from}-${spec.to}:${spec.className ?? ""}`;
 };
 
-const formatted = (doc, ranges) => specsFor(doc, ranges).specs.map(format);
+const formatted = (doc, ranges, options) => specsFor(doc, ranges, options).specs.map(format);
 
 // ------------------------------------------------------------------ fixtures
 const fixtures = [
@@ -170,22 +184,27 @@ const fixtures = [
     expect: ["line:0:cm-md-quote", "hide:0-2:", "line:6:cm-md-quote", "hide:6-8:"],
   },
   {
-    // First/last lines carry their own class so CSS can round the card, and each
-    // token becomes a mark whose class is the highlighter's own (`hljs-*`) — the
-    // same palette the preview renderer emits. Nothing is hidden inside a fence.
-    name: "围栏代码块：卡片首末行 + 语言标签 + 语法高亮",
+    // Outside the caret's block the fences are collapsed and the card's corners
+    // move onto the first/last *body* line, so the language chip sits at the end
+    // of the last body line. Token colours are unchanged — they were never about
+    // the fences. The revealed counterpart of this fixture is asserted below,
+    // byte for byte, so "the caret's block still falls back to source" cannot
+    // regress silently.
+    name: "围栏代码块（隐藏态）：围栏行塌陷 + 卡片首末行落到正文 + 语言 chip",
     doc: "```js\nconst a = 1;\n\nconst b = 2;\n```\n",
     expect: [
-      "line:0:cm-md-code-block cm-md-code-first",
-      "mark:3-5:cm-md-code-info",
-      "line:6:cm-md-code-block",
+      "line:0:cm-md-code-block cm-md-code-fence-hidden",
+      "hide:0-5:",
+      "line:6:cm-md-code-block cm-md-code-first",
       "mark:6-11:hljs-keyword",
       "mark:16-17:hljs-number",
       "line:19:cm-md-code-block",
-      "line:20:cm-md-code-block",
+      "line:20:cm-md-code-block cm-md-code-last",
       "mark:20-25:hljs-keyword",
       "mark:30-31:hljs-number",
-      "line:33:cm-md-code-block cm-md-code-last",
+      "codeLang:32-32:js:menu:0",
+      "line:33:cm-md-code-block cm-md-code-fence-hidden",
+      "hide:33-36:",
     ],
   },
   {
@@ -234,9 +253,23 @@ for (const fixture of fixtures) {
 section("围栏代码块：语言标签（cm-md-code-info）");
 
 {
+  // The label is only a *mark* while the block is revealed. Outside it the whole
+  // fence line is replaced, and a mark inside a hide would break the "hide and
+  // mark never overlap" invariant — so the hidden case asserts its absence
+  // instead, which is what stops a future refactor from re-adding it.
   const labelled = "```js\nconst a = 1;\n```\n";
-  const specs = formatted(labelled);
-  check("含语言名：产出 info mark", specs.includes("mark:3-5:cm-md-code-info"), JSON.stringify(specs));
+  const hidden = formatted(labelled);
+  check(
+    "隐藏态：不发 info mark（围栏行整行被替换）",
+    !hidden.some((spec) => spec.endsWith(":cm-md-code-info")),
+    JSON.stringify(hidden),
+  );
+
+  const state = EditorState.create({ doc: labelled, extensions: [language] });
+  ensureSyntaxTree(state, labelled.length, 5000);
+  const caretBlock = blockAtPosition(state, 8);
+  const revealed = specsFor(labelled, null, { reveal: caretBlock }).specs.map(format);
+  check("光标在块内（reveal）时 info mark 仍在", revealed.includes("mark:3-5:cm-md-code-info"), JSON.stringify(revealed));
 
   const bare = formatted("```\ncode\n```\n");
   check(
@@ -245,39 +278,218 @@ section("围栏代码块：语言标签（cm-md-code-info）");
     JSON.stringify(bare),
   );
 
-  // The label is emitted before the highlight pass on purpose: an empty body has
-  // no `CodeText`, and `addCodeHighlight` returns on exactly that.
-  const empty = formatted("```js\n```\n");
-  check("空正文：info mark 仍在", empty.includes("mark:3-5:cm-md-code-info"), JSON.stringify(empty));
+  // The label was originally emitted before the highlight pass on purpose: an
+  // empty body has no `CodeText`, and `addCodeHighlight` returns on exactly that.
+  const emptyState = EditorState.create({ doc: "```js\n```\n", extensions: [language] });
+  ensureSyntaxTree(emptyState, 8, 5000);
+  const emptyRevealed = specsFor("```js\n```\n", null, {
+    reveal: blockAtPosition(emptyState, 0),
+  }).specs.map(format);
   check(
-    "空正文：没有任何 hljs 高亮",
-    !empty.some((spec) => spec.includes("hljs-")),
-    JSON.stringify(empty),
+    "reveal：空正文时 info mark 仍在（语言不能因为没正文而消失）",
+    emptyRevealed.includes("mark:3-5:cm-md-code-info"),
+    JSON.stringify(emptyRevealed),
   );
-
-  // Revealing the block (caret inside) drops hides and widgets, never marks —
-  // the label has to survive being edited, like the token colours do.
-  const state = EditorState.create({ doc: labelled, extensions: [language] });
-  ensureSyntaxTree(state, labelled.length, 5000);
-  const caretBlock = blockAtPosition(state, 8);
-  const revealed = specsFor(labelled, null, { reveal: caretBlock }).specs.map(format);
-  check("光标在块内（reveal）时 info mark 仍在", revealed.includes("mark:3-5:cm-md-code-info"), JSON.stringify(revealed));
+  check(
+    "reveal：空正文没有任何 hljs 高亮",
+    !emptyRevealed.some((spec) => spec.includes("hljs-")),
+    JSON.stringify(emptyRevealed),
+  );
 }
+
+// -------------------------------------------------------------- fence hiding
+section("围栏隐藏：光标不在块内时塌陷，进块回显");
+
+{
+  // The revealed rendering of the *same* document. Pinned byte for byte against
+  // the pre-feature output on purpose: hiding the fences changed what a block
+  // looks like when the caret is elsewhere, and must not have changed what it
+  // looks like when the caret is inside it. Every `line:` / `mark:` here is the
+  // old fixture, unchanged.
+  const doc = "```js\nconst a = 1;\n\nconst b = 2;\n```\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const block = blockAtPosition(state, 8);
+  const revealed = specsFor(doc, null, { reveal: block }).specs.map(format);
+
+  check(
+    "reveal 夹具：块被识别为整个 FencedCode",
+    block?.from === 0 && state.doc.sliceString(block.from, block.to) === "```js\nconst a = 1;\n\nconst b = 2;\n```",
+    JSON.stringify(block),
+  );
+  check(
+    "reveal：与改版前的期望逐字相同（按块降级照旧）",
+    JSON.stringify(revealed) ===
+      JSON.stringify([
+        "line:0:cm-md-code-block cm-md-code-first",
+        "mark:3-5:cm-md-code-info",
+        "line:6:cm-md-code-block",
+        "mark:6-11:hljs-keyword",
+        "mark:16-17:hljs-number",
+        "line:19:cm-md-code-block",
+        "line:20:cm-md-code-block",
+        "mark:20-25:hljs-keyword",
+        "mark:30-31:hljs-number",
+        "line:33:cm-md-code-block cm-md-code-last",
+      ]),
+    JSON.stringify(revealed),
+  );
+  check(
+    "reveal：没有隐藏、没有 chip（围栏本身可编辑，语言就在上面）",
+    !revealed.some((spec) => spec.startsWith("hide:") || spec.startsWith("codeLang:")),
+    JSON.stringify(revealed),
+  );
+}
+
+{
+  const docs = [
+    {
+      name: "有正文块：两条围栏行都藏，卡片首末行落到正文",
+      doc: "```js\ncode\n```\n",
+      expect: [
+        "line:0:cm-md-code-block cm-md-code-fence-hidden",
+        "hide:0-5:",
+        "line:6:cm-md-code-block cm-md-code-single",
+        "codeLang:10-10:js:menu:0",
+        "line:11:cm-md-code-block cm-md-code-fence-hidden",
+        "hide:11-14:",
+      ],
+    },
+    {
+      // The empty block is the case that must not vanish: the closing fence stays
+      // as the one visible row, so there is still something to click into.
+      name: "空块（``` ```\\n``` ```）：只有闭围栏是一行，且带 cm-md-code-single",
+      doc: "```\n```\n",
+      expect: [
+        "line:0:cm-md-code-block cm-md-code-fence-hidden",
+        "hide:0-3:",
+        "line:4:cm-md-code-block cm-md-code-single",
+        "hide:4-7:",
+        "codeLang:7-7:纯文本:menu:0",
+      ],
+    },
+    {
+      // A body of nothing but a blank line is still "empty": rendering it as a
+      // two-row card would put the clickable row below an unexplained gap.
+      name: "空行块（``` ```\\n\\n``` ```）：同上",
+      doc: "```\n\n```\n",
+      expect: [
+        "line:0:cm-md-code-block cm-md-code-fence-hidden",
+        "hide:0-3:",
+        "line:4:cm-md-code-block cm-md-code-fence-hidden",
+        "line:5:cm-md-code-block cm-md-code-single",
+        "hide:5-8:",
+        "codeLang:8-8:纯文本:menu:0",
+      ],
+    },
+    {
+      // A lone fence with no newline yet: collapsing it would hide the very
+      // characters the user is typing.
+      name: "单行围栏：零隐藏、无 chip",
+      doc: "```",
+      expect: ["line:0:cm-md-code-block cm-md-code-single"],
+    },
+    {
+      name: "未闭合围栏：只藏开围栏，正文照旧是卡片",
+      doc: "```\nunclosed\n",
+      expect: [
+        "line:0:cm-md-code-block cm-md-code-fence-hidden",
+        "hide:0-3:",
+        "line:4:cm-md-code-block cm-md-code-single",
+        "codeLang:12-12:纯文本:menu:0",
+      ],
+    },
+    {
+      // Indented code has no fence, so there is nothing to collapse and no info
+      // string to show — it keeps the plain card it always had.
+      name: "缩进代码块：零隐藏、无 chip",
+      doc: "    indented\n    code\n",
+      expect: ["line:0:cm-md-code-block cm-md-code-first", "line:13:cm-md-code-block cm-md-code-last"],
+    },
+  ];
+
+  for (const item of docs) {
+    const actual = formatted(item.doc);
+    const detail =
+      JSON.stringify(actual) === JSON.stringify(item.expect)
+        ? undefined
+        : [`期望 ${JSON.stringify(item.expect)}`, `实际 ${JSON.stringify(actual)}`].join("\n        ");
+    check(item.name, detail === undefined, detail);
+  }
+}
+
+{
+  // Chip label and mode: the fence's own word (or the "plain text" label), and
+  // `static` in a read-only surface so nothing can open a picker there.
+  const chips = (doc, options) => formatted(doc, null, options).filter((spec) => spec.startsWith("codeLang:"));
+
+  check("chip：有语言时 label 是 fence 上的词", JSON.stringify(chips("```js\ncode\n```\n")) === JSON.stringify(["codeLang:10-10:js:menu:0"]), JSON.stringify(chips("```js\ncode\n```\n")));
+  check(
+    "chip：无语言时 label 用 plainText",
+    JSON.stringify(chips("```\ncode\n```\n")) === JSON.stringify(["codeLang:8-8:纯文本:menu:0"]),
+    JSON.stringify(chips("```\ncode\n```\n")),
+  );
+  check(
+    "chip：plainText 跟随 UI 语言（en）",
+    JSON.stringify(chips("```\ncode\n```\n", { codeLanguage: { mode: "menu", plainText: "Plain text" } })) ===
+      JSON.stringify(["codeLang:8-8:Plain text:menu:0"]),
+    JSON.stringify(chips("```\ncode\n```\n", { codeLanguage: { mode: "menu", plainText: "Plain text" } })),
+  );
+  check(
+    "chip：static 模式照常标注有语言的块",
+    JSON.stringify(chips("```js\ncode\n```\n", { codeLanguage: { mode: "static", plainText: "纯文本" } })) ===
+      JSON.stringify(["codeLang:10-10:js:static:0"]),
+    JSON.stringify(chips("```js\ncode\n```\n", { codeLanguage: { mode: "static", plainText: "纯文本" } })),
+  );
+  check(
+    "chip：static 模式下无语言的块不长出「纯文本」标签",
+    chips("```\ncode\n```\n", { codeLanguage: { mode: "static", plainText: "纯文本" } }).length === 0,
+    JSON.stringify(chips("```\ncode\n```\n", { codeLanguage: { mode: "static", plainText: "纯文本" } })),
+  );
+  check(
+    "chip：未配置 codeLanguage 时一个 chip 都没有（源码档）",
+    chips("```js\ncode\n```\n", { codeLanguage: undefined }).length === 0,
+    JSON.stringify(chips("```js\ncode\n```\n", { codeLanguage: undefined })),
+  );
+  check(
+    "chip：blockFrom 是块的起点，不是 chip 的位置",
+    chips("前言\n\n```js\ncode\n```\n")[0]?.endsWith(":4"),
+    JSON.stringify(chips("前言\n\n```js\ncode\n```\n")),
+  );
+}
+
+{
+  // A chip belongs to exactly one block, and a revealed block never has one: the
+  // second fence in this document is out of `reveal`, the first is inside it.
+  const doc = "```js\ncode\n```\n\n```py\nmore\n```\n";
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const first = blockAtPosition(state, 8);
+  const specs = specsFor(doc, null, { reveal: first }).specs.map(format);
+  check("reveal 第一个块：它的 chip 消失", !specs.some((spec) => spec === "codeLang:10-10:js:menu:0"), JSON.stringify(specs));
+  check("reveal 第一个块：第二个块的 chip 仍在", specs.includes(`codeLang:${doc.indexOf("more") + 4}-${doc.indexOf("more") + 4}:py:menu:${doc.indexOf("```py")}`), JSON.stringify(specs));
+}
+
 
 // ------------------------------------------------------------------ invariants
 section("不变量");
 
 {
   const doc = "# 标题\n\n正文 **粗** 与 `码`。\n\n> 引用\n\n- 甲\n- 乙\n\n```\ncode\n```\n\n---\n";
-  const { state, specs } = specsFor(doc);
+  const { state, specs, options } = specsFor(doc);
 
+  // Split by kind rather than relaxed: `codeLang` is the one decoration that is
+  // *deliberately* zero-width (it is an insertion point, not a replaced range), so
+  // it gets its own clause instead of an exemption for everything.
   const bad = specs.filter((spec) => {
     if (spec.from < 0 || spec.from > doc.length) return true;
     if (spec.kind === "line") return false;
-    if (spec.to > doc.length || spec.to <= spec.from) return true;
+    if (spec.to > doc.length || spec.to < spec.from) return true;
+    if (spec.kind === "codeLang") return spec.to !== spec.from;
+    if (spec.to <= spec.from) return true;
     return spec.kind === "mark" && !spec.className;
   });
-  check("区间合法（0 ≤ from < to ≤ 长度）", bad.length === 0, JSON.stringify(bad.slice(0, 3)));
+  check("区间合法（line/codeLang 特许，其余 0 ≤ from < to ≤ 长度）", bad.length === 0, JSON.stringify(bad.slice(0, 3)));
 
   const lineStarts = new Set();
   let offset = 0;
@@ -296,7 +508,9 @@ section("不变量");
 
   check("装饰不改文档内容", state.doc.toString() === doc);
 
-  const built = buildLivePreviewDecorations(state, [{ from: 0, to: doc.length }]);
+  // Same options as the spec pass, or the chip would be missing from the set and
+  // the count would compare two different configurations.
+  const built = buildLivePreviewDecorations(state, [{ from: 0, to: doc.length }], options);
   check("DecorationSet 与 spec 数量一致", built.size === specs.length, `${built.size} vs ${specs.length}`);
 
   // Hides must never cover a mark: a marked range that also gets hidden would
@@ -307,6 +521,24 @@ section("不变量");
       specs.some((other) => other.kind === "mark" && spec.from < other.to && spec.to > other.from),
   );
   check("hide 与 mark 不重叠", overlapping.length === 0, JSON.stringify(overlapping.slice(0, 3)));
+
+  // CodeMirror throws at *paint* time — not at build time — for a decoration that
+  // spans a line break, so this one would reach production as a blank editor.
+  const spanning = specs.filter((spec) => spec.kind === "hide" && state.doc.lineAt(spec.from).to < spec.to);
+  check(
+    "任何 hide 都不跨行（doc.lineAt(from).to >= to）",
+    spanning.length === 0,
+    JSON.stringify(spanning.slice(0, 3)),
+  );
+
+  const chips = specs.filter((spec) => spec.kind === "codeLang");
+  check("codeLang 一律零宽（from === to）", chips.every((spec) => spec.from === spec.to), JSON.stringify(chips));
+  check("codeLang 的 blockFrom 落在某个代码块起点上", chips.every((spec) => blockAtPosition(state, spec.blockFrom + 1)?.from === spec.blockFrom), JSON.stringify(chips));
+  check(
+    "整篇只有一个代码块 → 恰好一个 chip，且指向该块起点",
+    chips.length === 1 && state.doc.sliceString(chips[0].blockFrom, chips[0].blockFrom + 3) === "```",
+    JSON.stringify(chips),
+  );
 }
 
 // ------------------------------------------------------------------ viewport

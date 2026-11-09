@@ -3790,6 +3790,291 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   background: none !important;
 }
 
+/* ---------------------------------------------------------------- */
+/* The fence lines: collapsed, plus the language chip and its panel   */
+/*                                                                    */
+/* The two ``` lines of a fenced block stay in the document — they    */
+/* have to, or the language could not be typed and the block could    */
+/* not be deleted or reopened — but they are collapsed to zero        */
+/* height instead of being drawn. Nothing above this block changes:   */
+/* the three card-cap selectors and `.cm-md-code-info` are as they    */
+/* were, and every rule here hangs off a class that only exists when  */
+/* the feature is on.                                                 */
+/* ---------------------------------------------------------------- */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-fence-hidden,
+/* The quote variant is spelled out separately. `.cm-md-quote.cm-md-code-block`
+   is *also* four classes and would win the tie on source order, leaving its 3px
+   accent bar, its 0.9em indent and a rounded left cap standing on a zero-height
+   line: a visible stub at the card's left edge with no text behind it. */
+.cm-content .cm-line.cm-md-quote.cm-md-code-block.cm-md-code-fence-hidden {
+  height: 0;
+  line-height: 0;
+  font-size: 0;
+  overflow: hidden;
+  /* All four sides, and all four borders. `.cm-md-code-block` puts 1em of
+     left/right padding and a 1px side border on *every* line of the block, and
+     on a collapsed line those are a hairline with no text to justify it - the
+     mark that is left over once the height is gone. `border-top` / `border-
+     bottom` go with them because a cap drawn at the edge of a zero-height box
+     is not a cap; the two rules below move it to the line that is still visible.
+     `height: 0` also shrinks what CodeMirror measures for this line, which is
+     the whole point: the block reads as one continuous card. */
+  padding: 0;
+  border-width: 0;
+  /* The card fill and its frost go too. Neither can be seen on a zero-height box,
+     but `backdrop-filter` is what makes every line of a block its own compositing
+     layer - the card paragraph above says as much - and a collapsed line has
+     nothing to frost. */
+  background: none;
+  backdrop-filter: none;
+  /* Not a target: a collapsed line must not swallow a click meant for the code
+     above or below it. */
+  pointer-events: none;
+}
+
+/* If the collapsed line is the one that carried a cap, the cap has to land on the
+   nearest visible line, or the card loses its top hairline and its rounded
+   corner. `+` and `:has()` both look at siblings, and `.cm-line` elements are
+   siblings inside `.cm-content`.
+   Both rules are no-ops when the decoration puts `-first` / `-last` on a visible
+   line instead, so they cost nothing if that is how it ends up wired. */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-first.cm-md-code-fence-hidden
+  + .cm-line.cm-md-code-block {
+  border-top: 1px solid var(--md-code-border);
+  border-radius: var(--box-radius) var(--box-radius) 0 0;
+}
+
+.cm-content
+  .cm-line.cm-md-code-block:has(
+    + .cm-line.cm-md-code-block.cm-md-code-last.cm-md-code-fence-hidden
+  ) {
+  border-bottom: 1px solid var(--md-code-border);
+  border-radius: 0 0 var(--box-radius) var(--box-radius);
+}
+
+/* The chip is an absolutely positioned child of the block's last visible line,
+   so that line is its containing block and the chip ends up on the card's
+   bottom-right corner. Appended as its own rule rather than by editing the two
+   cap selectors above.
+   `position: relative` with `z-index: auto` creates no stacking context of its
+   own, which keeps the chip's painting order inside the editor: above the card's
+   text (a positioned box paints after in-flow content) and below the selection
+   band and the caret layer. */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-last,
+.cm-content .cm-line.cm-md-code-block.cm-md-code-single,
+/* Backstop for the two above: whichever line ends up holding the chip *is* its
+   containing block, whether or not that line is the one the cap classes landed on
+   (an empty block puts the chip on the closing fence's row, and a block whose top
+   has scrolled away still paints the chip on a line that is not `-last` in the
+   visible slice). Without it the chip would fall back to the nearest positioned
+   ancestor — the editor card — and pin itself to that corner instead. */
+.cm-content .cm-line.cm-md-code-block:has(.cm-md-code-lang) {
+  position: relative;
+}
+
+/* Typora's corner label: the language of the block, sitting at the block's
+   bottom-right, out of the text flow and out of sight until the pointer arrives.
+   The chip is the box; the `-label` span inside carries only text, so it needs no
+   rules of its own.
+   Colour: `--color-text-secondary`, not `--color-text-muted`. Both clear 4.5 on
+   the frosted card over the editor panel, but muted does it by 4.6-5.1 and this
+   label is a *control*, not a remark, so it takes the tier with the margin
+   (5.92-7.66 across the four themes, measured on the 84% card over the 60%
+   editor panel). */
+span.cm-md-code-lang {
+  position: absolute;
+  /* px, not em: this is a corner inset, not a type measure. In em it would drift
+     with the label's own font-size, and the card already spends 1em of *code*
+     em on its right padding — four times this. 6px also clears the corner arc
+     (r = --box-radius): at the label's bottom edge the card's surface is inset
+     by ~2.9px, at the top edge of the arc by 0. */
+  right: 6px;
+  bottom: 3px;
+  max-width: 50%;
+  padding: 0 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The face of the code it names, one step down in size: the label is metadata,
+     the code is the content. 11px is the floor of the 11-12px range - at 12 the
+     lowercase run starts to compete with the `--code-font-size` line above it. */
+  font-family: var(--editor-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  /* Transparent, not a plate: the label overlaps the end of a long last line,
+     and any fill here would either hide code or have to be almost invisible
+     anyway. The hover state below is what gives the hit area a shape. */
+  background-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+/* Revealed by the TS while the pointer is over the block. `--dur-fast` because
+   this answers a pointer, per the motion vocabulary in `:root`. */
+span.cm-md-code-lang.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* One hover step: body colour plus the same `--color-bg-hover` wash every other
+   menu row in the app takes. Measured on that wash: `text-primary` reads
+   7.6-11.1:1, so the hit area can be shown without a border or a second tint.
+   Keyed off the mode, not off `.is-visible`, so the hover state does not depend on
+   which of the two reveal paths fired (the class below, or the `:hover` net under
+   it). `[data-mode="static"]` can never match: its box is not a hit target. */
+span.cm-md-code-lang[data-mode="menu"]:hover {
+  color: var(--color-text-primary);
+  background-color: color-mix(in srgb, var(--color-bg-hover) 72%, transparent);
+}
+
+/* A net under `.is-visible`, and only that: the chip also reveals while the
+   pointer is over the very line it is anchored to. `.is-visible` is the real
+   switch — it is what lets the block-wide hover (any line of the card, which is
+   where Typora puts it) be tracked in the widget, because CSS cannot say "these
+   sibling lines belong to the same block": a `~` walk would light up the chip of
+   every *later* block in the note. So this rule deliberately covers one line, and
+   can be deleted the day the TS toggles the class without losing anything.
+   `[data-mode="menu"]` is spelled out rather than left implicit: without it this
+   rule outranks the static rule below (five classes against three) and would hand
+   a read-only window's label a click it must never have. */
+.cm-content .cm-line.cm-md-code-block:hover .cm-md-code-lang[data-mode="menu"] {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Static: always on, never a target. Two attribute selectors outrank both reveal
+   rules above (and the hover net names `[data-mode="menu"]` explicitly, so it
+   cannot reach this element either), so this stays inert even if `.is-visible`
+   lands on it as well. There is no hover state to cancel — a `pointer-events:
+   none` box is not a hit target, so `:hover` can never match it — which is
+   exactly the point: no affordance, no click illusion. `cursor` is stated for the
+   reader, not for the browser, since the pointer never reaches this box. */
+span.cm-md-code-lang[data-block-from][data-mode="static"] {
+  opacity: 1;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* The panel is portaled to <body>, so it is *not* inside `.app-root` and its
+   `position: fixed` hangs off the viewport. Nothing in this rule may introduce a
+   containing block — no `filter`, no `backdrop-filter`, no `container-type`, no
+   `isolation` — or the panel would anchor to whatever card that created and be
+   clipped by its `overflow: hidden`. The entry animation's transform is the one
+   transform here, and it is on the panel itself (which contains nothing fixed).
+   z-index 60, and why: `DropdownMenu` is the one panel this can realistically
+   collide with (the editor's menu bar sits directly above every code card) and
+   it portals to <body> at `z-50`, so 60 clears it. Everything *inside* `.app-root`
+   is scoped by its `isolation: isolate`, i.e. already painted below any
+   body-level number, so a four-digit value would buy nothing except a fight with
+   the dialogs (`z-[10000]`), which dim the whole app and close this panel anyway.
+   The command palette (100) and the toast host (120) stay above it on purpose. */
+div.cm-code-lang-menu {
+  position: fixed;
+  z-index: 60;
+  /* 224px = PANEL_WIDTH in DropdownMenu.tsx; the two are meant to look like the
+     same panel family even though they are not the same component. */
+  width: 224px;
+  /* Nine rows. The list is a language list, not a language picker with a search
+     box; past this height scrolling inside the panel beats a panel that runs off
+     the bottom of a short window. */
+  max-height: 288px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--box-radius);
+  background-color: var(--color-bg-secondary);
+  /* The `shadow-xl shadow-black/20` pair the dropdowns carry, written out. */
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 20%),
+    0 8px 10px -6px rgb(0 0 0 / 20%);
+  font-family: var(--editor-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  animation: cm-code-lang-menu-in var(--dur-base) var(--ease-out) both;
+}
+
+/* Fade and a 2% scale, centred: the panel is flipped above the chip by the TS
+   when the viewport bottom is close, so a vertical offset — which is what the
+   other popovers use — would point the wrong way on half the openings. */
+@keyframes cm-code-lang-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+div.cm-code-lang-item {
+  /* A block, not a flex row: the row holds one run of text, and `text-overflow:
+     ellipsis` does nothing on a flex container's anonymous text item. */
+  display: block;
+  height: 26px;
+  /* 26px, not a padding pair: the panel scrolls, and a row whose height depends
+     on its content makes the scroll position jump between lists. Matches the
+     line box, so the label is centred without a second declaration. */
+  line-height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-text-secondary);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+
+/* The full wash, not a fraction of it: this panel opens right under the editor's
+   menu bar, and a row that answers the pointer more weakly than the menu bar's
+   rows reads as broken rather than as restrained. */
+div.cm-code-lang-item:hover {
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* The current language: body colour, one weight up, and a 2px accent tick drawn
+   inside the row's own left padding. No coloured capsule.
+   The tick and not accent *glyphs*: `--color-accent-text` measures 4.34-4.47 on
+   `--color-bg-hover`, so it would drop under the 4.5 text floor the moment the
+   row is hovered, while the same colour as a 2px graphic on that wash lands at
+   3.43-4.47 — above the 3:1 non-text floor (WCAG 1.4.11). The tick is also why
+   `box-shadow` rather than `border-left`: an inset shadow takes no layout, so the
+   label does not move by 2px when the current language changes. */
+div.cm-code-lang-item.is-active {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--color-accent-text);
+}
+
+/* Same separator as DropdownMenu's: a 1px `--color-border` rule, inset from the
+   panel's edges so it does not touch the rounded corners. */
+div.cm-code-lang-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background-color: var(--color-border);
+}
+
+/* A scale-in is decorative; the panel is still perfectly usable without it. */
+@media (prefers-reduced-motion: reduce) {
+  div.cm-code-lang-menu {
+    animation: none;
+  }
+}
+
 .cm-md-hr {
   border-top: 1px solid var(--color-border);
 }

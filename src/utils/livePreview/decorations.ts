@@ -4,6 +4,8 @@ import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { highlightRanges } from "../highlight";
 import { ListMarkerWidget, TaskCheckboxWidget } from "./listWidget";
+import { CodeLanguageWidget } from "./codeLanguageWidget";
+import { codeFenceInfoAt } from "./codeBlock";
 
 /**
  * Live preview (L1) decoration specs, sorted by document position.
@@ -33,6 +35,22 @@ export type LivePreviewRange =
       className: string;
       text: string;
       checked?: boolean;
+    }
+  /**
+   * The language chip at the end of a code card's last visible line.
+   *
+   * A zero-width anchor (`from === to`), not a replaced marker: there is no
+   * source text at that position — the chip is an insertion point that happens to
+   * carry DOM. `blockFrom` is the `FencedCode.from` the picker rewrites, so the
+   * chip does not have to guess which block it belongs to.
+   */
+  | {
+      kind: "codeLang";
+      from: number;
+      to: number;
+      label: string;
+      mode: "menu" | "static";
+      blockFrom: number;
     };
 
 /** The slice of `view.visibleRanges` this layer needs. */
@@ -40,6 +58,14 @@ export interface VisibleRange {
   from: number;
   to: number;
 }
+
+/**
+ * Label for a code block that has no language, when the caller did not supply
+ * one. Lives here because this is the layer that would otherwise paint an empty
+ * chip: `toDecorationRanges` is a public entry point that takes no options, and
+ * a `""` fallback would produce a chip with no text and nothing to click.
+ */
+export const DEFAULT_CODE_PLAIN_TEXT = "纯文本";
 
 export interface LivePreviewOptions {
   /**
@@ -49,6 +75,16 @@ export interface LivePreviewOptions {
    * heading size, quote bar, code tint — is kept, only the hides are dropped.
    */
   reveal?: VisibleRange;
+  /**
+   * The code-card language chip. Absent → no chip at all, which is what 源码
+   * view gets (no live-preview layer there either way).
+   */
+  codeLanguage?: {
+    /** `menu` opens the picker; `static` only labels the block. */
+    mode: "menu" | "static";
+    /** Label used when a fence has no language yet (`纯文本`). */
+    plainText: string;
+  };
 }
 
 /** Inline nodes whose markers are hidden and whose content is restyled. */
@@ -90,8 +126,14 @@ export function collectLivePreviewRanges(
     // The block being edited shows its source: hides and marker widgets inside
     // it are dropped, so the caret can reach every character. Marks and line
     // styles stay.
+    //
+    // The language chip drops with the widgets, and that is correct rather than
+    // incidental: a revealed block shows its own info string as editable text, so
+    // a second affordance for the same value would be a competing control. It
+    // only ever *is* inside `reveal` when the caller forgot to skip it — this
+    // keeps the invariant in one place.
     if (
-      (range.kind === "hide" || range.kind === "widget") &&
+      (range.kind === "hide" || range.kind === "widget" || range.kind === "codeLang") &&
       reveal &&
       range.from >= reveal.from &&
       range.to <= reveal.to
@@ -103,7 +145,9 @@ export function collectLivePreviewRanges(
         ? `line:${range.from}:${range.className}`
         : range.kind === "widget"
           ? `widget:${range.from}:${range.to}:${range.className}:${range.text}:${range.checked ? "x" : "-"}`
-          : `${range.kind}:${range.from}:${range.to}:${range.kind === "mark" ? range.className : ""}`;
+          : range.kind === "codeLang"
+            ? `codeLang:${range.from}:${range.label}:${range.mode}:${range.blockFrom}`
+            : `${range.kind}:${range.from}:${range.to}:${range.kind === "mark" ? range.className : ""}`;
     // Two visible ranges can meet inside one block (the tree is walked once per
     // range), and a line can be shared by a quote and a code block.
     if (seen.has(key)) return;
@@ -116,7 +160,7 @@ export function collectLivePreviewRanges(
     tree.iterate({
       from: range.from,
       to: range.to,
-      enter: (ref) => visitNode(ref.node, state, range, push),
+      enter: (ref) => visitNode(ref.node, state, range, options, push),
     });
   }
 
@@ -144,15 +188,26 @@ export function buildLivePreviewDecorations(
   ranges: readonly VisibleRange[],
   options?: LivePreviewOptions,
 ): DecorationSet {
-  return Decoration.set(toDecorationRanges(collectLivePreviewRanges(state, ranges, options)), true);
+  return Decoration.set(
+    toDecorationRanges(collectLivePreviewRanges(state, ranges, options), options),
+    true,
+  );
 }
 
 /**
  * Spec list → CodeMirror ranges. Exported because the plugin patches a subset of
  * an existing set (`RangeSet.update({ add })`) when the caret crosses a block
  * boundary, and that path needs the same mapping without rebuilding the world.
+ *
+ * `options` is threaded through only for the language chip: a widget has to carry
+ * the "plain text" label (it opens the picker itself, with no option object in
+ * scope). Every other decoration is independent of the options.
  */
-export function toDecorationRanges(specs: readonly LivePreviewRange[]): Range<Decoration>[] {
+export function toDecorationRanges(
+  specs: readonly LivePreviewRange[],
+  options?: LivePreviewOptions,
+): Range<Decoration>[] {
+  const codeLanguage = options?.codeLanguage;
   return specs.map((range) => {
     switch (range.kind) {
       case "hide":
@@ -163,6 +218,19 @@ export function toDecorationRanges(specs: readonly LivePreviewRange[]): Range<De
         return lineDecoration(range.className).range(range.from);
       case "widget":
         return decorationWithWidget(range).range(range.from, range.to);
+      case "codeLang":
+        // `side: 1` puts the chip after anything else anchored at the same
+        // offset (a token mark can end exactly at the line's end). Zero width:
+        // `range(from)`, never `range(from, to)`.
+        return Decoration.widget({
+          widget: new CodeLanguageWidget(
+            range.label,
+            range.mode,
+            range.blockFrom,
+            codeLanguage?.plainText ?? DEFAULT_CODE_PLAIN_TEXT,
+          ),
+          side: 1,
+        }).range(range.from);
     }
   });
 }
@@ -213,6 +281,7 @@ function visitNode(
   node: SyntaxNode,
   state: EditorState,
   visible: VisibleRange,
+  options: LivePreviewOptions,
   push: Push,
 ): boolean | void {
   const headingLevel = headingLevelOf(node.name);
@@ -230,15 +299,11 @@ function visitNode(
   switch (node.name) {
     case "FencedCode":
     case "CodeBlock":
-      addCodeBlockLines(node, state, visible, push);
-      // Fenced code can be highlighted; an indented block has no info string.
-      // The label goes in *before* the highlight, which bails out on a block with
-      // no `CodeText` — `"```js\n```\n"` has none, and the language would
-      // otherwise vanish from exactly the blocks that show nothing else.
-      if (node.name === "FencedCode") {
-        addCodeInfoMark(node, visible, push);
-        addCodeHighlight(node, state, visible, push);
-      }
+      addFencedCode(node, state, visible, options, push);
+      // Token colours are a separate pass for a separate reason: they need the
+      // block's text, not its markers, and they are emitted as ordinary marks so
+      // the source stays coloured while the caret is inside the block.
+      if (node.name === "FencedCode") addCodeHighlight(node, state, visible, push);
       return false;
     case "Blockquote":
       addLineClasses(state, Math.max(node.from, visible.from), Math.min(node.to, visible.to), "cm-md-quote", visible, push);
@@ -476,6 +541,189 @@ function delimiterOf(state: EditorState, mark: SyntaxNode): string {
 }
 
 /**
+ * Everything a code block contributes: the card's line classes, the hidden
+ * fences, the info label and the language chip.
+ *
+ * One function rather than three passes, because the decisions are entangled:
+ * *which* lines are the card's first and last depends on whether the fences are
+ * hidden, and whether the fences are hidden depends on whether the block has a
+ * body at all.
+ *
+ * Three states, all driven by `options.reveal`:
+ *
+ * 1. **Revealed** (the caret is in this block) — byte-for-byte the old
+ *    behaviour: every line of the node is a card line, the info string keeps its
+ *    `cm-md-code-info` mark, and the ```` ``` ```` lines are ordinary editable
+ *    text. Nothing is collapsed, because `Decoration.replace` would make the
+ *    fence unreachable and the block uneditable.
+ * 2. **Hidden with a body** — the two fence lines collapse and their text is
+ *    replaced; the card's first/last classes move to the first/last *body* line;
+ *    the chip goes at the end of the last body line.
+ * 3. **Hidden and empty** — only the opening fence collapses. The closing fence
+ *    stays as the card's single visible row (its text is still replaced, but it
+ *    keeps its height), so an empty block is a clickable placeholder instead of
+ *    a block that vanishes and cannot be reached again.
+ *
+ * An indented block (`CodeBlock`) has no fence and no info string, so it is
+ * always case 1 minus the label: zero hiding, no chip.
+ */
+function addFencedCode(
+  node: SyntaxNode,
+  state: EditorState,
+  visible: VisibleRange,
+  options: LivePreviewOptions,
+  push: Push,
+): void {
+  if (node.name !== "FencedCode") {
+    addCodeBlockLines(node, state, visible, push);
+    return;
+  }
+
+  const doc = state.doc;
+  const openLine = doc.lineAt(node.from).number;
+  const blockLastLine = doc.lineAt(Math.max(node.to, node.from + 1) - 1).number;
+
+  let open: SyntaxNode | null = null;
+  let close: SyntaxNode | null = null;
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "CodeMark") continue;
+    // First `CodeMark` opens, a second one closes; an unclosed fence runs to
+    // the end of the document with no closing mark at all.
+    if (open) close = child;
+    else open = child;
+  }
+  const closeLine = close ? doc.lineAt(close.from).number : 0;
+
+  const reveal = options.reveal;
+  const revealed = Boolean(reveal && node.from >= reveal.from && node.to <= reveal.to);
+  if (revealed) {
+    addCodeBlockLines(node, state, visible, push);
+    addCodeInfoMark(node, visible, push);
+    return;
+  }
+
+  const bodyFirst = openLine + 1;
+  const bodyLast = close ? closeLine - 1 : blockLastLine;
+  // Blank lines are not a body. ```` ``` ```` / an empty line / ```` ``` ```` is a
+  // block the user has not typed into yet, and rendering it as a two-row card
+  // would put the clickable row below an unexplained gap.
+  let hasBody = false;
+  for (let number = bodyFirst; number <= bodyLast; number += 1) {
+    if (doc.line(number).text.trim() !== "") {
+      hasBody = true;
+      break;
+    }
+  }
+
+  // A lone ```` ``` ```` with no newline yet: there is nothing to collapse, and
+  // collapsing the only line would hide the fence the user is still typing.
+  if (!close && !hasBody) {
+    addCodeBlockLines(node, state, visible, push);
+    addCodeInfoMark(node, visible, push);
+    return;
+  }
+
+  if (hasBody) {
+    if (open) collapseLine(state, openLine, visible, push, open.from);
+    if (close) collapseLine(state, closeLine, visible, push, close.from);
+    // The card's corners belong to the body now: the fence lines are gone, so
+    // rounding them (or rounding the topmost *painted* line when the block is
+    // scrolled) would draw a cap around nothing.
+    addCardLines(state, visible, push, bodyFirst, bodyLast);
+    addLanguageChip(state, visible, options, node, doc.line(bodyLast).to, push);
+    return;
+  }
+
+  // Empty block. The opening fence and any blank body line collapse; the closing
+  // fence line becomes the card.
+  if (open) collapseLine(state, openLine, visible, push, open.from);
+  for (let number = bodyFirst; number <= bodyLast; number += 1) {
+    collapseLine(state, number, visible, push);
+  }
+  const lastLine = doc.line(closeLine);
+  if (contains(visible, lastLine.from, lastLine.to)) {
+    push({ kind: "line", from: lastLine.from, className: "cm-md-code-block cm-md-code-single" });
+  }
+  // Still replaced — only the line *class* differs, so the row keeps its height
+  // and the chip has something to sit on. Without this the closing fence would
+  // be the one piece of raw Markdown left on a rendered card.
+  const hideFrom = Math.max(lastLine.from, close ? close.from : lastLine.from);
+  if (lastLine.to > hideFrom && contains(visible, hideFrom, lastLine.to)) {
+    push({ kind: "hide", from: hideFrom, to: lastLine.to });
+  }
+  addLanguageChip(state, visible, options, node, lastLine.to, push);
+}
+
+/**
+ * Collapse one line: the `cm-md-code-block cm-md-code-fence-hidden` pair (four
+ * classes with `.cm-line`, which is what it takes to beat the three-class card
+ * rules) plus a hide over its text.
+ *
+ * `textFrom` starts the hide at the fence characters rather than at the line
+ * start: a fence nested in a list item or a quote carries its `- ` / `> ` prefix
+ * outside the node, and hiding it would take the container marker with it.
+ *
+ * The hide never crosses a line break — `[line.from, line.to]` is one line by
+ * construction, which is also CodeMirror's hard requirement: a `Decoration` that
+ * spans a line break throws at paint time, not at build time, so it would reach
+ * production as a blank editor.
+ */
+function collapseLine(
+  state: EditorState,
+  lineNumber: number,
+  visible: VisibleRange,
+  push: Push,
+  textFrom?: number,
+): void {
+  const line = state.doc.line(lineNumber);
+  if (!contains(visible, line.from, line.to)) return;
+  push({ kind: "line", from: line.from, className: "cm-md-code-block cm-md-code-fence-hidden" });
+  const from = Math.max(line.from, textFrom ?? line.from);
+  // A blank line has no text to replace; the line class alone collapses it.
+  if (line.to > from) push({ kind: "hide", from, to: line.to });
+}
+
+/**
+ * The language chip, at the end of the card's last visible line.
+ *
+ * `from === to` (a zero-width anchor) because there is no character for it to
+ * cover — the value it edits lives up on the fence line. `blockFrom` is the node
+ * start, which is what the picker hands to `codeBlockLanguageSpec`.
+ *
+ * Elided when a `static` chip would have nothing to say: in a read-only window
+ * (or 纯预览编辑) there is no picker, so an unlabelled block would grow a
+ * permanent "纯文本" tag on every example in the note. A *labelled* block still
+ * gets one — that is the useful half of the label.
+ */
+function addLanguageChip(
+  state: EditorState,
+  visible: VisibleRange,
+  options: LivePreviewOptions,
+  node: SyntaxNode,
+  at: number,
+  push: Push,
+): void {
+  const codeLanguage = options.codeLanguage;
+  if (!codeLanguage) return;
+  // A zero-width range is visible when the line break it sits on is: compare the
+  // point, not `contains`, which would need `to > from`.
+  if (at < visible.from || at > visible.to) return;
+
+  const info = codeFenceInfoAt(state, node.from);
+  const word = info ? state.sliceDoc(info.wordFrom, info.wordTo) : "";
+  if (!word && codeLanguage.mode === "static") return;
+
+  push({
+    kind: "codeLang",
+    from: at,
+    to: at,
+    label: word || codeLanguage.plainText,
+    mode: codeLanguage.mode,
+    blockFrom: node.from,
+  });
+}
+
+/**
  * One line decoration per visible line of a code block, with the first and last
  * line marked so CSS can round the corners.
  *
@@ -490,17 +738,40 @@ function addCodeBlockLines(
   push: Push,
 ): void {
   const doc = state.doc;
-  const blockFirstLine = doc.lineAt(node.from).number;
-  const blockLastLine = doc.lineAt(Math.max(node.to, node.from + 1) - 1).number;
+  addCardLines(
+    state,
+    visible,
+    push,
+    doc.lineAt(node.from).number,
+    doc.lineAt(Math.max(node.to, node.from + 1) - 1).number,
+  );
+}
 
-  const from = Math.max(node.from, visible.from);
-  const to = Math.min(node.to, visible.to);
+/**
+ * `cm-md-code-block` on every visible line of `[blockFirstLine, blockLastLine]`,
+ * plus `first` / `last` / `single` on the card's ends.
+ *
+ * Split out of `addCodeBlockLines` because the hidden-fence case re-anchors the
+ * card's ends onto the body: same geometry, different bounds.
+ */
+function addCardLines(
+  state: EditorState,
+  visible: VisibleRange,
+  push: Push,
+  blockFirstLine: number,
+  blockLastLine: number,
+): void {
+  const doc = state.doc;
+  if (blockLastLine < blockFirstLine) return;
+
+  const from = Math.max(doc.line(blockFirstLine).from, visible.from);
+  const to = Math.min(doc.line(blockLastLine).to, visible.to);
   if (to <= from) return;
 
   const firstLine = Math.max(doc.lineAt(from).number, doc.lineAt(visible.from).number);
   const lastLine = Math.min(doc.lineAt(to - 1).number, doc.lineAt(Math.max(visible.from, visible.to - 1)).number);
 
-  for (let number = firstLine; number <= lastLine; number += 1) {
+  for (let number = Math.max(firstLine, blockFirstLine); number <= Math.min(lastLine, blockLastLine); number += 1) {
     const isFirst = number === blockFirstLine && number === firstLine;
     const isLast = number === blockLastLine && number === lastLine;
     const className =
@@ -521,9 +792,9 @@ function addCodeBlockLines(
  *
  * A mark, never a hide: the info string is the only place a language can be
  * typed (nothing here guesses one), so it stays ordinary editable text — the
- * class is purely visual. It also has to be emitted before the highlight pass
- * (see the call site): `addCodeHighlight` needs a `CodeText` to work from and
- * returns early without one, which is the case for an empty block.
+ * class is purely visual. Only emitted for a *revealed* block: when the fences
+ * are collapsed the whole line is replaced, and a mark inside a hide would break
+ * the "hide and mark never overlap" invariant this layer keeps.
  */
 function addCodeInfoMark(node: SyntaxNode, visible: VisibleRange, push: Push): void {
   for (let child = node.firstChild; child; child = child.nextSibling) {

@@ -3,6 +3,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import { blockAtPosition } from "../editorBlocks";
+import { resolveLanguage } from "../highlight";
 
 /**
  * Code-block interactions (L2): what Ctrl+A selects inside a block, and turning a
@@ -84,6 +85,150 @@ export function codeBlockAt(state: EditorState, pos: number): CodeBlockRange | n
   const closed = Boolean(last && last.name === "CodeMark" && last.from > node.from);
   const contentTo = closed ? Math.max(contentFrom, doc.lineAt(last!.from).from - 1) : node.to;
   return { from: node.from, to: node.to, contentFrom, contentTo };
+}
+
+/**
+ * Where a fence's language lives, for the picker that rewrites it.
+ *
+ * The three ranges are separate because they answer different questions:
+ * `from..to` is the whole node (what the card and the menu anchor talk about);
+ * `infoFrom..infoTo` is the info region on the opening fence line; `wordFrom..wordTo`
+ * is the single token the picker is allowed to touch.
+ *
+ * `infoFrom` is the offset *right after the fence characters*, not `CodeInfo.from`:
+ * the parser trims the info string, so ```` ``` python ```` gives a `CodeInfo` at
+ * `python` and leaves the separating space outside every node. Clearing the
+ * language has to take that space with it — otherwise the fence ends up as
+ * ```` ``` ```` with a dangling blank and the next rename writes a double space.
+ */
+export interface CodeFenceInfo {
+  /** The whole `FencedCode` node. */
+  node: SyntaxNode;
+  from: number;
+  to: number;
+  /**
+   * Leading edge of the info region: immediately after the opening fence
+   * (the opening `CodeMark`'s `to`), so any separating whitespace is inside.
+   */
+  infoFrom: number;
+  /** `CodeInfo.to` when the fence has an info string, else `infoFrom`. */
+  infoTo: number;
+  /** First word of the info string, without its leading whitespace. */
+  wordFrom: number;
+  /** End of that word (`wordFrom === wordTo` when the info string is empty). */
+  wordTo: number;
+  /** The fence has a closing `CodeMark`. */
+  closed: boolean;
+}
+
+/**
+ * The fence containing `pos`, with the ranges a language change needs, or `null`.
+ *
+ * Indented blocks (`CodeBlock`) have no fence and no info string, so they return
+ * `null` — there is nothing to rename and the picker must not offer itself.
+ *
+ * Read-only: no view, no DOM, and the document is only sliced.
+ */
+export function codeFenceInfoAt(state: EditorState, pos: number): CodeFenceInfo | null {
+  const node = codeNodeAt(state, pos);
+  if (!node || node.name !== "FencedCode") return null;
+
+  let open: SyntaxNode | null = null;
+  let info: SyntaxNode | null = null;
+  let closed = false;
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name === "CodeMark") {
+      // First `CodeMark` opens, a second one closes; an unclosed fence runs to
+      // the end of the document instead.
+      if (open) closed = true;
+      else open = child;
+    } else if (child.name === "CodeInfo" && child.to > child.from) {
+      info = child;
+    }
+  }
+
+  const afterFence = open ? open.to : node.from;
+  // ```` ``` python ```` parses as `CodeInfo` = `python` (4-10): the leading space
+  // sits between the fence and the node, which is why `infoFrom` is the fence end.
+  const wordFrom = info ? info.from : afterFence;
+  let wordTo = wordFrom;
+  if (info) {
+    const text = state.sliceDoc(info.from, info.to);
+    const space = text.search(/\s/);
+    // ```` ```js title="a b" hl_lines=1 ```` — only `js` is the language; the
+    // rest of the line is the user's own attributes and must survive untouched.
+    wordTo = space < 0 ? info.to : info.from + space;
+  }
+
+  return {
+    node,
+    from: node.from,
+    to: node.to,
+    infoFrom: afterFence,
+    infoTo: info ? info.to : afterFence,
+    wordFrom,
+    wordTo,
+    closed,
+  };
+}
+
+/**
+ * Rewrite the language of the fence containing `pos`.
+ *
+ * `language === null` clears it. Anything else is resolved through
+ * `resolveLanguage` first and **declined when unknown**: the menu only offers
+ * canonical names, but a stale caller (a plugin, a test) must not be able to
+ * write an unregistered word onto the fence, where it would silently disable the
+ * highlighting and look like the app broke.
+ *
+ * Returns `null` — no transaction — when there is nothing to do: no fence at
+ * `pos`, an indented block, an unknown language, or a fence already showing that
+ * language. `null` matters: an empty transaction would still land an undo step,
+ * so Ctrl+Z would appear to do nothing once per click.
+ *
+ * One change, one transaction: the info word is replaced in place, so the caret
+ * and the scroll position are left alone (`selection` / `scrollIntoView` are
+ * deliberately absent — clicking a chip three lines from the bottom of the
+ * screen must not scroll the document).
+ */
+export function codeBlockLanguageSpec(
+  state: EditorState,
+  pos: number,
+  language: string | null,
+): TransactionSpec | null {
+  const info = codeFenceInfoAt(state, pos);
+  if (!info) return null;
+
+  if (language === null) {
+    // Nothing written → nothing to clear. Idempotent by construction.
+    if (info.wordTo <= info.wordFrom) return null;
+    // From `infoFrom`, not `wordFrom`: the separating space goes too, so the
+    // fence reads ```` ``` ```` and not ```` ``` ```` + a stray blank.
+    return {
+      changes: { from: info.infoFrom, to: info.wordTo, insert: "" },
+      userEvent: "input.setLanguage",
+    };
+  }
+
+  const canonical = resolveLanguage(language);
+  if (!canonical) return null;
+
+  if (info.wordTo > info.wordFrom) {
+    // Compare the *word as written* against the canonical name, not the two
+    // canonicalised forms: picking `python` on a fence that says `py` is a real
+    // change — it puts the canonical spelling on the fence, which is what every
+    // menu row shows. Comparing canonicalised values instead would make that
+    // click a silent no-op and leave the alias on the fence forever.
+    const current = state.sliceDoc(info.wordFrom, info.wordTo);
+    if (current === canonical) return null;
+  }
+
+  // `wordFrom..wordTo`, never the whole info region: a whole-word replace is what
+  // turns `py` into `python` instead of `pythonpy`.
+  return {
+    changes: { from: info.wordFrom, to: info.wordTo, insert: canonical },
+    userEvent: "input.setLanguage",
+  };
 }
 
 /**
