@@ -1,8 +1,8 @@
 # 决策记录 · 纯预览编辑模式（表格就地编辑）
 
 日期：2026-11-09
-状态：已实施；**WebView2 验收未闭环**（MSVC 工具链缺失 + 已安装实例占用单实例锁）。
-代码级门禁与真实 Chromium 的 DOM 级验收已通过，逐条证据见 §6。
+状态：已实施；**WebView2 验收已闭环**（主窗 + 独立窗，2026-11-09 晚）。
+代码级门禁、产物级 CSS 证据与真实 WebView2 的 DOM 级验收均已通过，逐条证据见 §验证。
 
 ## 背景
 
@@ -107,16 +107,19 @@
 | `npm run build`（PowerShell） | 退出码 0（仅既有 chunk 体积告警） |
 | Chromium DOM 探针（`test_temp/verify-table-edit-chromium.mjs`，真实鼠标事件 + 双截图） | **23/23**：常驻渲染、跨格拖选、双击编辑、Tab/Enter/Esc 提交、未编辑格保格式、空槽写回、普通模式不回归 |
 
-**未完成（环境阻塞，不是代码缺陷）**：
+**曾经的阻塞已解除（2026-11-09 晚）**：
 
-- `npm run tauri -- build --no-bundle` 失败：`failed to find tool "cl.exe"`。本机 VS 2022 Build Tools 与
-  Windows SDK 的 `Lib/`、`bin/` 已缺失，`rustc` 只有 msvc 一条链。与上一轮 `d5f17fa` 记录同一根因。
-- `npm run verify:webview` 未开窗：已安装版 `qing-notepad.exe`（PID 1980，`E:\QingNotepad\`）占用单实例锁，
-  runner 以 exit 2 拒绝启动；且 `src-tauri/target/release/qing-notepad.exe` 是 11-07 的旧构建，
-  硬开窗等于验收旧前端，会给出假阳性。
-- 因此 **P0-1（按钮运行时状态）、P0-6（源码档联动）、P0-7（独立窗开窗）只有静态核对**。
-- 需人工目视：跨格拖选观感、双击选词视觉、6px 列宽热区手感、中文 IME 组字、失焦真实时序、
-  编辑态选区颜色。
+- VS 2022 Build Tools 与 Windows SDK 已于 19:20 装好（`cl.exe` / `rc.exe` / `Lib` 齐全），
+  `npm run tauri -- build --no-bundle` 三次构建均成功（MSVC `14.36.32532` / SDK `10.0.22000.0`；
+  `env.ps1` 里 pin 的 14.44 / 26100 本机不存在，走实际探测的 fallback）。
+- `npm run verify:webview` 开窗通过：`ok:true`、`consoleErrors: []`、`shellCards: 3`、`editorCard: 546×752`。
+- 独立笔记窗 CDP 断言（960×720，theme-dark，最终构建）：底栏 **3 枚**按钮（`显示/隐藏大纲` / `源码` /
+  `纯预览编辑`），第三枚 `aria-pressed` 双向翻转；源码档下 `disabled=true` 且芯片退成 `text-text-muted`
+  且不自动恢复；纯预览开启后 `.cm-md-table-wrap` 与 `[data-interactive=true]` 均为 1（整篇未回退源码）；
+  三枚 `24×24`、pitch `32/32`，520px 复测 `overflowX = 0`。
+- 因此 **P0-1（按钮运行时状态）、P0-6（源码档联动）、P0-7（独立窗开窗）已由 DOM 级证据闭环**。
+- 仍需人工目视：hover / active 过渡手感、`active:scale-90` 的可感性、双窗同开同一笔记时切纯预览的
+  相互干扰、IME 组字期间切档、跨格拖选与 6px 列宽热区、三主题 × 四强调色下的芯片观感。
 
 ## 与既有文档的关系
 
