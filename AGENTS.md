@@ -54,6 +54,36 @@ project convention, not a one-off preference.
 - This app already has a fixed stack (Tauri v2 + React 19 + TypeScript). Architect therefore
   applies to incremental choices inside that stack, not to greenfield re-selection.
 
+## Multi-Agent Dispatch (Required)
+
+For work that needs parallel roles, the main agent is the dispatcher. The rules in
+`docs/team-collaboration-spec.md` are the single source of truth for workflow routing and
+RACI; `docs/decisions-agent-dispatch.md` records why the dispatch setup is shaped this way.
+A machine-local helper lives at `.workbuddy/skills/qing-dispatch/SKILL.md` — it is
+git-ignored, so it must be rebuilt on a fresh clone.
+
+- `grill` → `architect` still run first, in the main agent, before any team is created.
+  A multi-agent round never replaces either step.
+- The main agent is the **only** committer and the **only** build/acceptance runner.
+  Sub-agents must not `git commit`, `npm install`, or touch capabilities, CSP,
+  `package.json`, `release.yml`, or another member's in-flight files.
+- All cross-member information goes through the main agent; members never message
+  each other directly (spec §1.1, rule 1).
+- Shared surfaces (`i18n.ts`, `App.tsx`, `index.css`, `types/`, `shellLayout.ts`) are
+  assigned to exactly one member at a time — never two in parallel (spec §3.4 R1/R3).
+- Every sub-agent prompt carries: the hard-rule digest from `.workbuddy/memory/MEMORY.md`,
+  exact target paths, an explicit do-not list, and the handoff format
+  (`IS_PASS: YES/NO` + QA routing).
+- Team instances are session-scoped (state under `~/.workbuddy/teams/<name>/`) and are
+  never assumed to survive into a new session. Only conclusions persist, in
+  `docs/decisions-<topic>.md`.
+- Default roster is three members (lead / engineer / QA) plus one read-only rule
+  guardian; architect, PM, Rust specialist and the UI template are pulled in only when
+  the workflow routing calls for them. See `docs/decisions-agent-dispatch.md` §5.
+- After collection: dissolve the team, then one `git commit` (`feat(scope): 中文摘要`),
+  no push. If the change can reach `dist/`, run the Build And WebView Acceptance loop
+  once, from the main agent only, so two members never lock the exe.
+
 ## Commands
 
 ```bash

@@ -21,6 +21,7 @@
 | `user-manual.md` | 面向用户的功能手册：界面四区、笔记/待办/画布/便签、主题与 AI。也是 AI 检索语料之一 | 第一次接触产品，或改了用户可见功能要同步它 | 7.5 KB |
 | `user-faq.md` | 「小青」问答语料，`## Qn｜question` 即分块边界 | 改 AI 检索语料、加用户问答 | 6.0 KB |
 | `online-workspace.md` | Supabase 初始化步骤与工作台部署顺序 | 要摆在线工作台 / 跑 migration 时 | 3.3 KB |
+| `decisions-agent-dispatch.md` | 多智能体分派工作站：可行边界、三方案选型、3 人基线 + 只读守门员角色表、落地清单与开放问题 | 配置/改动团队分派规则前；或要判断「角色默认生效吗」时 | 6.3 KB |
 | `release-notes-titlebar.md` | 顶栏改版的用户侧迁移对照表（旧入口 → 新入口） | 写发布说明、或被问"某个功能去哪了" | 3.6 KB |
 | `team-collaboration-spec.md` | 开发团队协作规范：工作流路由、RACI、交接物格式、DoR/DoD、本仓库专属检查清单、文档与记忆规范 | 接手任何非 trivial 需求前；或要判断"这该走哪条流程"时 | 32.7 KB |
 
