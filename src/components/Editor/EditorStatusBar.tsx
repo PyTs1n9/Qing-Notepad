@@ -15,9 +15,11 @@ interface EditorStatusBarProps {
   /** `true` while 纯预览编辑 is on; the button flips it. */
   purePreview?: boolean;
   /**
-   * Omit to leave the button out entirely. The detached note window does not
-   * pass it: that surface keeps the two-mode editor, so a third button there
-   * would promise something it cannot do.
+   * Omit to leave the button out entirely. Both note surfaces — the main
+   * window's editor and the detached note window — pass it, so the mode is
+   * reachable wherever the document can be edited; the prop still decides
+   * existence, which is what keeps a future read-only surface from showing a
+   * switch it cannot honour.
    */
   onTogglePurePreview?: () => void;
   /** Epoch milliseconds, already resolved by the editor (saved time, not keystroke). */
@@ -75,10 +77,11 @@ function Divider({ inset = false }: { inset?: boolean }) {
  * cluster is document state; anything that is neither belongs in the menu bar
  * above.
  *
- * The third switch exists only where the mode does: it renders when
- * `onTogglePurePreview` is passed (the main window) and is absent when it is not
- * (the detached note window keeps the two-mode editor, so a button there would
- * promise something it cannot do). "Six segments" therefore counts the bar's
+ * The third switch renders when `onTogglePurePreview` is passed — both the main
+ * window and the detached note window pass it, because both run the same
+ * `MarkdownSourceEditor` and therefore the same interactive table layer. The
+ * prop still owns existence: a surface that cannot offer the mode omits it
+ * rather than showing a dead button. "Six segments" therefore counts the bar's
  * *information* segments, and the left cluster may still grow — every addition
  * stays before the flexible gap and is a document-structure control.
  *
@@ -97,11 +100,26 @@ export default function EditorStatusBar({
   saveState,
   stats,
 }: EditorStatusBarProps) {
-  const buttonClass = (pressed: boolean) =>
-    `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors ${
-      pressed
-        ? "bg-bg-active text-text-primary"
-        : "text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary"
+  // A pressed toggle used to be `bg-bg-active`, a tint worth ~1.5:1 against this
+  // bar's own background: all three switches read as off while already on, and
+  // the press itself gave no feedback. A solid accent chip is the "on" language
+  // the Pin and Save buttons in this card already speak, `on-accent` is audited
+  // against both `accent` and `accent-hover`, and the 90% squeeze answers the
+  // pointer the way every other control here does. `scale` is named in the
+  // transition because Tailwind 4 writes it as its own property, not as part of
+  // `transform`.
+  //
+  // 源码 mode disables 纯预览编辑, and a filled chip there would read as a live
+  // selected state rather than an unavailable one: the disabled branch keeps no
+  // accent at all (no hover wash, no squeeze), leaving the call site's
+  // `opacity-40` to say "inert".
+  const buttonClass = (pressed: boolean, disabled = false) =>
+    `flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-[color,background-color,scale] duration-[var(--dur-fast)] ease-[var(--ease-out)] ${
+      disabled
+        ? "text-text-muted"
+        : pressed
+          ? "bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-hover active:scale-90"
+          : "text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary active:bg-bg-active active:text-text-primary active:scale-90"
     }`;
 
   const saveLabel =
@@ -150,7 +168,8 @@ export default function EditorStatusBar({
           disabled) on surfaces that do not offer the mode, because a button that
           can never be pressed is worse than no button. 源码 mode disables it: the
           two views are exclusive, and the source view is the escape hatch that
-          wins. */}
+          wins. The disabled flag is also handed to `buttonClass`, so the chip
+          cannot keep an accent fill while it is unpressable. */}
       {onTogglePurePreview && (
         <button
           type="button"
@@ -159,7 +178,7 @@ export default function EditorStatusBar({
           title={t(lang, "purePreviewEditHint")}
           onClick={onTogglePurePreview}
           disabled={sourceMode}
-          className={`${buttonClass(purePreview)} disabled:cursor-not-allowed disabled:opacity-40`}
+          className={`${buttonClass(purePreview, sourceMode)} disabled:cursor-not-allowed disabled:opacity-40`}
         >
           <PenLine size={14} aria-hidden="true" />
         </button>

@@ -26,6 +26,7 @@ import { requestAddToNotebook, type ExternalNoteInfo } from "@/utils/externalNot
 import { toggleVerticalFill } from "@/utils/windowFill";
 import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
 import { insertTable } from "@/utils/markdownCommands";
+import { flushTableEdit } from "@/utils/livePreview/tableEditing";
 import {
   forceSaveNoteContent,
   loadNoteContent,
@@ -77,8 +78,9 @@ interface NoteWindowViewProps {
  * Scope is deliberately narrow — "only the note" means no sidebar, no tabs, no
  * AI panel, no workspace chrome. What it does keep is the complete editing
  * surface: the five menus, the same CodeMirror instance and live preview, the
- * outline column, and every segment of the status bar. A detached view that
- * silently dropped a control would be a second, lesser editor.
+ * outline column, 纯预览编辑 as the status bar's third switch, and every segment
+ * of the status bar. A detached view that silently dropped a control would be a
+ * second, lesser editor.
  *
  * Persistence is the interesting part. Two windows can hold the same document,
  * so the buffer is written on a debounce and the write is broadcast; the main
@@ -106,6 +108,10 @@ export default function NoteWindowView({
   const [isSaving, setIsSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<EditorViewMode>("live");
+  // 纯预览编辑: session-scoped exactly like the main editor's copy — the window
+  // keeps the choice while it lives and starts in the ordinary two-mode editor,
+  // because "remember it in settings" was deliberately left out of scope.
+  const [purePreview, setPurePreview] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -158,6 +164,13 @@ export default function NoteWindowView({
     if (savePromiseRef.current) {
       await savePromiseRef.current.catch(() => undefined);
     }
+    // An open table cell holds text that is not in the buffer yet, and typing in
+    // it does not mark anything dirty. Every caller of this (autosave, Ctrl+S,
+    // closing the window, 返回主软件, export) means "what the user can see", so the
+    // cell is committed first — the commit dispatches, which refreshes
+    // `contentRef` synchronously and (correctly) marks the buffer dirty.
+    const view = viewRef.current;
+    if (view) flushTableEdit(view);
     // An unresolved conflict blocks autosave: retrying would either overwrite
     // the other program's text or fail forever. The user decides below.
     if (issueRef.current?.kind === "conflict") {
@@ -454,6 +467,44 @@ export default function NoteWindowView({
     };
   }, []);
 
+  // ------------------------------------------------------------ view modes --
+  /**
+   * The single view-mode setter — the menu's 视图 → 源码/实时渲染, the status
+   * bar's second button and `Ctrl+/` all land here. 源码档优先: choosing the
+   * source view turns 纯预览编辑 off and does not bring it back on the way out,
+   * so the two controls can never disagree about what is on screen.
+   */
+  const handleViewModeChange = useCallback((mode: EditorViewMode) => {
+    if (mode === "source") setPurePreview(false);
+    setViewMode(mode);
+  }, []);
+
+  /**
+   * Source ↔ live. Declared before `Ctrl+/` because the key handler and the
+   * status-bar button must drive the same state machine; two independent
+   * togglers would eventually disagree about which mode is current.
+   */
+  const handleToggleSourceMode = useCallback(() => {
+    handleViewModeChange(viewMode === "source" ? "live" : "source");
+  }, [handleViewModeChange, viewMode]);
+
+  /**
+   * 纯预览编辑 toggle, same semantics as the main editor's.
+   *
+   * The open table cell is committed before the layer is swapped: switching modes
+   * rebuilds the table widget, and its DOM — the field the user is typing in —
+   * goes with it.
+   */
+  const handleTogglePurePreview = useCallback(() => {
+    const editorView = viewRef.current;
+    if (editorView) flushTableEdit(editorView);
+    const next = !purePreview;
+    setPurePreview(next);
+    // Defensive: the button is disabled in 源码 view, but the mode can also be
+    // changed from the menu while this handler is in flight.
+    if (next) setViewMode((mode) => (mode === "source" ? "live" : mode));
+  }, [purePreview]);
+
   // ------------------------------------------------------------- shortcuts --
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -478,7 +529,7 @@ export default function NoteWindowView({
       // "+" and Ctrl+Shift+0 reports ")" on some layouts.
       if (event.code === "Slash") {
         event.preventDefault();
-        setViewMode((mode) => (mode === "source" ? "live" : "source"));
+        handleToggleSourceMode();
         return;
       }
       if (event.code === "Equal") {
@@ -499,16 +550,12 @@ export default function NoteWindowView({
 
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", handleKeyDown, { capture: true });
-  }, [resetZoom, saveNow, zoomIn, zoomOut]);
+  }, [handleToggleSourceMode, resetZoom, saveNow, zoomIn, zoomOut]);
 
   // --------------------------------------------------------------- actions --
   const handleToggleOutline = useCallback(() => {
     setOutlineOpen((open) => !open);
     requestAnimationFrame(() => viewRef.current?.requestMeasure());
-  }, []);
-
-  const handleToggleSourceMode = useCallback(() => {
-    setViewMode((mode) => (mode === "source" ? "live" : "source"));
   }, []);
 
   const handleZoom = useCallback(
@@ -597,6 +644,10 @@ export default function NoteWindowView({
 
   /** Conflict action 2: the buffer wins, overwrite the other program's text. */
   const keepMine = useCallback(async () => {
+    // Same rule as `saveNow`: "the buffer" means what the user can see, and an
+    // open table cell is not in it until it is committed.
+    const view = viewRef.current;
+    if (view) flushTableEdit(view);
     const result = await forceSaveNoteContent(noteId, contentRef.current);
     if (result.status !== "ok") {
       setIssue({ kind: "denied", message: result.message });
@@ -643,7 +694,7 @@ export default function NoteWindowView({
             isDirty={isDirty}
             isSaving={isSaving}
             viewMode={viewMode}
-            onViewModeChange={setViewMode}
+            onViewModeChange={handleViewModeChange}
             onSave={() => void saveNow()}
             onExport={ready ? () => void handleExport() : undefined}
             onCloseTab={requestClose}
@@ -660,6 +711,8 @@ export default function NoteWindowView({
             onToggleOutline={handleToggleOutline}
             sourceMode={viewMode === "source"}
             onToggleSourceMode={handleToggleSourceMode}
+            purePreview={purePreview}
+            onTogglePurePreview={handleTogglePurePreview}
             updatedAt={savedAt}
             saveState={saveState}
             stats={stats}
@@ -727,6 +780,7 @@ export default function NoteWindowView({
                   fontSize={fontSize}
                   fontFamily={editorFontFamily}
                   livePreview={viewMode === "live"}
+                  previewEditing={viewMode === "live" && purePreview}
                   onPasteImage={insertImageFile}
                   onInsertTable={handleInsertTable}
                 />
