@@ -158,6 +158,23 @@ imported above, `.github/**`, and comment-only edits.
   not fail a fresh run.
 - The window holds a lock on its exe. Rebuilding while it runs fails with access denied,
   which is why step 0 exists.
+- The build fingerprint is the `dist/index.html` hash plus exe size/mtime
+  (`verify-webview.mjs:118`). **Another session rebuilding `dist/` — even with no Rust
+  change — makes the open window stale (exit `2`) and blocks CDP probes.** When several
+  sessions share one working directory, build + verify must be run by one session at a
+  time, in a quiet window (no `cargo`/`rustc`/`msbuild` processes, `dist/` and the exe
+  unchanged for at least 3 minutes). Attach `HEAD`, the source blob hashes and a
+  timestamp to every `ok:true`; an `ok:true` is only valid until the next external build.
+- `verify:webview` exits 2 if `tasklist` finds **any** `qing-notepad.exe`
+  (`verify-webview.mjs:349-357`), including an installed copy outside the repo. Do not
+  kill the user's installed instance and do not expect `verify:webview:close` to clear
+  it — that command only closes a tracked session. Ask the human to quit it from the tray,
+  or record it as an environment blocker.
+- For a clean-HEAD build, produce `dist/` in an isolated `git worktree` (junction
+  `node_modules`, never `npm install`), verify it is byte-identical to the `dist/` you
+  are about to embed, then run `tauri build --no-bundle` in the main tree. Never run the
+  Tauri build inside the worktree: it recompiles all of Rust and collides on the cargo
+  lock.
 
 ### Session resume
 
