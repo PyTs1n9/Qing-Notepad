@@ -128,6 +128,44 @@ Typora 同为左重右轻，接受。
 Ctrl+A 与粘贴是**文档语义**，不是视图装饰。挂进 compartment 会让「源码档粘贴成块、实时档
 原样粘贴」变成两套行为，用户无法预测。
 
+### D10 选区色带按内容列裁剪，卡片几何一个像素不动
+
+**现象**：代码块内整段选中时，蓝色色带比卡片每侧宽约 20px，压在行号槽与滚动条上，并把 10px
+圆角填成直角。
+
+**根因**：`drawSelection` 的 `rectanglesForRange()` 用 `.cm-content` 的 **border box**
+`contentRect` 加上**首个 `.cm-line`** 的 padding 来算整行色带边界；
+而代码块卡片是 `.cm-line` 本身、没有 margin，它的 border box 恰好等于 `.cm-content` 的
+**padding box**。两者相差正好是 `.cm-content` 的 20px 横向 padding（右边界再差 2px：
+基础主题给 `.cm-line` 的 `padding-right`）。色带又被抬到 `z-index: 1`（见
+`topics/ui-rules.md` §选区与不透明表面），于是外溢可见。
+
+**结论**：给 `.cm-selectionLayer` 加 `clip-path`，左右边界取「内容列」（`.cm-content` 的
+padding box）。裁切边与卡片 border box 重合，卡片自身宽度/边框/圆角/padding 全部不动。
+
+**理由**（为什么不是另外两条更省事的路）：
+
+1. **不改卡片几何**：把卡片改成贴满内容列（`padding` 转 `margin`、负 margin 外扩等）虽然
+   也能让色带落进卡片，但会改变卡片观感，且依赖「首个 `.cm-line` 的 padding」——文档首行
+   是代码块或引用时该值不是 20px，色带会再次错位。裁剪不依赖首行。
+2. **不做 CSS-only 的 20px 常量**：图层原点在 `.cm-scroller` 而不是 `.cm-content`，中间
+   还有 gutter；gutter 宽度随行号位数变化（9→10→100），写死 20px 会在三位数行号时再次外溢。
+   因此两个 inset 由 `utils/selectionClip.ts` 实测写入 CSS 变量。
+3. **用布局量而不是视口量**：图层钉在 scroller 的 padding edge，内容在它内部横向滚动，
+   `getBoundingClientRect()` 的差值会随横向滚动漂移；`offsetLeft` / `offsetWidth` 同时天然
+   就是 `clip-path` 需要的 CSS px，浏览器缩放不需要 `view.scaleX` 换算。
+4. **图层是 0×0 盒**（基础主题 `.cm-layer` 带 `contain: size`）：`clip-path` 的参考盒为空，
+   百分比宽度不会给它面积，所以宽度必须由扩展写成像素；纵向 inset 取负值让裁切区在滚动时
+   始终覆盖视口。
+
+**代价（已知且接受）**：普通段落的整行色带也一起收到内容列内（左少 14px、右少 18px），
+看起来更贴近文字列；卡片首/末行被整段选中时，色带是矩形，10px 圆角区域会被填满（选中态
+看起来是直角，取消选中恢复圆角）。要连圆角一起裁，只能按行后处理每个色带 rect，代价与
+收益不成比例。
+
+**归属**：`selectionBandClip()` 只挂 `MarkdownSourceEditor`；只读视图与便签的
+`.cm-content` padding 为 0，实测 inset 为 0，裁剪是空操作。
+
 ## 落地文件
 
 | 路径 | 改动 |
@@ -140,6 +178,8 @@ Ctrl+A 与粘贴是**文档语义**，不是视图装饰。挂进 compartment �
 | `scripts/verify-live-preview.mjs` | 围栏夹具补 info mark 期望 + 新增语言标签小节 |
 | `package.json` | 仅 1 行：`verify:code-block` script |
 | `docs/INDEX.md` | 导航表补 `decisions-code-block.md` 一行 |
+| `src/utils/selectionClip.ts` | 新增（D10）：`selectionBandClip()` —— 实测内容列 inset 写入 `.cm-selectionLayer` 的 CSS 变量与像素宽度 |
+| `src/components/Editor/MarkdownSourceEditor.tsx` | D10：`basicSetup` 后挂 `selectionBandClip()`，1 处 import + 1 处调用 |
 
 ## 验证
 
@@ -194,6 +234,21 @@ Ctrl+A 与粘贴是**文档语义**，不是视图装饰。挂进 compartment �
 4. 引用内代码块：3px 竖线与 4px 左圆角的衔接、左重右轻是否可接受；
 5. 空正文块只显示语言名的样子；
 6. 150% 缩放下 1px 线是否发灰。
+
+### D10 的验收（2026-11-09，release exe + 真实 WebView2）
+
+几何与像素两路都取了证据（`--eval` 直连 CDP，视口 1200×800，dpr 1.5，暗色主题）：
+
+| 探针 | 实测 |
+| --- | --- |
+| 图层宽度 | `.cm-selectionLayer` 由扩展写成 `1046px`（= `.cm-scroller` 的 `clientWidth`），不再 0×0 |
+| 左右 inset | `--cm-sel-clip-left: 58px`（gutter 38 + content padding 20）、`--cm-sel-clip-right: 20px` |
+| 左边界像素 | CSS x=359 仍是面板底色（36,37,39），x=361 起出现色带（44,51,74）→ 色带止于 content padding box（360.53） |
+| 右边界像素 | x=1327 仍有色带，x=1332 起回到底色（58,59,65）→ 止于 content padding box 右沿（1328.67） |
+| 卡片对齐 | 代码块行 border box 左沿 `360.53` = 裁切边 `361`（1px 边框跨在 padding box 上，向内 0.47px），即色带落在卡片内侧、边框仍可见 |
+| 无副作用 | `scrollWidth = clientWidth = 1046`，加宽图层没有引入横向滚动；光标层与协作光标是另外的元素，不受裁剪影响 |
+
+**需人工目视确认**：选中整块时首/末行的 10px 圆角会被矩形色带填成直角（D10 已列为已知代价）。
 
 ## 开放问题
 

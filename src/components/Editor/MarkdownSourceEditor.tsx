@@ -21,6 +21,7 @@ import {
 // rather than something a plugin reaches into the view to toggle. `pluginDecorations`
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
+import { selectionBandClip } from "@/utils/selectionClip";
 import { livePreview } from "@/utils/livePreview";
 import { flushTableEdit } from "@/utils/livePreview/tableEditing";
 import { codeBlockInteractions } from "@/utils/livePreview/codeBlock";
@@ -264,6 +265,10 @@ export default function MarkdownSourceEditor({
       doc: latestValueRef.current,
       extensions: [
         basicSetup,
+        // Not a decoration: the band is CodeMirror's own layer and it is sized
+        // from the content box, so the card edges can only be matched by
+        // clipping that layer. See `utils/selectionClip.ts`.
+        selectionBandClip(),
         // GFM base, not the CommonMark default: `~~del~~` only becomes a
         // Strikethrough node (and tables a Table node) with GFM enabled, and
         // `utils/editorBlocks.ts` parses with the same base. Two different
