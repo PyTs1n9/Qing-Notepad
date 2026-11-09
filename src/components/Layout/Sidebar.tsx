@@ -107,13 +107,35 @@ const Sidebar: React.FC<SidebarProps> = ({
     expandedFolderIds !== null
     && explorerFolderIds.every((folderId) => !expandedFolderIds.includes(folderId));
 
-  const expandAllFolders = () => setExpandedFolderIds(explorerFolderIds);
-  const collapseAllFolders = () => setExpandedFolderIds([]);
+  // One action-style fold toggle: the icon/label describe what the NEXT click
+  // will do, not the current state. All-expanded (including the implicit `null`
+  // default) => next is "collapse all"; every other state (all-collapsed or a
+  // partial mix) => next is "expand all". A partial mix therefore normalises in
+  // a single click, then the button alternates strictly between the two end
+  // states - no extra "last bulk action" state is kept.
+  const nextFoldAction: "expand" | "collapse" = everyFolderExpanded ? "collapse" : "expand";
+  // `data-fold-state` carries the current (complementary) state so automation can
+  // assert both halves without parsing a translated, variable accessible name.
+  const foldState = everyFolderExpanded
+    ? "expanded"
+    : everyFolderCollapsed ? "collapsed" : "partial";
+  const foldLabel = t(
+    lang,
+    nextFoldAction === "collapse" ? "collapseAllFolders" : "expandAllFolders",
+  );
+  // A filter forces every branch open in NoteTree, so a bulk fold would be a
+  // no-op; with zero folder rows there is nothing to fold either. Both disable
+  // the button, so it never looks like a toggle that flips without changing the
+  // tree. `collectExplorerFolderIds` always includes the virtual uncategorized
+  // bucket, so the zero case is a defensive guard that is normally unreachable.
+  const foldDisabled = treeFilterActive || explorerFolderIds.length === 0;
+  const handleFoldToggle = () =>
+    setExpandedFolderIds(nextFoldAction === "collapse" ? [] : explorerFolderIds);
 
   const actionBase = "flex items-center justify-center rounded-lg transition-colors cursor-pointer";
   const actionCollapsed = "w-10 h-10 shrink-0";
   // Explorer header icons: 24px targets inside the 36px title row, quiet until
-  // hovered. The fold pair greys out instead of acting when it would be a no-op.
+  // hovered. The fold toggle greys out instead of acting when it would be a no-op.
   const headerActionButton =
     "flex h-6 w-6 items-center justify-center rounded text-text-muted/70 transition-colors cursor-pointer enabled:hover:bg-bg-hover enabled:hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40";
   const actionSecondary =
@@ -189,25 +211,22 @@ const Sidebar: React.FC<SidebarProps> = ({
             >
               <Search size={14} />
             </button>
-            {/* A filter forces every branch open in NoteTree, so neither fold
-                action can change what is on screen - both stay disabled. */}
+            {/* Single action-style fold toggle (replaces the expand/collapse pair).
+                A filter forces every branch open in NoteTree, so the button is
+                disabled there; one icon / label / title at any moment. */}
             <button
-              onClick={expandAllFolders}
-              disabled={treeFilterActive || everyFolderExpanded}
+              onClick={handleFoldToggle}
+              disabled={foldDisabled}
               className={headerActionButton}
-              title={treeFilterActive ? t(lang, "bulkFoldDisabledByFilter") : t(lang, "expandAllFolders")}
-              aria-label={t(lang, "expandAllFolders")}
+              title={treeFilterActive ? t(lang, "bulkFoldDisabledByFilter") : foldLabel}
+              aria-label={foldLabel}
+              data-fold-toggle
+              data-fold-state={foldState}
+              data-fold-action={nextFoldAction}
             >
-              <ChevronsUpDown size={14} />
-            </button>
-            <button
-              onClick={collapseAllFolders}
-              disabled={treeFilterActive || everyFolderCollapsed}
-              className={headerActionButton}
-              title={treeFilterActive ? t(lang, "bulkFoldDisabledByFilter") : t(lang, "collapseAllFolders")}
-              aria-label={t(lang, "collapseAllFolders")}
-            >
-              <ChevronsDownUp size={14} />
+              {nextFoldAction === "collapse"
+                ? <ChevronsDownUp size={14} />
+                : <ChevronsUpDown size={14} />}
             </button>
             <button
               onClick={() => {
