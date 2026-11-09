@@ -237,7 +237,9 @@ padding box）。裁切边与卡片 border box 重合，卡片自身宽度/边�
 
 ### D10 的验收（2026-11-09，release exe + 真实 WebView2）
 
-几何与像素两路都取了证据（`--eval` 直连 CDP，视口 1200×800，dpr 1.5，暗色主题）：
+几何与像素两路都取了证据（`--eval --no-assert` 直连 CDP，视口 1200×800，dpr 1.5，暗色主题）。
+`--no-assert` 不能省：窄窗下编辑器会塌陷成 `editorCard w:1`，带断言的探针会直接 exit 1，
+量不到几何；探针只负责读数，断言留给 `verify:webview` 那一次正式验收：
 
 | 探针 | 实测 |
 | --- | --- |
@@ -249,6 +251,40 @@ padding box）。裁切边与卡片 border box 重合，卡片自身宽度/边�
 | 无副作用 | `scrollWidth = clientWidth = 1046`，加宽图层没有引入横向滚动；光标层与协作光标是另外的元素，不受裁剪影响 |
 
 **需人工目视确认**：选中整块时首/末行的 10px 圆角会被矩形色带填成直角（D10 已列为已知代价）。
+
+### D10 的研发团复核（2026-11-09，P4 只读守门 + P5 QA）
+
+**结论**：代码层证据已闭环，`353ee18` 无缺陷、无硬规则违反；**release 验收闭环仍未闭环**。
+两者不能混写。复核时 HEAD 已由并行会话推进到 `0a24d1a`（`353ee18` 为 HEAD~4），
+工作区仍有 16 个在途文件，因此本轮全程只读、不构建、不启动/关闭验收窗口。
+
+新增证据（均来自真实 WebView2 只读 CDP 探针，非合成卡片）：
+
+| 项目 | 实测 |
+| --- | --- |
+| 运行时指纹 | 三个不同时刻窗口均命中 `selectionBandClip()`：`538px / 50 / 20`、`1046px / 58 / 19`、`538px / 50 / 20`，与 `left = content.offsetLeft + padLeft`、`right = clientWidth - (offsetLeft + offsetWidth - padRight)` 逐字吻合；独立笔记窗口亦生效（`960 / 50 / 20`） |
+| 压缩产物层叠（守门员 U7） | theme 注入的 `clip-path` 位于内联 `<STYLE>` 的 rule 153/154/155，LINK 的压缩 CSS 只有 `z-index:1` 与 `pointer-events:none`、无任何 `clip-path` 覆盖 → computed 值确为 `inset(-100000px 20px -100000px 50px)`，层叠未被在途 CSS 反杀 |
+| **卡片级像素证据** | 19 个真实 `.cm-md-code-block` 卡片 + 合成 Ctrl+A + PIL 逐像素扫描：色带左沿 `360.67` / 右沿 `1329.33`，卡片 border box `360.53` / `1329.20` → 外溢 **+0.14px / +0.13px**（≤1px 通过）；行号槽与右侧滚动条区均为面板底色、无色带像素。截图 `local_img/qa-r2-selection-band.png` |
+| 几何与副作用 | 裁切边 `353.00 / 821.00` vs 内容列 padding box `353.22 / 821.33`（-0.22 / -0.33px）；`scrollWidth == clientWidth == 538`、`bodyOverflowX = 0` |
+| 静态门禁 | `npx tsc --noEmit` 退出 0 / 0 行；`verify:code-block.mjs` 144 项 0 失败、`verify:live-preview` 100 项 0 失败 —— 但两脚本已被并行会话改写（+286 / +296），**结果不作 D10 纯证据** |
+
+**为什么仍不能判「已验收」**：本轮 dist 是含在途 CSS（围栏 `height:0`、语言 chip、
+`.cm-activeLine:not(.cm-md-code-block)`）的合并树构建；验收期间窗口/session 被并行会话重启
+≥3 次（pid 36192→67256）；没有 test→build→verify 顺序日志，也没有官方 `ok:true` 与
+`consoleErrors: []`。守门员因此判 `IS_PASS: NO`（针对交付判定，非代码正确性），QA 路由
+`NoOne`（不退回工程师、不退回脚本）。
+
+**解除条件**：并行会话收敛、在途文件冻结 → 主理人按 `AGENTS.md §Session resume` 用「仅目标提交」
+的干净树重跑唯一一次 `verify:webview:status`（→ 必要时 `:close`）→ `npm run build`（PowerShell）
+→ 加载 MSVC 环境 → `npm run tauri -- build --no-bundle` → `npm run verify:webview`，留存
+`ok:true` / `consoleErrors: []` / `buildMatch:true` 的 JSON 报告；顺序固定 test→build→verify，
+`tauri build` 之后不再跑 `cargo test --release`（会让指纹 stale）；探针一律 `--eval --no-assert`。
+完成后方可把「交付完成」改为 YES。
+
+**回归面未验证项**（本机无 GUI，禁止写成「已验证」）：垂直/水平滚动时序、软换行、超长行、
+行号三档位切换（仅观测到 30.22→50 / 37.53→58 两档，证明 inset 随 gutter 动态测量）、
+`editorZoom`、四套主题、只读视图/便签/协作编辑器的运行时、拖拽/流式/IME/托盘/多窗口激活，
+以及选中整块时首末行圆角被填平的观感。
 
 ## 开放问题
 
