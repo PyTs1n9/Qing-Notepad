@@ -119,14 +119,77 @@
 底栏原本的左簇是「大纲 / 源码」两枚开关。本轮在**左簇第三位**新增一枚可选的「纯预览编辑」开关：
 
 - **位置**：大纲 → 源码 → 纯预览编辑 → `flex-1` → 时间 → 保存 → 统计。右簇一段未动。
-- **存在性由 prop 决定**：`EditorStatusBar` 只在传入 `onTogglePurePreview` 时渲染该按钮。主窗口传，
-  独立笔记窗不传 → 该面没有按钮，也不会进入交互档。
+- **存在性由 prop 决定**：`EditorStatusBar` 只在传入 `onTogglePurePreview` 时渲染该按钮。主窗口与
+  独立笔记窗**都**传（后者见提交 `08891cc`），两面共用同一套 `MarkdownSourceEditor` 交互表格层；
+  prop 仍持有「有没有」的决定权，将来只读面不传即不出现按钮。
 - **状态**：`aria-pressed={purePreview}`；源码档下 `disabled`（源码是逃生舱，两档互斥）。
 - **「六段」的口径**：六段指**信息段**（目录 / 源码 / 留白 / 时间 / 保存 / 统计），左簇的开关数量
   可以扩展，右簇顺序不变。
 - 规格不变：底栏 28px、按钮 `h-6 w-6`、图标 14、`rounded-md`。
 
 模式语义、表格就地编辑与已知取舍见 `decisions-preview-edit.md`。
+
+## 追加：三枚开关的按下与激活态（2026-11-09 晚）
+
+用户反馈「纯预览进入后看不出有没有选中，按下也没有任何变化」。实测确认问题不在配色偏好：
+
+| 主题 | 旧选中态 `bg-bg-active` 对底栏底色 |
+| --- | --- |
+| 暗色 | 1.53–1.60 |
+| 蓝色 | 1.40–1.57 |
+| 黄色 | 1.21–1.34 |
+| 绿色 | 1.24–1.36 |
+
+即「选中」与「未选中」之间只有一层 1.5 左右的灰，且 `buttonClass` 里**根本没有 `:active` 分支**，
+按下瞬间零反馈。用户裁定三项：三枚统一、实心 accent 芯片、缩放 + 加深。
+
+### 结论
+
+| 项 | 结论 | 理由 |
+| --- | --- | --- |
+| 范围 | **三枚一起**（大纲 / 源码 / 纯预览） | 同一组控件两套「开」的语言比弱反馈更难读 |
+| 激活态 | `bg-accent` + `text-on-accent`，hover/active 走 `bg-accent-hover` | 与同卡片 `NoteEditor.tsx:766/787` 的置顶、保存同款；`on-accent` 已被 `verify-contrast` 覆盖 |
+| 按下瞬间 | `active:scale-90` + 底色再深一级 | 对齐全应用既有的 `active:scale-90/95`（`AiSidebar.tsx:223`） |
+| 未选中按下 | `active:bg-bg-active` + `active:text-text-primary` | 按下也立即出块；松开若变为选中，再跳到 accent |
+| 禁用态 | `buttonClass` 的 disabled 分支只给 `text-text-muted`，**分支内不含任何 accent / hover / scale** | 源码档下第 3 枚被禁用，实心芯片会被读成「可点的选中态」。放在分支里而不是靠 `disabled:` 覆盖，是为了不依赖层叠顺序 |
+| 动效 | `transition-[color,background-color,scale] duration-[var(--dur-fast)] ease-[var(--ease-out)]` | 见下方第 1 条，`scale` 必须进列表 |
+
+合成表面口径（磨砂卡片 tint 60/92 两种取值，块面对底栏底色）：
+
+| 主题 | 旧 | 新 accent 芯片 |
+| --- | --- | --- |
+| 暗色 | 1.53 | **4.74–4.97** |
+| 蓝色 | 1.40 | **4.07–4.55** |
+| 黄色 | 1.34 | 2.20 |
+| 绿色 | 1.36 | 2.68 |
+
+### 三个非显然的点
+
+1. **`scale-*` 在 Tailwind v4 是独立属性，不是 `transform`。** 编译结果是 `scale: var(--tw-scale-x)
+   var(--tw-scale-y)`。沿用 `transition-colors` 或 `transition-transform` 的写法，缩放会**瞬跳**，
+   且 tsc/构建零信号——只有盯住 120ms 才看得出。所以 transition 列表里显式写 `scale`。
+2. **黄 / 绿主题的 accent 是低饱和莫兰迪色，块面本身只有 2.2–2.7:1。** 这是 token 既定取舍（它们正是
+   为此把 `--color-on-accent` 定成深色）。这两套主题的状态辨识主要靠**图标由 `text-secondary` 翻成
+   `on-accent`**（黄 `#605747`→`#2a2214`、绿 `#425f4f`→`#0d2416`）加 0.9 缩放，不靠块面对比。
+   要更强就得改 accent token，属于全应用级改动，不在一条底栏的可接受代价内。
+3. **禁用态与选中态在 DOM 上是同一枚按钮。** 源码档会把 `purePreview` 置为 false（两面都如此），
+   所以「既 pressed 又 disabled」不会长期成立；即便如此 disabled 分支也不带 accent，瞬时态同样安全。
+
+### 验证
+
+- `npx tsc --noEmit` 0 error；`npm run build` 通过。
+- `npm run verify:ui-polish` 152 组、0 失败；`verify-contrast` 中 `text-on-accent` 对
+  `bg-accent` / `bg-accent-hover` = 5.17/6.70（blue）、5.41/**4.60**（dark）、6.44/5.06（yellow）、
+  5.66/4.64（green）。**dark 的 hover 档 4.60 是全场最薄余量**，且 `verify-contrast.mjs:128`
+  对该组不设 `gating`——谁调 `--color-accent-hover` 都要复测这一条。
+- 静态核对：`h-6 w-6` / 图标 14 / `rounded-md` / 六段顺序 / `aria-pressed` / `disabled` 逐字未变。
+
+### 未验证（需人工目视）
+
+1. 按下 90% 缩放的**手感时序**（120ms 内缩、松手回弹）。
+2. 150% 缩放下芯片与小图标的观感。
+3. 选中芯片与右簇「保存状态」的 `bg-accent` 圆点在同一行是否互相抢注意力。
+4. 四主题实机观感（本机无 GUI，静态审计只能证明比值，不能证明好看）。
 
 ## 发版前必做
 
