@@ -152,21 +152,40 @@ Ctrl+A 与粘贴是**文档语义**，不是视图装饰。挂进 compartment �
 - `npm run verify:ui-polish`：152 组合 · 150 达 4.5:1 · 无失败
 - `npm run build`：通过（3652 modules，dist 里 `md-code-border` / `md-code-info` /
   `cm-md-code-first` 三个新标记各 1 处）
-- `npm run tauri -- build --no-bundle`：**失败**，`linker link.exe not found`
-- `npm run verify:webview`：**未运行**（没有新 exe）
+- `npm run tauri -- build --no-bundle`：通过（MSVC 14.36.32532 + SDK 10.0.22000.0，
+  `Finished release profile in 1m 26s`，exe 45,415,936 B）
+- `npm run verify:webview`：**通过**，`failures: []` / `consoleErrors: []` / `consoleWarnings: []` /
+  `networkNoise: []`，退出码 0，`ok: true`；报告值 editorCard 1053×971、shellCards 3、
+  dragRegions 14、railButtons 40、themeClass `theme-dark`、`repeated-open` 无
 
-### 验收状态：阻塞（2026-11-09）
+### 验收状态：已验收（2026-11-09，合并树构建）
 
-`tauri build` 失败的原因不是配置，是本机工具链被卸载：`C:\Program Files (x86)\Microsoft Visual
-Studio\2022` 与 `Windows Kits\10` 只剩空目录（mtime 均为 2026-11-08 15:12），`cl.exe`/`link.exe`/
-`rc.exe` 全部不存在，`vswhere` 返回空，`KitsRoot10` 注册表值为空；`env.ps1` 指向的四个路径今天
-全都不存在。`rustup` 只有 msvc target，没有 gnu 回退。
+先记一次环境事故：`tauri build` 首次失败于 `linker link.exe not found` —— 本机 MSVC Build Tools
+与 Windows SDK 在 2026-11-08 15:12 被卸载（`VS\2022` 与 `Windows Kits\10` 只剩空目录，
+`vswhere` 返回空，`KitsRoot10` 注册表值为空）。重装 VS 2022 Build Tools（VCTools 工作负载 +
+`--includeRecommended`）后恢复为 MSVC 14.36.32532 / SDK 10.0.22000.0；`env.ps1` 里写死的
+14.44.35207 / 10.0.26100.0 不存在，脚本的「取最新」回退生效，四个路径全部落地真实目录。
 
-因此本轮**没有真实 WebView2 证据，判定「未验收」**。旧 exe（11-07 08:51）不能顶替：二进制内
-`md-code-border` / `md-code-info` / `cm-md-code-first` 计数均为 0，dist 哈希已变而 exe 戳未变，
-跑出来的截图是上一版 UI。工具链恢复后补跑：`npm run build` → `tauri build --no-bundle` →
-`verify:webview`，并按 QA 清单量 `paddingLeft ≠ 6px`、边框对比度 ≥ 3、`--box-radius` = 10px、
-引用内 `3px/4px/text-primary`、`.cm-md-code-info` 内层 inherit。
+**旧 exe 不能顶替新构建**，但判据不是 `grep -a` 查 CSS 文本：Tauri 对嵌入资源做 brotli 压缩，
+新旧 exe 里 CSS 文本都是 0 命中。正确判据是**资源文件名**——新 exe 内 `index-DJn13j_l.js`
+与 `index-DIPjQh7q.css` 各命中 1 次，旧构建的 `index-2Xq-JrNd.js` 为 0。
+
+六组 `--eval --no-assert` 实测（暗色主题，1707×1019 视口）：
+
+| 探针 | 实测 |
+| --- | --- |
+| 卡片内距 | `paddingLeft = 14.4px`，同行 `font-size = 14.4px`（即 1em 真正生效；旧规则是 6px） |
+| 边框可见度 | 边框 `rgb(138,144,152)` / 底色 `rgb(37,38,43)`，WCAG 对比度 **4.69:1**（≥3） |
+| 圆角 | 实块 `borderTopLeftRadius = 10px`，`--box-radius` 解析同为 `10px` |
+| 引用内代码块 | `borderLeftWidth` 计算值 2.667px（3px 在 dpr 1.5 下取整为 4 物理像素）、左圆角 `4px`、`color = rgb(233,236,239)` = `--color-text-primary` |
+| 语言标签 | 外层与内层 span 的 `color` 完全相同（`color(srgb 0.775 0.816 0.948)`）→ `inherit` 规则确实压住了 |
+| 行号对位 | 首行/末行 `lineH` 与 `gutterElement` 高度、`top` 差值均为 **0px**（行 41 块；该次测量在 546px 窄编辑器下） |
+
+**未验证（需人工目视）**：宽视口下的行号对位（只在 546px 编辑器宽度下量过）；代码块卡片的
+实际观感（最终截图视口内没有代码块，19:29 那张有代码块但整段被选区色带覆盖）；四主题下 30/70
+边框的观感；引用内代码块 3px 竖线与 4px 左圆角的接缝；150% 缩放下 1px 线是否发灰；Ctrl+A
+两段式与真实剪贴板粘贴的手感（headless 只覆盖 spec 层与合成事件）。
+
 
 **需人工目视确认（本机无 GUI，一律未写「已验证」）**
 1. Ctrl+A 两段式的真实按键手感与 IM E/剪贴板路径（本机只能合成事件）；
