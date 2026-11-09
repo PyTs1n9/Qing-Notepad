@@ -3602,6 +3602,20 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
      in all four themes (3.04–3.27 by token arithmetic). Change one number and
      re-measure — do not tune it by eye. */
   --md-code-border: color-mix(in srgb, var(--color-border) 30%, var(--color-text-muted) 70%);
+  /* Opaque, and it has to stay opaque. A frosted fill was built and then
+     withdrawn: the card's two hard numbers - every text pair at 4.5:1 and the
+     edge at 3:1 (WCAG 1.4.11) - both become a function of the wallpaper once the
+     fill is translucent. On the default wallpaper profile (editorTint 63) the
+     same frosted value measured body text at 4.41 / 4.22 / 4.34 in the blue,
+     dark and yellow themes, and the border edge fell 3.05 -> 2.44. Raising the
+     opacity instead does not rescue it: to clear 4.5 the fill has to go back so
+     close to opaque that only 3.8%-9.6% of the wallpaper shows through, which is
+     below the project's own "blur is not perceivable" threshold - it stops
+     reading as glass and instead reads as "the code card is a different colour
+     from the gutter beside it", because the gutter *is* the opaque
+     `--color-bg-secondary`. Half-transparent and 4.5:1 cannot both hold on an
+     arbitrary wallpaper, so the card keeps its measured surface; the material
+     cue moved to the top light on the cap below. */
   background-color: var(--color-bg-secondary);
   /* Code is the one place a monospace face is correct; the body no longer is. */
   font-family: var(--editor-font-mono);
@@ -3632,6 +3646,32 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   border-top: 1px solid var(--md-code-border);
   border-bottom: 1px solid var(--md-code-border);
   border-radius: var(--box-radius);
+}
+
+/* The card's one material cue, identical to `.markdown-code-block`'s top light:
+   a 1px inner highlight on the cap, which is what makes an opaque panel read as
+   a raised surface rather than as a painted rectangle.
+   Only the two line shapes that *have* a top edge - first and single. On the
+   base class it would be wrong twice over: the block is painted line by line
+   (`Decoration.line` cannot wrap a range), so every row would get its own 1px
+   light and the card would come out striped. The radius is already on the caps
+   above; nothing to restate here. */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-first,
+.cm-content .cm-line.cm-md-code-block.cm-md-code-single {
+  box-shadow: inset 0 1px color-mix(in srgb, white 16%, transparent);
+}
+
+/* Mirror of that highlight for "the first line is collapsed": when the opening
+   fence is hidden at zero height, the top light has to land on the nearest
+   visible line, exactly as the `border-top` mirror does in the fence paragraph
+   below - the two are siblings from one decision, so if the cap moves, the light
+   moves with it, or a collapsed block reads as "bordered but unlit".
+   Only `box-shadow` here: `border-top` and the top radius belong to that rule.
+   Both look at siblings, so this is a no-op when `-first` already sits on a
+   visible line. */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-first.cm-md-code-fence-hidden
+  + .cm-line.cm-md-code-block {
+  box-shadow: inset 0 1px color-mix(in srgb, white 16%, transparent);
 }
 
 /* A code block inside a quote keeps the quote's left bar.
@@ -3726,10 +3766,16 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 
 /* CodeMirror's base theme ships `&light .cm-activeLine` (two classes), which
    outranks the single-class `transparent` in `noteEditorTheme`. The editor wants
-   no active-line tint at all, and inside a code block that tint paints a stripe
-   across the card's own background — the "one transparent line" that showed up
-   wherever the caret landed. */
-.cm-editor .cm-line.cm-activeLine {
+   no active-line tint at all, so this rule paints the active line transparent.
+   It is scoped away from code-block lines: there the class *is* the card, and
+   the `!important` here was stronger than the three-class card fill above, so
+   clicking into a fenced block wiped the card out from under the code and the
+   editor panel showed through - "one transparent line" under the caret.
+   Excluding it does not bring the base theme's stripe back inside the card:
+   that tint is a two-class declaration with no `!important`, so it loses to the
+   three-class `.cm-content .cm-line.cm-md-code-block` fill at any source order.
+   Outside a card the tint stays dead, which is what this rule is for. */
+.cm-editor .cm-line.cm-activeLine:not(.cm-md-code-block) {
   background-color: transparent !important;
 }
 

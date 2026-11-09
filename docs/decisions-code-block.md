@@ -265,3 +265,119 @@ padding box）。裁切边与卡片 border box 重合，卡片自身宽度/边�
    （无花括号/缩进/分号）判 false。`await/async` 目前只作 `public/static` 一类的前缀组，
    「修饰词 + 非关键字调用」的行不计分。收法很小（把 `await|async` 移回核心候选），但它要求
    重走一次完整 test → build → verify，本轮判定不划算，留作独立一轮。
+
+---
+
+## 追加（2026-11-09）：单击代码块透出背景 / 毛玻璃方案实测撤回
+
+> 用户报障：单击围栏代码块，光标所在那一行整行透明、透出壁纸。要求「点击只显示光标、不改背景」，
+> 并把代码块的透明改法换成毛玻璃。grill 拍板：两处表面同步、保守 84%、保留行号槽高亮；
+> 两份独立只读判定给出实测数字后，用户改拍「回到不透明 + 顶高光」。
+
+### 结论 1｜根因是 `!important` 的活动行透明规则，不是卡片样式
+
+卡片底色是 `.cm-content .cm-line.cm-md-code-block` 的 `background-color: var(--color-bg-secondary)`
+（三 class、不透明）。而 `index.css` 另有一条
+`.cm-editor .cm-line.cm-activeLine { background-color: transparent !important; }`，
+本意是去掉 CodeMirror 基础主题的整行染色条（`&light .cm-activeLine` 是两 class，单靠
+`noteEditorTheme` 的 `transparent` 压不住）。**两者落在同一个 `.cm-line` 元素上**，
+`!important` 无条件取胜 → `highlightActiveLine` 只在编辑器获得焦点时给光标行加类，
+表现正好是「点哪行、哪行透出背景」。
+
+修法：给透明规则加 `:not(.cm-md-code-block)`，`!important` 保留。
+- 卡片内不会把 base theme 的染色条找回来：那条是两 class 且无 `!important`，
+  在任何源码顺序下都输给三 class 的卡片填充。
+- 卡片外的活动行仍然透明，原规则的正当目的没有丢。
+- 行号槽 `.cm-activeLineGutter` 的 12% 品牌色保留：它是光标定位反馈，不是代码块背景。
+
+CSS 优先级问题没有第二种解法：把卡片填充也写成 `!important` 会让它反过来压掉其他卡片的
+活动行语义，且新增一条永久性的 `!important` 军备竞赛。
+
+### 结论 2｜毛玻璃（84% 填充 + 8px blur）实测后撤回
+
+先按用户初始选择实现过一版：编辑器逐行与预览卡都用
+`color-mix(in srgb, var(--color-bg-secondary) 84%, transparent)` + 固定 `backdrop-filter: blur(8px)`，
+另配 `prefers-reduced-transparency` 降级与打印关闭。两份独立只读判定（硬规则守门、视觉设计）
+**算出同一组数，结论都是撤回**：
+
+| 项 | 实测 |
+|---|---|
+| 壁纸真实透出率 | tint 40/60/63/76 → **9.6% / 6.4% / 5.9% / 3.8%** |
+| 项目自测的「blur 不可辨」阈值 | 透出 20% 时三档 blur 几乎不可辨 → 6% 低了约 3 倍 |
+| 默认壁纸档（tint 63）文字 4.5:1 | blue **4.41** / dark **4.22** / yellow **4.34** / green 4.45 |
+| tint 拉到 40 | blue 4.04 / dark 3.73 / yellow 3.98 / green 4.07 |
+| 卡片描边 1.4.11 3:1 | 3.05–3.26 → 壁纸最差 **2.44–2.53** |
+| 守住 4.5 所需不透明度 | tint 40 极端壁纸要 92–95%，此时透出只剩约 3%，比 84% 更不像玻璃 |
+
+两点决定性理由：
+1. **两个目标没有交集**：要读成玻璃需透出 ≥20%（填充 ≤50%），要守住 4.5 需填充 ≥92–95%。
+   这正是 `topics/tokens-colour.md` §三已写明的「半透明卡片 + 正文 4.5:1 在任意壁纸下不可同时成立」。
+2. **参考系就在同一像素旁边**：`.cm-gutters` 是不透明 `--color-bg-secondary`，与卡片只隔 1px
+   发丝线。有壁纸时读到的不是「玻璃」，而是「代码卡和行号栏不是一个颜色」。
+
+额外代价：卡片是 `Decoration.line` 逐行拼的，逐行 `backdrop-filter` = 视口内每行一个合成层
+（滚动重采样、字形退回灰度 AA、首末行圆角泄漏未知）；`backdrop-filter` 还会让该行成为
+`position:fixed` 的包含块，正好会坑到并行那条「代码块语言选择菜单」（锚点在 `.cm-md-code-info`）。
+
+**结论：卡片回到不透明 `var(--color-bg-secondary)`，预览卡回到 90/10 原值，代码卡段落
+零 `backdrop-filter`**。撤回后前述对比度风险、合成层、字形、fixed 包含块四类风险同时消失。
+
+### 结论 3｜材质感改由首行顶高光承担
+
+真正让人读出「一张抬起的表面」的线索是顶边 1px 镜面高光，而不是不可见的 6% 透明。
+`.markdown-code-block` 本来就有 `box-shadow: inset 0 1px white 16%`，编辑器卡没有 —— 两处
+自称「同一材质」，线索却是零。补：
+
+```css
+.cm-content .cm-line.cm-md-code-block.cm-md-code-first,
+.cm-content .cm-line.cm-md-code-block.cm-md-code-single { box-shadow: inset 0 1px color-mix(in srgb, white 16%, transparent); }
+```
+
+**只命中两个 cap，绝不写在基类上**：逐行 `Decoration.line` 会给每一行都画一道 1px 亮线，
+卡片会变成横纹。折叠围栏那条线会把 `-first` / `-last` 搬到可见行，故再补一条同源镜像
+（`-first.cm-md-code-fence-hidden + .cm-line.cm-md-code-block` 只搬 `box-shadow`，
+`border-top` / 圆角由对方那条规则负责）；实测装饰把 `-first` 放在可见行，镜像当前是 no-op，
+纯属保险。
+
+预览卡的语言条 `color-mix(bg-active 36%, bg-secondary)` **保持实底**：它只有 0.75em/700 的
+11–12px 字，透化后在 tint 40 + 亮壁纸下会跌到约 4.05，且暗色主题下卡片可能反过来比语言条亮，
+层级从「凸起」翻成「下凹」。
+
+### 验证（2026-11-09，区分「实测」与「未验」）
+
+- `npm run build`（PowerShell）：**通过**，`tsc` 零错误，3657 modules，`dist/assets/index-Chuh_I9j.css`。
+- `npm run tauri -- build --no-bundle`（MSVC 14.36.32532 / SDK 10.0.22000.0）：**通过**，
+  1m30s，exe 45,420,032 B。
+- `npm run verify:ui-polish`：15/15 静态审计 PASS、对比度 152 组 `no failures`；
+  `verify:live-preview` 100/0；`verify:code-block` 144/0（后两项的项数由并行线扩充）。
+- **生产 CSS 计算样式实测**（无头 Edge 加载 `dist/assets/index-Chuh_I9j.css`，dark + blue 两套）：
+  代码块活动行 `rgb(37,38,43)` / `rgb(226,232,240)`，与同块非活动行**完全相同**且不等于
+  `rgba(0,0,0,0)`；块外活动行仍是 `rgba(0,0,0,0)`；所有代码行 `backdropFilter: none`；
+  首行/单行/折叠镜像行 `boxShadow` 含 `inset`，中间行 `none`；
+  `.cm-selectionLayer` = `z-index:1` / `pointer-events:none`；
+  描边 1px 且颜色仍为 30/70 派生值。夹具截图（临时、已删）确认卡片整块不透明、无横纹、无接缝。
+- **`verify:webview` 未完成（阻塞，不得写「已验收」）**：`build` 与 `tauri build` 后，
+  `verify:webview` 报 `another qing-notepad.exe is already running (pid 38416)`——
+  已安装的 `E:\QingNotepad\qing-notepad.exe`（带 `README.md` 启动）占着单实例锁且未开 CDP。
+  按 `AGENTS.md` 需由人从托盘退出后再跑；不得擅自结束用户进程。验收窗口当前处于关闭态
+  （`verify:webview:status` = `running:false / no-session`），下次会话须重走
+  build → tauri build → 开窗。
+
+**需人工目视（本机无 GUI，一律未验证）**：真实点击代码块后的光标与卡片观感、四套主题与
+真实壁纸下的边框观感、HiDPI 下顶高光与圆角贴合、折叠围栏时的接缝、长代码块滚动帧率、
+语言条实底与卡片材质的层级、系统「减少透明效果」开关。
+
+### 本轮新增的开放问题
+
+1. **`verify-contrast.mjs` 不含代码 token 组**：全文无 `--color-code-*` / `hljs` 断言，
+   `composited` 只从 `:root` 读 tint 合成面板，不看代码卡；`--md-code-border` 的 1.4.11 3:1
+   也从未进脚本（原开放问题 1 已自陈）。本轮靠两份人工复算把关，门禁本身仍绿得没有依据。
+   建议独立一轮补「代码卡合成面 + 非文字 3:1」两组。
+2. **`--color-code-*` 在 `:root` 声明处替换**：`data-contrast="boost"` 提升不到代码 token
+   （`--color-accent-text` 却会跟着 boost 走），卡内层级在 boost 时被打乱。计算对比度口径时
+   不能用 boost 值兜底。
+3. **并行线的过时注释**：折叠围栏 / 语言角标那段 CSS 仍写着「frosted card」「measured on the
+   84% card」，前提已被本轮撤回。数值只增不减（不透明卡上对比度更高），结论仍成立，
+   但措辞需由那条线的负责人清理。
+4. **磨砂例外清单**：`topics/ui-rules.md`「磨砂只在 `.surface-glass::before`」事实上已有多处
+   既有例外（modal backdrop、sticky container 等），建议补一张判定条件清单，避免每轮重新争论。
