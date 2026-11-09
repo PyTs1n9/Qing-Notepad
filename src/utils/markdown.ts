@@ -3,6 +3,7 @@ import { hljs } from "@/utils/highlight";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { join, resourceDir } from "@tauri-apps/api/path";
+import { isSafeLinkHref, schemeOf } from "@/utils/linkScheme";
 import { getDataDirectory, getStorageLocation, resolveImageAttachment } from "@/utils/storage";
 
 const markdownRenderer = new marked.Renderer();
@@ -70,35 +71,21 @@ function highlightCode(text: string, language: string): string | null {
 }
 
 /**
- * Only schemes that are inert inside a webview.
- *
- * Both note bodies and AI answers reach this renderer, and `marked` copies the
- * link destination straight into `href`: `[点我](javascript:…)` becomes a real
- * anchor, and clicking it would run script in the app origin — where the Tauri
- * IPC bridge is reachable. Raw HTML tags are already escaped below; the URL
- * scheme was the remaining hole.
+ * Image schemes are image-only on purpose: `data:`/`blob:`/`attachment:` are
+ * inert as a source but must never become clickable link destinations, so they
+ * stay out of `linkScheme.ts`.
  */
-const LINK_SCHEME_ALLOWLIST = /^(?:https?|mailto|tel)$/i;
 const IMAGE_SCHEME_ALLOWLIST = /^(?:https?|blob|attachment|asset|data)$/i;
-const HAS_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
 
 /** True when the target carries no scheme at all (`#anchor`, `/path`, `x.md`). */
 function isRelativeTarget(value: string): boolean {
-  return !HAS_SCHEME.test(value);
+  return !schemeOf(value);
 }
 
-function schemeOf(value: string): string {
-  return HAS_SCHEME.exec(value)?.[1] ?? "";
-}
-
-export function isSafeLinkHref(href: string): boolean {
-  const value = href.trim();
-  if (!value) return false;
-  // `//host` is protocol-relative http(s), not a scheme we must vouch for.
-  if (value.startsWith("//")) return true;
-  if (isRelativeTarget(value)) return true;
-  return LINK_SCHEME_ALLOWLIST.test(schemeOf(value));
-}
+// Re-exported so the renderer stays the single import for "may this href become
+// an `<a>`"; the list itself lives in `linkScheme.ts` because the click resolver
+// has to answer the same question.
+export { isSafeLinkHref };
 
 export function isSafeImageSrc(src: string): boolean {
   const value = src.trim();

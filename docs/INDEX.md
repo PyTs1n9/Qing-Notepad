@@ -38,7 +38,8 @@
 | `decisions-note-tabs.md` | 笔记标签栏：多标签、拖拽实时换位（本地 `dragOrder`）、Ctrl+W 关闭 | 动标签栏 / 拖拽手感 | 15.1 KB |
 | `decisions-topbar-menus.md` | 顶栏三菜单（工具/传送门/帮助）的上线级审计与收敛结论 | 动顶栏菜单、传送门入口 | 13.0 KB |
 | `decisions-editor-menubar.md` | 笔记编辑器改为 Typora 式五菜单：37 项清单、砍项理由、命令层与快捷键 | 改编辑器菜单 / 加排版命令 | 9 KB |
-| `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
+| `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 纯预览编辑 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
+| `decisions-preview-edit.md` | 纯预览编辑档：全文不降级、表格常驻渲染、双击单元格就地编辑（Tab/Enter/Esc、位置现算、纯文本写回）；含独立窗不出现按钮与已知取舍 | 改表格交互、底栏第三按钮、或 `tableEditing.ts` / `tableWidget.ts` 的单元格模型时 | 12.2 KB |
 | `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定，或改 `codeBlock.ts` 时（配 `npm run verify:code-block`） | 12.0 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
@@ -64,6 +65,7 @@
 | `decisions-subtodo.md` | 待办子任务的数据结构与交互 | 动待办数据模型 | 5.3 KB |
 | `decisions-recycle-bin.md` | 笔记回收站的删除/恢复语义 | 动删除逻辑 | 5.8 KB |
 | `decisions-export-docx-pdf.md` | 导出 Word/PDF 的选型与前置结论 | 动导出格式 | 5.0 KB |
+| `decisions-table-resize.md` | 表格手动调宽：列宽写进上一行 HTML 注释、内边界转移/外边界等比、注释行零高度隐藏、双击重置、只读与便签禁手势 | 动表格渲染、列宽持久化或拖拽手柄 | 9.4 KB |
 | `decisions-note-window.md` | 独立笔记窗口：Typora 式自绘头部 + 五菜单 + 完整底栏 + 返回按钮；双窗口保存同步与「谁有未保存输入谁保留」 | 动多窗口、编辑器外壳、或 `note-window:*` 事件 | 8.4 KB |
 | `decisions-file-association.md` | `.md` 右键「打开方式」只写 HKCU 的 `OpenWithProgids`（不抢默认）、由 NSIS 钩子写、重装免卸载；外部文件走草稿 → 返回主软件 → 主窗口入库，路径哈希去重 | 动安装器钩子、文件关联、外部 md 打开链路或 `external-*` 命令 | 7.1 KB |
 | `decisions-plugin-system.md` | 插件机制 D1–D7：双轨运行、A 档贡献点、中央索引、手动更新、`apiVersion` | 动插件机制的任何决策 | 6.2 KB |
@@ -72,6 +74,7 @@
 | `decisions-announcements.md` | 更新日志/通告栏 D1–D10：远程结构化 JSON（Gitee raw 单源）+ 包内快照兜底、三层降级、版本区间、不做签名 | 动告示牌、`announcements.json`、或想换数据源 | 7.0 KB |
 | `decisions-updater.md` | 软件内自动更新 D1–D6：官方 updater、minisign 私钥=发布权、人工确认后自动重启、Gitee 按 tag 定位清单 + GitHub 尽力而为、`requireSignedVersion`、不做前端热替换；含每次发布的新增手动步骤 | 动 `update.rs` / `updateChecker.ts` / `UpdateAction.tsx` / `release.yml`，或要碰签名密钥时 | 9.9 KB |
 | `decisions-architecture-layering.md` | 分层 6 条契约：依赖单向、store 不碰宿主、落盘必须临时文件+rename 且失败抛出、rename 回退非破坏性（先备份再替换）、标题单一实现、子窗口不读 `settingsStore`、画布/图谱直连 fs 登记为例外 | 动 `utils`/`stores` 依赖方向、或要把某处直写改成原子写时（配 `scripts/verify-architecture.mjs`） | 16.1 KB |
+| `decisions-markdown-links.md` | Markdown 链接可点：三类目标（外部 / 文内锚点 / 按**标题**匹配的笔记）、Ctrl/Cmd+单击（只读面单击）、scheme 单一真源、跨笔记锚点不支持、滚动原语共享与只读窗上溯祖先 | 动链接点击、`markdownLinks.ts` / `markdownLinkActions.ts` / `linkScheme.ts` / `editorScrollJump.ts`，或要加第四种目标时（配 `npm run verify:markdown-links`） | 10.2 KB |
 
 ## 3. 专题（分析与评审）
 

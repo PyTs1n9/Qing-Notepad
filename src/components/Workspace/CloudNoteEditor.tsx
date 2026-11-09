@@ -36,6 +36,7 @@ import { useWorkspaceUiStore } from "@/stores/workspaceUi";
 import { supabase } from "@/utils/supabase";
 import { t } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
+import { handleMarkdownLinkClick } from "@/utils/markdownLinkActions";
 import {
   codeMirrorTypographyTheme,
   literalTabIndentation,
@@ -1644,6 +1645,15 @@ export default function CloudNoteEditor({
         >
           <div
             className="markdown-preview prose mr-auto w-full max-w-[820px] text-text-primary [&_a]:text-accent-text [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-accent [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-bg-secondary [&_code]:px-1 [&_h1]:mb-3 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_img]:max-w-full [&_li]:ml-5 [&_ol]:list-decimal [&_p]:leading-[1.7] [&_ul]:list-disc"
+            onClick={(event) => {
+              // A cloud document is not the local notebook: `other.md` has no
+              // note to switch to here, so only URLs and in-document anchors
+              // are followed.
+              handleMarkdownLinkClick(event, {
+                container: event.currentTarget,
+                allowNoteLinks: false,
+              });
+            }}
             dangerouslySetInnerHTML={{ __html: previewHtml }}
           />
         </div>

@@ -423,6 +423,9 @@ export type TranslationKeys = {
   // drops the words and keeps the numbers (see EditorStatusBar).
   outlineTitle: string;
   outlineToggle: string;
+  /** Status-bar button that turns on 纯预览编辑 (nothing falls back to source). */
+  purePreviewEdit: string;
+  purePreviewEditHint: string;
   outlineEmpty: string;
   outlineEmptyHint: string;
   outlineSearch: string;
@@ -1470,6 +1473,8 @@ const zh: TranslationKeys = {
   mdViewLive: "实时渲染",
   outlineTitle: "大纲",
   outlineToggle: "显示/隐藏大纲",
+  purePreviewEdit: "纯预览编辑",
+  purePreviewEditHint: "纯预览编辑：内容保持渲染态；双击表格单元格可直接编辑",
   outlineEmpty: "本文暂无标题",
   outlineEmptyHint: "用 # 开头写一行标题，这里会列成大纲",
   outlineSearch: "查找",
@@ -2518,6 +2523,9 @@ const en: TranslationKeys = {
   mdViewLive: "Live rendering",
   outlineTitle: "Outline",
   outlineToggle: "Show/hide outline",
+  purePreviewEdit: "Pure preview editing",
+  purePreviewEditHint:
+    "Pure preview editing: content stays rendered; double-click a table cell to edit",
   outlineEmpty: "No headings in this note",
   outlineEmptyHint: "Start a line with # to build the outline",
   outlineSearch: "Search",

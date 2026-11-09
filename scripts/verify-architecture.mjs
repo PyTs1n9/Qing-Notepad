@@ -226,6 +226,7 @@ const UTILS_TO_STORES_WHITELIST = new Map([
   ["src/utils/storage.ts", "落盘层要读 trashRetentionDays 与 AI 端点设置（值导入）；已知倒置，见 docs/decisions-architecture-layering.md 契约 1"],
   ["src/utils/graph/graphSync.ts", "同步进度要写回 graphStore（值导入），图谱侧既有形态，见 decisions-knowledge-graph.md"],
   ["src/utils/ai/noteWrite.ts", "AI 改笔记要落到 noteStore（值导入），见 decisions-ai-note-write.md"],
+  ["src/utils/markdownLinkActions.ts", "点击 Markdown 链接要切换笔记/读标题匹配，与 externalNotes.ts 同形态（值导入），见 decisions-markdown-links.md"],
   ["src/utils/i18n.ts", "仅 `import type { LangType }`，编译后擦除"],
   ["src/utils/theme.ts", "仅 `import type { ThemeType, CustomColors }`，编译后擦除"],
   ["src/utils/noteWindow.ts", "开窗前读当前主题/语言下发给独立窗口（值导入）；与 tile/canvasTile 同形态"],

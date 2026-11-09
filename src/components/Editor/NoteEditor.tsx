@@ -32,6 +32,7 @@ import { useOutlineNavigation } from "@/hooks/useOutlineNavigation";
 import { htmlToMarkdown, isStoredEditorHtml } from "@/utils/htmlToMarkdown";
 import { imageExtensionOf, insertImageMarkdown } from "@/utils/noteImages";
 import { insertTable } from "@/utils/markdownCommands";
+import { flushTableEdit } from "@/utils/livePreview/tableEditing";
 
 // Configure marked
 
@@ -110,6 +111,10 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   // the user's choice, but a restart starts quiet rather than reopening a
   // 220px column over yesterday's document.
   const [outlineOpen, setOutlineOpen] = useState(false);
+  // 纯预览编辑: content stays rendered everywhere and a table cell is edited in
+  // place. Session-scoped like the outline column — switching notes keeps the
+  // choice, a restart starts in the ordinary two-mode editor.
+  const [purePreview, setPurePreview] = useState(false);
   // The status bar shows when the file was last written, not when a key was
   // last pressed: `noteStore.updateNote` touches `updatedAt` on every
   // keystroke, so the store value would tick while the user types.
@@ -156,6 +161,12 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   }, []);
 
   const getCurrentEditorContent = useCallback(() => {
+    // An open table cell holds text that is not in the document yet. Every caller
+    // of this (Ctrl+S, autosave, `registerNoteFlusher`, the sample taken when
+    // switching notes) means "what the user can see", so the cell is committed
+    // first — the commit dispatches, which refreshes `mdContentRef` synchronously.
+    const view = codeMirrorViewRef.current;
+    if (view) flushTableEdit(view);
     return mdContentRef.current;
   }, []);
 
@@ -422,14 +433,23 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
       mdContentRef.current = value;
       setMdContent(value);
       const noteId = activeNoteIdRef.current;
-      if (noteId) {
-        // Only a still-blank title is filled in; an existing one (imported file
-        // name, previously derived value) is never overwritten by later edits.
-        const current = useNoteStore.getState().notes.find((note) => note.id === noteId);
-        const derivedTitle = current && !current.title.trim() ? deriveTitleFromContent(value) : "";
-        updateNote(noteId, derivedTitle ? { content: value, title: derivedTitle } : { content: value });
-        markDirty(noteId, true);
-      }
+      if (!noteId) return;
+      // Ownership guard. A commit fired by `getCurrentEditorContent` can land one
+      // change *after* a note switch, while the editor still holds the previous
+      // document; without this the outgoing note's text would be written into the
+      // incoming note's store entry (and marked dirty).
+      //
+      // Only a *known* previous owner blocks the write: while nothing has loaded
+      // yet (`null`, a failed load included) the buffer can only hold what the
+      // user just typed into this note, and dropping it would lose keystrokes.
+      const loaded = loadedNoteIdRef.current;
+      if (loaded !== null && loaded !== noteId) return;
+      // Only a still-blank title is filled in; an existing one (imported file
+      // name, previously derived value) is never overwritten by later edits.
+      const current = useNoteStore.getState().notes.find((note) => note.id === noteId);
+      const derivedTitle = current && !current.title.trim() ? deriveTitleFromContent(value) : "";
+      updateNote(noteId, derivedTitle ? { content: value, title: derivedTitle } : { content: value });
+      markDirty(noteId, true);
     },
     [updateNote],
   );
@@ -486,13 +506,40 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
   }, []);
 
   /**
+   * The single view-mode setter. 源码档优先: choosing the source view turns
+   * 纯预览编辑 off and does not bring it back on the way out, so the two
+   * controls can never disagree about what is on screen.
+   */
+  const handleViewModeChange = useCallback((mode: LocalMarkdownView) => {
+    if (mode === "source") setPurePreview(false);
+    setMarkdownViewMode(mode);
+  }, []);
+
+  /**
    * Source ↔ live. Declared before `Ctrl+/` because the key handler and the
    * status-bar button must drive the same state machine; two independent
    * togglers would eventually disagree about which mode is current.
    */
   const handleToggleSourceMode = useCallback(() => {
-    setMarkdownViewMode((mode) => (mode === "source" ? "live" : "source"));
-  }, []);
+    handleViewModeChange(markdownViewMode === "source" ? "live" : "source");
+  }, [handleViewModeChange, markdownViewMode]);
+
+  /**
+   * 纯预览编辑 toggle.
+   *
+   * The open table cell is committed before the layer is swapped: switching modes
+   * rebuilds the table widget, and its DOM — the field the user is typing in —
+   * goes with it.
+   */
+  const handleTogglePurePreview = useCallback(() => {
+    const view = codeMirrorViewRef.current;
+    if (view) flushTableEdit(view);
+    const next = !purePreview;
+    setPurePreview(next);
+    // Defensive: the button is disabled in 源码 view, but the mode can also be
+    // changed from the menu while this handler is in flight.
+    if (next) setMarkdownViewMode((mode) => (mode === "source" ? "live" : mode));
+  }, [purePreview]);
 
   /**
    * Ctrl+/ toggles 实时渲染 ↔ 源码; Ctrl+= / Ctrl+- / Ctrl+Shift+0 zoom.
@@ -696,7 +743,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
           isDirty={isDirty}
           isSaving={isSaving}
           viewMode={markdownViewMode}
-          onViewModeChange={setMarkdownViewMode}
+          onViewModeChange={handleViewModeChange}
           onSave={doSave}
           onExport={onExportNote}
           onCloseTab={handleCloseTab}
@@ -800,6 +847,7 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
               fontSize={editorFontSize}
               fontFamily={editorFontFamily}
               livePreview={markdownViewMode === "live"}
+              previewEditing={markdownViewMode === "live" && purePreview}
               onPasteImage={insertImageFile}
               onInsertTable={handleInsertTable}
             />
@@ -831,6 +879,8 @@ const NoteEditor: React.FC<NoteEditorProps> = ({ onExportNote }) => {
         onToggleOutline={handleToggleOutline}
         sourceMode={markdownViewMode === "source"}
         onToggleSourceMode={handleToggleSourceMode}
+        purePreview={purePreview}
+        onTogglePurePreview={handleTogglePurePreview}
         updatedAt={updatedAtValue}
         saveState={saveState}
         stats={stats}

@@ -16,7 +16,7 @@ import {
 } from "@/stores/settingsStore";
 import type { ThemeType, CustomColors, LangType } from "@/stores/settingsStore";
 import { t } from "@/utils/i18n";
-import { openInDefaultBrowser } from "@/utils/externalLinks";
+import { isLinkClickModifier, openMarkdownLink } from "@/utils/markdownLinkActions";
 import { linkUrlAt } from "@/utils/markdownLinks";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
@@ -29,8 +29,12 @@ import { markdownInputRules } from "@/utils/livePreview/inputRules";
 /** Marks a document replacement that came from the main window, not the user. */
 const externalDocumentUpdate = Annotation.define<boolean>();
 
-/** Same decorations as the editor, caret fallback included — this window edits. */
-const STICKY_PREVIEW = livePreview();
+/**
+ * Same decorations as the editor, caret fallback included — this window edits.
+ * Table drag handles stay off: the sticky window is a second writer on the same
+ * `.md`, so a resize done here would race the main editor's copy of the file.
+ */
+const STICKY_PREVIEW = livePreview({ resizable: false });
 
 /**
  * The window already owns the frame and the padding (`.sticky-content`), so the
@@ -130,13 +134,18 @@ export default function StickyNote({ noteId }: StickyNoteProps) {
           }),
           EditorView.domEventHandlers({
             // Links are rendered as text by the preview, so the target comes from
-            // the syntax tree rather than from an `<a href>`.
+            // the syntax tree rather than from an `<a href>`. Same resolver as the
+            // main editor: this surface is editable, so navigation needs Ctrl/Cmd
+            // and a plain click still places the caret.
             click(event, view) {
+              if (event.button !== 0) return false;
+              if (!view.state.readOnly && !isLinkClickModifier(event)) return false;
               const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
               if (pos === null) return false;
               const url = linkUrlAt(view.state, pos);
               if (!url) return false;
-              void openInDefaultBrowser(url);
+              if (!openMarkdownLink(url, { view })) return false;
+              event.preventDefault();
               return true;
             },
           }),

@@ -5,7 +5,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { codeMirrorTypographyTheme, themeAwareMarkdownHighlighting } from "@/utils/codeMirror";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { livePreview } from "@/utils/livePreview";
-import { openInDefaultBrowser } from "@/utils/externalLinks";
+import { openMarkdownLink } from "@/utils/markdownLinkActions";
 import { linkUrlAt } from "@/utils/markdownLinks";
 
 /**
@@ -13,18 +13,20 @@ import { linkUrlAt } from "@/utils/markdownLinks";
  * window, and anything else that only has to *show* a note) go through the same
  * decoration layer as the editor instead of a second Markdown → HTML pipeline.
  *
- * Two deliberate differences from `MarkdownSourceEditor`:
+ * Deliberate differences from `MarkdownSourceEditor`:
  * - **no input rules**: nothing here can be typed into, so `markdownInputRules`
  *   is not installed at all — no keymap entries and no paste/drop handlers;
- * - **no caret fallback**: `livePreview({ revealActiveBlock: false })`. A
+ * - **no caret fallback**: `revealActiveBlock: false`. A
  *   read-only view still has a (collapsed) selection at offset 0; with the
  *   editable behaviour the first block would sit permanently in source form.
+ * - **no table drag handles** (`resizable: false`): a stored width is painted,
+ *   but nothing here can write one — the file belongs to the editor.
  *
  * Everything else — GFM base, the syntax highlight style, `em`-based heading
  * sizes scaling off the zoomed root size — is the editor's own configuration, so
  * the two surfaces cannot drift apart.
  */
-const READONLY_PREVIEW = livePreview({ revealActiveBlock: false });
+const READONLY_PREVIEW = livePreview({ revealActiveBlock: false, resizable: false });
 
 const readonlyTheme = EditorView.theme({
   // Auto height: the window owns scrolling, not the editor. A fixed-height
@@ -84,12 +86,24 @@ export default function MarkdownReadonlyView({ value, fontSize = 14, className }
           READONLY_PREVIEW,
           EditorView.domEventHandlers({
             click(event, view) {
+              // Only the primary button navigates, and a drag-selection that
+              // happens to end on a link must stay a selection: without this the
+              // view would scroll away from the text the user just selected.
+              if (event.button !== 0) return false;
+              const selection = window.getSelection();
+              if (selection && !selection.isCollapsed && selection.toString().trim().length > 0) {
+                return false;
+              }
               const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
               if (pos === null) return false;
               const url = linkUrlAt(view.state, pos);
               if (!url) return false;
-              // Same gate as the old tile: only http(s), opened in the browser.
-              void openInDefaultBrowser(url);
+              // Nothing here can be edited, so a plain click follows the link —
+              // unlike the editable editor, which reserves Ctrl/Cmd+click for
+              // navigation. External URLs, in-note anchors and links to another
+              // note all go through the same resolver.
+              if (!openMarkdownLink(url, { view })) return false;
+              event.preventDefault();
               return true;
             },
           }),

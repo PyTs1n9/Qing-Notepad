@@ -11,9 +11,14 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { EditorView } from "@codemirror/view";
 import type { OutlineHeading } from "@/utils/noteOutline";
-import { animateScrollTop, type ScrollAnimation } from "@/utils/smoothScroll";
+import { cancelEditorScrollJump, scrollEditorToPosition } from "@/utils/editorScrollJump";
 
-/** Gap between the viewport top and the heading a jump lands on. */
+/**
+ * Gap between the viewport top and the heading a jump lands on.
+ *
+ * The landing margin itself is `editorScrollJump`'s business now; this copy is
+ * for the viewport sample point below, which must sit just *under* that margin.
+ */
 const SCROLL_TOP_MARGIN = 8;
 
 export interface OutlineNavigation {
@@ -40,13 +45,17 @@ export function useOutlineNavigation(
   // on every keystroke would tear down the listener while the user types.
   const headingsRef = useRef(headings);
   headingsRef.current = headings;
-  // At most one jump is in flight; a second click replaces it rather than
-  // stacking two rAF loops on the same scroller.
-  const animationRef = useRef<ScrollAnimation | null>(null);
 
+  /**
+   * Abort whatever glide is in flight.
+   *
+   * The animation itself now belongs to `editorScrollJump` (link clicks scroll
+   * through the same primitive), so this defers to it instead of holding a
+   * handle. The listeners below still matter: `pointerdown` and `keydown` are
+   * takeover signals the shared primitive does not watch.
+   */
   const stopAnimation = useCallback(() => {
-    animationRef.current?.cancel();
-    animationRef.current = null;
+    cancelEditorScrollJump();
   }, []);
 
   /**
@@ -55,8 +64,9 @@ export function useOutlineNavigation(
    *
    * The scroll is animated rather than assigned: a 2000px teleport loses the
    * reader's place, while a 300ms glide keeps the relationship between "where I
-   * clicked" and "where I landed". `animateScrollTop` also owns the curve and
-   * the abort handle, which `behavior: "smooth"` would not give us.
+   * clicked" and "where I landed". The curve, the 8px landing margin and the
+   * abort handle live in `editorScrollJump`, because an in-note link click has to
+   * land in exactly the same place.
    */
   const jumpTo = useCallback(
     (heading: OutlineHeading) => {
@@ -74,9 +84,7 @@ export function useOutlineNavigation(
       view.dispatch({ selection: { anchor: position } });
       view.focus();
 
-      const paddingTop = parseFloat(getComputedStyle(view.contentDOM).paddingTop) || 0;
-      const target = view.lineBlockAt(position).top + paddingTop - SCROLL_TOP_MARGIN;
-      animationRef.current = animateScrollTop(view.scrollDOM, target);
+      scrollEditorToPosition(view, position);
     },
     [stopAnimation, viewRef],
   );

@@ -5,6 +5,7 @@ import {
   EditorState,
   Prec,
   Transaction,
+  type Extension,
   type TransactionSpec,
 } from "@codemirror/state";
 import { EditorView, keymap, placeholder as codeMirrorPlaceholder } from "@codemirror/view";
@@ -21,8 +22,11 @@ import {
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
 import { livePreview } from "@/utils/livePreview";
+import { flushTableEdit } from "@/utils/livePreview/tableEditing";
 import { codeBlockInteractions } from "@/utils/livePreview/codeBlock";
 import { markdownInputRules } from "@/utils/livePreview/inputRules";
+import { isLinkClickModifier, openMarkdownLink } from "@/utils/markdownLinkActions";
+import { linkUrlAt } from "@/utils/markdownLinks";
 import {
   inlineWrap,
   insertCodeBlock,
@@ -48,6 +52,12 @@ interface MarkdownSourceEditorProps {
    */
   livePreview?: boolean;
   /**
+   * 纯预览编辑 mode: the live preview layer stays mounted with nothing falling
+   * back to source under the caret, and rendered tables accept in-place cell
+   * edits. Only meaningful together with `livePreview`.
+   */
+  previewEditing?: boolean;
+  /**
    * Receives an image file pasted or dropped onto the editor. The note editor
    * owns where attachments live, so the input rule only decides *that* this
    * paste/drop is an image and hands the file over.
@@ -62,8 +72,32 @@ interface MarkdownSourceEditorProps {
 
 const externalDocumentUpdate = Annotation.define<boolean>();
 
-/** Editable instance: the caret's block falls back to source. */
-const livePreviewExtension = livePreview();
+/**
+ * Editable instance: the caret's block falls back to source, and tables get drag
+ * handles — this is the only surface that may write column widths into the note.
+ */
+const livePreviewExtension = livePreview({ resizable: true });
+
+/**
+ * 纯预览编辑 (the status bar's third button).
+ *
+ * Same surface as above, with two deliberate differences: nothing is revealed
+ * under the caret (the whole point is that `**` and `#` never appear), and the
+ * tables are `interactive`, i.e. they keep the pointer and edit a cell in place.
+ * Drag handles stay on — the column-edge gesture is frozen behaviour and this
+ * mode is still the same editor writing the same file.
+ */
+const previewEditingExtension = livePreview({
+  revealActiveBlock: false,
+  resizable: true,
+  interactive: true,
+});
+
+/** Which preview layer this pair of props asks for. */
+function previewLayer(live: boolean, editing: boolean): Extension {
+  if (!live) return [];
+  return editing ? previewEditingExtension : livePreviewExtension;
+}
 
 /** One command, one transaction; `false` lets the next binding try. */
 function runMarkdownCommand(
@@ -193,6 +227,7 @@ export default function MarkdownSourceEditor({
   onInsertTable,
   fontSize,
   livePreview = false,
+  previewEditing = false,
   onPasteImage,
   fontFamily = "",
 }: MarkdownSourceEditorProps) {
@@ -202,6 +237,9 @@ export default function MarkdownSourceEditor({
   const latestFontSizeRef = useRef(fontSize);
   const latestFontFamilyRef = useRef(fontFamily);
   const latestLivePreviewRef = useRef(livePreview);
+  const latestPreviewEditingRef = useRef(previewEditing);
+  /** The value the reconfigure effect saw last time, so a leave can be spotted. */
+  const previousPreviewEditingRef = useRef(previewEditing);
   const latestPasteImageRef = useRef(onPasteImage);
   latestPasteImageRef.current = onPasteImage;
   // The editor is created once; route the shortcut through a ref so a new
@@ -216,6 +254,7 @@ export default function MarkdownSourceEditor({
   latestFontSizeRef.current = fontSize;
   latestFontFamilyRef.current = fontFamily;
   latestLivePreviewRef.current = livePreview;
+  latestPreviewEditingRef.current = previewEditing;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -240,7 +279,7 @@ export default function MarkdownSourceEditor({
         themeAwareMarkdownHighlighting,
         noteEditorTheme,
         pluginDecorations,
-        livePreviewCompartment.of(latestLivePreviewRef.current ? livePreviewExtension : []),
+        livePreviewCompartment.of(previewLayer(latestLivePreviewRef.current, latestPreviewEditingRef.current)),
         markdownInputRules({ insertImage: (file) => latestPasteImageRef.current?.(file) }),
         // Not part of the preview layer: Ctrl+A scoping and "paste code as a
         // block" have to work in 源码 view too, where `livePreview` is unmounted.
@@ -262,6 +301,33 @@ export default function MarkdownSourceEditor({
         ]),
         EditorView.contentAttributes.of({ spellcheck: "false" }),
         codeMirrorPlaceholder(placeholder),
+        /**
+         * Ctrl/Cmd+click follows a link; a plain click still places the caret,
+         * which is the only way to edit link text once the live preview has
+         * hidden the `[label](url)` markup. `linkUrlAt` resolves the
+         * destination from the syntax tree because no `<a>` element exists on
+         * this surface.
+         */
+        EditorView.domEventHandlers({
+          mousedown(event, view) {
+            // `mousedown`, not `click`: the caret has not moved yet, so refusing
+            // the click lets CodeMirror do its own placement rather than undoing
+            // it afterwards. Only the primary button navigates — Ctrl+middle
+            // click is a scroll gesture.
+            if (event.button !== 0 || !isLinkClickModifier(event)) return false;
+            const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (position === null) return false;
+            const url = linkUrlAt(view.state, position);
+            if (!url) return false;
+            // A destination this app cannot carry out (a dead anchor, a note that
+            // no longer exists) must leave the click alone, so the caret lands
+            // where the user clicked instead of nothing at all happening.
+            const executed = openMarkdownLink(url, { view });
+            if (!executed) return false;
+            event.preventDefault();
+            return true;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           const isExternalUpdate = update.transactions.some(
             (transaction) => transaction.annotation(externalDocumentUpdate),
@@ -310,10 +376,16 @@ export default function MarkdownSourceEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    const wasEditing = previousPreviewEditingRef.current;
+    previousPreviewEditingRef.current = previewEditing;
+    // Leaving the interactive layer while a cell is open must not drop what the
+    // user typed: the widget is about to be replaced by the ordinary one, and
+    // its DOM — including the open cell — goes with it.
+    if (wasEditing && !previewEditing) flushTableEdit(view);
     view.dispatch({
-      effects: livePreviewCompartment.reconfigure(livePreview ? livePreviewExtension : []),
+      effects: livePreviewCompartment.reconfigure(previewLayer(livePreview, previewEditing)),
     });
-  }, [livePreview, livePreviewCompartment]);
+  }, [livePreview, previewEditing, livePreviewCompartment]);
 
   return <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden" />;
 }

@@ -1,3 +1,13 @@
+/**
+ * "Open this URL in the user's browser" for chrome (announcements, help menu,
+ * about, plugin links).
+ *
+ * Not for Markdown link clicks any more: a rendered link can also be an in-note
+ * anchor or another note, and a click that only knows how to open a browser
+ * silently drops those two. Those surfaces go through
+ * `src/utils/markdownLinkActions.ts`, which resolves the destination first and
+ * only then asks the OS.
+ */
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { MouseEvent as ReactMouseEvent } from "react";
 

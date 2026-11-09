@@ -152,6 +152,19 @@ export interface LivePreviewConfig {
    * permanently shown as source.
    */
   revealActiveBlock?: boolean;
+  /**
+   * Mount the table drag handles. Off by default: only the main editor writes
+   * column widths into `.md`, and a read-only preview or the sticky window (a
+   * second writer on the same file) must not offer that gesture.
+   */
+  resizable?: boolean;
+  /**
+   * 纯预览编辑: nothing falls back to source under the caret and tables take the
+   * pointer themselves so a cell can be edited in place. The caret fallback is
+   * off by construction — a rendered block that reveals its own Markdown is
+   * exactly what this mode promises not to do.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -162,7 +175,10 @@ export interface LivePreviewConfig {
  * so call it once per editor and keep the result.
  */
 export function livePreview(config: LivePreviewConfig = {}): Extension {
-  const revealActiveBlock = config.revealActiveBlock !== false;
+  const interactive = config.interactive === true;
+  // 纯预览编辑 wins over the caret fallback: the two cannot both be on.
+  const revealActiveBlock = interactive ? false : config.revealActiveBlock !== false;
+  const resizable = config.resizable === true;
   return [
     ViewPlugin.fromClass(
       class extends LivePreviewView {
@@ -174,7 +190,7 @@ export function livePreview(config: LivePreviewConfig = {}): Extension {
     ),
     // Tables are block replacements, which a view plugin may not provide; the
     // field is separate for that reason, not for organisation.
-    tablePreview({ revealActiveBlock }),
+    tablePreview({ revealActiveBlock, resizable, interactive }),
   ];
 }
 

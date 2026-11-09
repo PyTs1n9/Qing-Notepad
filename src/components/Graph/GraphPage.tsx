@@ -34,6 +34,7 @@ import { useTabStore } from "@/stores/tabStore";
 import { confirmDialog } from "@/stores/dialogStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { renderMarkdown } from "@/utils/markdown";
+import { handleMarkdownLinkClick } from "@/utils/markdownLinkActions";
 import { loadNoteContent } from "@/utils/storage";
 import { createGraphFs } from "@/utils/graph/graphFs";
 import {
@@ -1290,6 +1291,15 @@ const GraphPageInner: React.FC<GraphPageProps> = ({ setCurrentView }) => {
                   ) : documentState.html !== null ? (
                     <div
                       className="markdown-preview prose max-w-none text-sm"
+                      onClick={(event) => {
+                        // A graph node is a vault file, not a notebook note: a
+                        // relative `other.md` would have to resolve to another
+                        // node, which this surface does not own yet.
+                        handleMarkdownLinkClick(event, {
+                          container: event.currentTarget,
+                          allowNoteLinks: false,
+                        });
+                      }}
                       dangerouslySetInnerHTML={{ __html: documentState.html }}
                     />
                   ) : (

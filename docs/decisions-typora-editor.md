@@ -32,7 +32,7 @@
 | 验收标准 | 用起来像，不是看起来像 | 只做视觉层会得到一个"能看不能编"的假编辑器 |
 | 首版层级 | L1 视觉 + L2 结构 + L3 按块降级，三者同批 | L3 是 L1 成立的前提（`Decoration.replace` 区域光标不可入），拆开做等于返工 |
 | `preview` 档 | 升级为实时渲染，取代原只读预览 | 消除 marked 与 lezer-markdown 双解析器导致的同文异貌 |
-| 表格 | 首版只读，光标进入整块回退源码 | 可编辑 widget 需 contenteditable 与文档双向同步，且与 L3 降级规则冲突，工程量独立立项 |
+| 表格 | 首版只读，光标进入整块回退源码。**2026-11-09 起被纯预览编辑档局部推翻**：该档下表格常驻渲染、双击单元格就地编辑（`decisions-preview-edit.md`）；普通实时渲染档行为不变 | 可编辑 widget 需 contenteditable 与文档双向同步，且与 L3 降级规则冲突，工程量独立立项——本轮即该立项的最小闭环 |
 | Marktext 参考资料 | 只读行为与 issue，不读实现 | 其架构为 contenteditable，与本项目 CM6 装饰路线不同，照搬实现会引入错误抽象 |
 | L2 输入规则 | 全部实现，三条高风险项（空列表项退出 / Tab 层级 / 跨块删除）单独定义语义 | 三者共用同一套按键判定，边界最多，缺语义定义会导致「多按一次吃掉上一段」 |
 | 分屏档 | 删除。若后续需要只读呈现（贴窗 / 卡片窗），复用同一套 decoration 的只读实例 | 实时渲染达标后分屏失去意义；decor 只读实例比另建 marked 管线更省，且视觉不会分叉 |
@@ -437,6 +437,7 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
 - 链接点击：装饰层把 `[label](url)` 藏成纯文本，DOM 里已没有 `<a>`，所以改为
   `view.posAtCoords` → `linkUrlAt(state,pos)` → `openInDefaultBrowser`（仍只放行 http(s)）。
   `linkUrlAt` 抽到 `src/utils/markdownLinks.ts`，贴窗与卡片窗共用。
+  （**本轮已推翻**：只开浏览器会静默丢掉锚点与笔记链接，见下文 `M11｜链接跳转`。）
 
 ### 贴窗的事实纠正（与原需求前提不同）
 
@@ -460,7 +461,7 @@ em 会跟着 zoom 走；这一点已在 16px / 24px 两档截图里确认。
 | 主题 | 编辑器主题 + 20px content padding | 透明底、无 padding、auto height 由窗口滚动 |
 | 字号 | `codeMirrorFontSizeTheme` | 同一个，标题仍是 `em` 跟随 |
 | 字体 | Consolas 栈 | 同一个栈（原卡片窗是正文无衬线，**观感变化**） |
-| 链接 | 文本，不可点（编辑器里靠预览面板） | 文本，可点（`posAtCoords` + 语法树） |
+| 链接 | 文本，Ctrl/Cmd+单击可点（`posAtCoords` + 语法树） | 文本，单击可点（`posAtCoords` + 语法树） |
 
 ### 需要人工确认
 
@@ -745,3 +746,68 @@ D2 的间距/宽度整组已回滚（提交 `4283453`），只保留字体修复
   折叠槽 10.86 → 8.92px；行号 `line-height` 27.21px 与行块高度一致。
 - **未覆盖**：四位数行号（≥1000 行）的实测、独立笔记窗口内的观感、自定义字号（如 20px）
   下的比例。
+
+## M11｜链接跳转（2026-11-05）
+
+M6 的结论是「编辑器里链接是纯文本，要看得靠预览面板」。本轮推翻：**实时渲染编辑器里的
+链接文本可以直接点跳，不必切预览**。完整决策见 `docs/decisions-markdown-links.md`；
+这里只记与编辑器渲染层相关的部分。
+
+### 交互
+
+- **可编辑面（主编辑器、贴图窗）**：`Ctrl/Cmd + 单击` 跳转，普通单击仍然只放光标。
+  链接的 `[label](url)` 被装饰层藏掉后，普通单击是编辑 label 的唯一入口，不能被跳转占用。
+- **只读面（卡片窗 `TileView` → `MarkdownReadonlyView`）**：单击即跳转。那里没有 caret
+  可放，再加修饰键只是让人多点一次。拖选文字松手落在链接上不跳（先排除非折叠选区），
+  否则页面会从刚选中的文字上滚走。
+- 平台修饰键分开判定：mac 只认 `metaKey`（mac 上 Ctrl+单击是次要键点击 = 右键菜单），
+  其他平台只认 `ctrlKey`。初稿写 `ctrlKey || metaKey`，在 mac 上会把 Ctrl+单击变成跳转。
+- 事件时机**按面选**：主编辑器用 `mousedown`（在光标移动之前就决定是否消费，所以「不跳」时
+  CodeMirror 的默认放光标不会被事后撤销）；只读卡片窗与贴图窗用 `click`——它们没有「保住
+  光标」的诉求，不为形式统一去改代码。三处共同遵守「`openMarkdownLink` 返回 false 就不消费
+  这次点击」。
+
+### 三类目标
+
+| 目标 | 判定 | 行为 |
+| --- | --- | --- |
+| 外部链接 | `http` / `https` / `mailto` / `tel`（`src/utils/linkScheme.ts` 单一真源） | 交系统默认程序打开 |
+| 文内锚点 | 规范化为 `#小节` | 定位到同名标题并滚动，光标留在该标题行 |
+| 笔记链接 | 相对路径 + 标题 | `useTabStore.openTab(noteId)` 切标签 |
+
+其余一律「不跳」，且**静默**：没有 toast、没有文案、没有抖动，因为「点了没反应」比
+「弹一句错误」更少打断书写，而写坏的链接在源码里能直接看见。
+
+### 按标题匹配，不是文件名
+
+`other.md` 只用来提示作者指的是哪一篇，真正的判定是「本地笔记库里标题经
+`looseLinkKey` 归一化后是否唯一相等」。所以：
+
+- `notes/other-note.markdown` 能命中标题为 `Other Note` 的笔记；
+- `other.md` **不能**命中标题 `Other Note`（`other` ≠ `othernote`）；
+- 同名两篇 → 不猜，不跳；
+- `report.pdf`、`www.example.com` 这类点名文件的写法 → 不跳。
+
+### 跨笔记锚点本轮不支持
+
+`other.md#小节` 仍会把 `#小节` 从路径里拆掉（否则标题匹配会因为尾巴上的 `#小节` 失败），
+但类型 `MarkdownLinkTarget` 的 `note` 分支**不带 `anchor` 字段**——行为上只切笔记，
+不承诺滚动。要让新笔记滚到某小节，必须先构造它的 `EditorView`，而那是切标签之后才存在的，
+不做这轮。
+
+### 观感未改
+
+`.cm-md-link` 的样式（颜色、下划线、hover）本轮**没有改动**，所以编辑器里链接文本
+看不出「可点」——唯一的线索是链接语法的位置。这是已知缺口，记在
+`docs/decisions-markdown-links.md` 的开放问题里。
+
+### 滚动复用与只读窗修复
+
+- 新增 `src/utils/editorScrollJump.ts`：`scrollEditorToPosition(view, position)` 与
+  `useOutlineNavigation` 的跳转公式完全一致（`.cm-content` 的 `padding-top` 补回、
+  8px 落点边距），大纲跳转改为调用它。
+- 只读预览的 `.cm-scroller { overflow: visible }`（auto height，由窗口滚动）意味着
+  **往里写 `scrollTop` 什么也不会发生**——锚点跳转在卡片窗里原本是死的。现在自身不可滚时
+  上溯最近的 `overflow-y: auto|scroll` 祖先，把目标换算到它的坐标系。
+- 用户输入立即取消：`wheel` / `touchstart` 每个滚动容器只挂一次持久监听（`WeakSet` 去重），
+  初稿那种「每次跳转都 `addEventListener` 且无 cleanup」的写法已删除。

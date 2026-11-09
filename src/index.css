@@ -3787,6 +3787,109 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   background-color: color-mix(in srgb, var(--color-bg-secondary) 45%, transparent);
 }
 
+/* ---------------------------------------------------------------- */
+/* Table resize: handles, drag feedback, the hidden sizing comment    */
+/*                                                                    */
+/* Everything here hangs off a modifier class, never off            */
+/* `.cm-md-table` itself: a table without a sizing comment has to     */
+/* stay pixel-identical to what it was before this feature existed    */
+/* (`docs/decisions-table-resize.md` A8). The extra DOM on such a     */
+/* table is one transparent layer whose own `pointer-events` are off  */
+/* — only the 6px handle strips take the pointer.                     */
+/* ---------------------------------------------------------------- */
+.cm-md-table-wrap--resizable {
+  /* The handles layer is positioned against the wrapper, and the wrapper is the
+     element that scrolls, so the layer scrolls with the table. */
+  position: relative;
+}
+
+.cm-md-table--fixed {
+  table-layout: fixed;
+}
+
+/* A fixed layout will not let content widen a column, so a long word has to be
+   allowed to break — otherwise it overflows its own cell. */
+.cm-md-table--fixed th,
+.cm-md-table--fixed td {
+  overflow-wrap: anywhere;
+}
+
+.cm-md-table-handles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cm-md-table-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* 6px hotspot over the cell border; the -3px margin centres it on the edge. */
+  width: 6px;
+  margin-left: -3px;
+  pointer-events: auto;
+  cursor: col-resize;
+}
+
+/* Zero visual until touched: the hotspot must not decorate an untouched table. */
+.cm-md-table-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: transparent;
+  border-radius: 1px;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.cm-md-table-handle:hover::after,
+.cm-md-table-handle--active::after {
+  background-color: var(--color-accent);
+}
+
+/* While dragging, the pointer is between cells most of the time — the cursor has
+   to stay `col-resize` all the way to the release. */
+body.cm-md-table-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.cm-md-table-dragging * {
+  cursor: col-resize !important;
+}
+
+/* Portalled to `body`: inside the wrapper it would be clipped by `overflow-x`. */
+.cm-md-table-size-bubble {
+  position: fixed;
+  z-index: 30;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* The sizing comment in the rendered state: it exists for the caret and for the
+   file, not for the reader. `.cm-line` carries CodeMirror's own line height, so
+   the height has to be collapsed explicitly. */
+.cm-line.cm-md-table-meta-hidden {
+  height: 0;
+  line-height: 0;
+  font-size: 0;
+  overflow: hidden;
+  padding: 0;
+  pointer-events: none;
+}
+
 .cm-md-table code {
   font-family: var(--editor-font-mono);
   font-size: 0.92em;
@@ -3799,6 +3902,43 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
   color: var(--color-accent-text);
   text-decoration: underline;
   text-underline-offset: 0.15em;
+}
+
+/* 纯预览编辑 (`data-interactive="true"`). The table keeps its rendered form and
+   takes the pointer, so the browser's own selection has to be able to start and
+   extend inside it. `::selection` is used instead of a decoration layer: the
+   text is real DOM text, and a hand-painted band would have to copy every cell's
+   geometry for no gain.
+
+   Who paints the band depends on focus, and only the unfocused case is ours:
+   - dragging across the rendered table (no focused descendant) gets the 34%
+     accent below, the same tone as `.cm-selectionBackground`;
+   - a cell being edited *does* hold focus, and CodeMirror's `hideNativeSelection`
+     theme — pulled in by `drawSelection` — declares
+     `.cm-content :focus::selection { background: Highlight !important }`, so in
+     that state the band is the system highlight and this rule cannot win.
+   The widget is a direct child of `.cm-content`, not inside a `.cm-line`, which
+   is why CodeMirror's `.cm-line ::selection { transparent !important }` does not
+   swallow this rule; wrapping the widget in a `.cm-line` would hide the band. */
+.cm-md-table-wrap[data-interactive="true"] {
+  user-select: text;
+}
+
+.cm-md-table-wrap ::selection {
+  background: color-mix(in srgb, var(--color-accent) 34%, transparent);
+}
+
+.cm-md-table[data-interactive="true"] th,
+.cm-md-table[data-interactive="true"] td {
+  cursor: text;
+}
+
+/* The cell being edited. `outline-offset: -2px` keeps the ring inside the cell
+   so it cannot be read as a column boundary (those are the drag handles). */
+.cm-md-table th[contenteditable],
+.cm-md-table td[contenteditable] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
 }
 
 /* Rendered list markers. The source `-` / `1.` is replaced by a widget, so the

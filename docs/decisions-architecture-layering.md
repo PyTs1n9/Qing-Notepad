@@ -42,8 +42,9 @@
 直接跑——`graphFs.ts:7` 已经为这个限制写过注释（"imports `@tauri-apps/plugin-fs` at the
 top cannot be bundled for `node`"），类型层同理。
 
-`utils → stores` 的既有例外共 11 条，全部登记在
-`scripts/verify-architecture.mjs` 的 `UTILS_TO_STORES_WHITELIST`，每条一行理由：
+`utils → stores` 的既有例外共 15 条（含 4 条仅类型导入、编译后擦除的），全部登记在
+`scripts/verify-architecture.mjs` 的 `UTILS_TO_STORES_WHITELIST`，每条一行理由。下表列
+影响面较大的几条：
 
 | 文件 | 形态 | 依赖原因 |
 | --- | --- | --- |
@@ -54,6 +55,7 @@ top cannot be bundled for `node`"），类型层同理。
 | `src/utils/noteDeletion.ts:1` | 值 | 删除后同步 `noteStore` 内存列表 |
 | `src/utils/graph/graphSync.ts:26` | 值 | 同步进度写回 `graphStore`（见 `decisions-knowledge-graph.md`） |
 | `src/utils/ai/noteWrite.ts:14` | 值 | AI 改笔记落到 `noteStore`（见 `decisions-ai-note-write.md`） |
+| `src/utils/markdownLinkActions.ts:3-4` | 值 | 点击 Markdown 链接要按标题查 `noteStore` 再 `openTab`，与 `externalNotes.ts` 同形态（见 `decisions-markdown-links.md`） |
 | `src/utils/i18n.ts:1` | 仅类型 | `LangType`，编译后擦除 |
 | `src/utils/theme.ts:1` | 仅类型 | `ThemeType` / `CustomColors`，编译后擦除 |
 | `src/utils/shortcutManager.ts:3` | 仅类型 | `AppShortcuts`，编译后擦除 |

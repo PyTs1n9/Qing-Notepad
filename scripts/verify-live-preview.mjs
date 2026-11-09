@@ -51,6 +51,9 @@ await esbuild.build({
       `export { collectTableSpecs } from ${JSON.stringify(
         path.join(root, "src/utils/livePreview/tableField.ts"),
       ).replaceAll("\\", "/")};`,
+      `export { encodeCellText } from ${JSON.stringify(
+        path.join(root, "src/utils/livePreview/tableWidget.ts"),
+      ).replaceAll("\\", "/")};`,
       `export { EditorState, Text } from "@codemirror/state";`,
       `export { ensureSyntaxTree } from "@codemirror/language";`,
       `export { markdown, markdownLanguage } from "@codemirror/lang-markdown";`,
@@ -74,6 +77,7 @@ const {
   blockAt,
   blockAtPosition,
   collectTableSpecs,
+  encodeCellText,
   EditorState,
   ensureSyntaxTree,
   markdown,
@@ -371,11 +375,15 @@ section("表格：StateField 规格（ViewPlugin 不能提供 block 装饰）");
   check("对齐取自分隔行", JSON.stringify(spec?.data.align) === '["left","right"]', JSON.stringify(spec?.data.align));
   {
     // Property order is irrelevant; what matters is that the `**` never becomes
-    // text and the content keeps the strong flag.
-    const cell = spec?.data.rows?.[0]?.[1] ?? [];
+    // text and the content keeps the strong flag. The cell is now a `TableCell`:
+    // the pieces hang off `.pieces`, and `.text` is the decoded edit value.
+    const cell = spec?.data.rows?.[0]?.[1] ?? null;
     check(
       "单元格行内粗体：源码标记不进入片段，内容带 strong",
-      cell.length === 1 && cell[0].text === "1" && cell[0].strong === true,
+      cell !== null &&
+        cell.pieces.length === 1 &&
+        cell.text === "1" &&
+        cell.pieces[0].strong === true,
       JSON.stringify(cell),
     );
   }
@@ -391,6 +399,114 @@ section("表格：StateField 规格（ViewPlugin 不能提供 block 装饰）");
   ensureSyntaxTree(inside, doc.length, 5000);
   check("光标在表格内时不渲染（回退源码可编辑）", collectTableSpecs(inside, true).length === 0);
   check("只读实例不降级，始终渲染", collectTableSpecs(inside, false).length === 1);
+}
+
+section("表格：单元格模型（源码区间 / 空槽 / 转义 / 幻影格）");
+
+/** Table data for a whole document. `false` keeps the caret out of the decision. */
+function tableDataFor(doc) {
+  const state = EditorState.create({ doc, extensions: [language] });
+  ensureSyntaxTree(state, doc.length, 5000);
+  return collectTableSpecs(state, false)[0]?.data ?? null;
+}
+
+/** The inverse of `encodeCellText` for the two characters it escapes. */
+const decodeCellText = (text) => text.replace(/\\([\\|])/g, "$1");
+
+{
+  const doc = "| 名称 | 值 |\n| --- | --- |\n| a | b |\n";
+  const data = tableDataFor(doc);
+  const head = data?.header?.[0] ?? null;
+  check(
+    "表头单元格区间恰好覆盖内容（不含空格与管道）",
+    head !== null && doc.slice(head.from, head.to) === "名称" && head.text === "名称",
+    JSON.stringify(head),
+  );
+  check(
+    "表头第二格区间同样只覆盖内容",
+    data !== null && doc.slice(data.header[1].from, data.header[1].to) === "值",
+    JSON.stringify(data?.header?.[1]),
+  );
+}
+
+{
+  // Three columns: an empty first cell (no `TableCell` node of its own), an
+  // escaped pipe in the second, and a `\b` that is *not* an escape in the third.
+  const doc = "| 名称 | 值 | 备注 |\n| --- | --- | --- |\n|  | x \\| y | a\\b |\n";
+  const data = tableDataFor(doc);
+  const row = data?.rows?.[0] ?? [];
+
+  check("表头仍是 3 列", data?.header?.length === 3, String(data?.header?.length));
+  check("空单元格没有放弃这一列（行仍是 3 格）", row.length === 3, JSON.stringify(row));
+  check(
+    "空单元格是零宽插入点：text 为空且 from === to",
+    Boolean(row[0]) && row[0].text === "" && row[0].from === row[0].to,
+    JSON.stringify(row[0]),
+  );
+  check(
+    "空槽插入点落在首个空格之后（写回得到 `| 填 |`，不是 `|  填|`）",
+    Boolean(row[0]) && doc.slice(row[0].from - 2, row[0].from) === "| ",
+    JSON.stringify({ from: row[0]?.from, before: doc.slice(row[0]?.from - 3, row[0]?.from + 1) }),
+  );
+  const escaped = row[1]?.pieces?.map((piece) => piece.text).join("") ?? null;
+  check("`\\|` 解码为 `|`，片段里没有反斜杠", escaped === "x | y", JSON.stringify(row[1]));
+  check("解码后的文本就是编辑初值", row[1]?.text === "x | y", JSON.stringify(row[1]?.text));
+  check(
+    "`\\b` 不是合法转义：原样保留（与 CommonMark 一致）",
+    row[2]?.text === "a\\b",
+    JSON.stringify(row[2]?.text),
+  );
+}
+
+{
+  check("编码：`|` 变成 `\\|`", encodeCellText("a|b") === "a\\|b", encodeCellText("a|b"));
+  check("编码：`\\` 变成 `\\\\`", encodeCellText("a\\b") === "a\\\\b", encodeCellText("a\\b"));
+  check(
+    "编码：换行变空格并 trim",
+    encodeCellText("  上\n下  ") === "上 下",
+    JSON.stringify(encodeCellText("  上\n下  ")),
+  );
+  const samples = ["普通文本", "a|b", "a\\b", "C:\\temp\\a|b", "x | y", "**不算粗体**"];
+  check(
+    "编码往返：decode(encode(x)) === x",
+    samples.every((sample) => decodeCellText(encodeCellText(sample)) === sample),
+    JSON.stringify(samples.map((sample) => decodeCellText(encodeCellText(sample)))),
+  );
+}
+
+{
+  const doc = "| 名称 | 值 | 备注 |\n| --- | --- | --- |\n| a |\n";
+  const data = tableDataFor(doc);
+  const row = data?.rows?.[0] ?? [];
+  check("缺列的一行补齐到表头列数", row.length === 3, JSON.stringify(row));
+  check("已有内容是正常格", row[0]?.text === "a" && row[0]?.editable === true, JSON.stringify(row[0]));
+  check(
+    "缺的列是幻影格：editable === false 且不可写回",
+    row[2]?.editable === false && row[2].from === row[2].to,
+    JSON.stringify(row.slice(1)),
+  );
+}
+
+{
+  const table = "| 名称 | 值 |\n| --- | --- |\n| a | b |\n";
+  const top = tableDataFor(table);
+  const pushed = tableDataFor(`前言一\n\n前言二\n\n前言三\n\n${table}`);
+  check(
+    "key 与绝对位置无关（同一表格下移三段仍是同一 identity）",
+    Boolean(top && pushed) && top.key === pushed.key,
+    `${top?.key?.slice(0, 60)} vs ${pushed?.key?.slice(0, 60)}`,
+  );
+}
+
+{
+  const doc = "| 名称 | 值 |\n| :-- | --: |\n| a | b |\n";
+  const data = tableDataFor(doc);
+  check("对齐行不被当成单元格", data?.header?.length === 2, JSON.stringify(data?.header?.length));
+  check(
+    "对齐仍取自分隔行",
+    JSON.stringify(data?.align) === '["left","right"]',
+    JSON.stringify(data?.align),
+  );
 }
 
 section("L3 当前块回退（块内 hide 撤销，块级视觉保留）");
