@@ -38,8 +38,8 @@
 | `decisions-note-tabs.md` | 笔记标签栏：多标签、拖拽实时换位（本地 `dragOrder`）、Ctrl+W 关闭 | 动标签栏 / 拖拽手感 | 15.1 KB |
 | `decisions-topbar-menus.md` | 顶栏三菜单（工具/传送门/帮助）的上线级审计与收敛结论 | 动顶栏菜单、传送门入口 | 13.0 KB |
 | `decisions-editor-menubar.md` | 笔记编辑器改为 Typora 式五菜单：37 项清单、砍项理由、命令层与快捷键 | 改编辑器菜单 / 加排版命令 | 9 KB |
-| `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 纯预览编辑 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
-| `decisions-preview-edit.md` | 纯预览编辑档：全文不降级、表格常驻渲染、双击单元格就地编辑（Tab/Enter/Esc、位置现算、纯文本写回）；含独立窗不出现按钮与已知取舍 | 改表格交互、底栏第三按钮、或 `tableEditing.ts` / `tableWidget.ts` 的单元格模型时 | 12.2 KB |
+| `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 纯预览编辑 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级；三枚开关的选中/按下/禁用态口径 | 改底栏、开关状态样式、字数口径、目录面板 | 15 KB |
+| `decisions-preview-edit.md` | 纯预览编辑档：全文不降级、表格常驻渲染、双击单元格就地编辑（Tab/Enter/Esc、位置现算、纯文本写回）；含独立笔记窗同为交互档与已知取舍 | 改表格交互、底栏第三按钮、或 `tableEditing.ts` / `tableWidget.ts` 的单元格模型时 | 12.2 KB |
 | `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定，或改 `codeBlock.ts` 时（配 `npm run verify:code-block`） | 12.0 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
