@@ -1,9 +1,12 @@
 #!/usr/bin/env node
-// 单向同步：docs/agents/*.md（仓库内唯一编辑真源）→ 已注册的 qing-dev 专家包 agents/。
+// 单向同步：docs/agents/*.md（仓库内唯一编辑真源）
+//   → 注册源目录 marketplaces/my-experts/plugins/qing-dev/agents/
+//   → 所有安装缓存版本目录 plugins/cache/my-experts/qing-dev/<version>/agents/
+// 并把注册源目录的展示元数据（plugin.json / README.md）镜像到各缓存版本目录。
 // 用法：node scripts/sync-expert-agents.mjs
 // 同步后仍需重新运行 expert-manager 的 validate_expert.py 与 register_expert.py。
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -11,10 +14,8 @@ import { homedir } from 'node:os';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = join(repoRoot, 'docs', 'agents');
 const configDir = process.env.WORKBUDDY_CONFIG_DIR || join(homedir(), '.workbuddy');
-const dstDir = join(
-  configDir,
-  'plugins', 'marketplaces', 'my-experts', 'plugins', 'qing-dev', 'agents',
-);
+const sourcePkg = join(configDir, 'plugins', 'marketplaces', 'my-experts', 'plugins', 'qing-dev');
+const cacheRoot = join(configDir, 'plugins', 'cache', 'my-experts', 'qing-dev');
 
 const EXPECTED = 8;
 
@@ -22,11 +23,18 @@ if (!existsSync(srcDir)) {
   console.error(`源目录不存在：${srcDir}`);
   process.exit(1);
 }
-if (!existsSync(dstDir)) {
-  console.error(`专家包未安装：${dstDir}`);
-  console.error('请先在 WorkBuddy 中安装 qing-dev 专家团，或用 expert-manager 初始化并注册。');
+if (!existsSync(join(sourcePkg, 'agents'))) {
+  console.error(`专家包未安装：${sourcePkg}`);
+  console.error('请先用 expert-manager 初始化并注册 qing-dev 专家团。');
   process.exit(1);
 }
+
+// 缓存目录由 WorkBuddy 在首次启用专家时生成，可能有多个版本；缺失不算错误。
+const cachePkgs = existsSync(cacheRoot)
+  ? readdirSync(cacheRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory() && existsSync(join(cacheRoot, d.name, 'agents')))
+      .map((d) => join(cacheRoot, d.name))
+  : [];
 
 const files = readdirSync(srcDir).filter((f) => f.endsWith('.md')).sort();
 if (files.length !== EXPECTED) {
@@ -57,11 +65,37 @@ for (const file of files) {
   payloads.push({ file, text });
 }
 
-mkdirSync(dstDir, { recursive: true });
-for (const { file, text } of payloads) {
-  writeFileSync(join(dstDir, file), text, 'utf8');
-  console.log(`  synced  ${file}`);
+// WorkBuddy 在首次启用专家时可能移除包根目录的 settings.json；按 plugin.json 自愈。
+const settingsFrom = join(sourcePkg, 'settings.json');
+if (!existsSync(settingsFrom)) {
+  const pj = JSON.parse(readFileSync(join(sourcePkg, '.codebuddy-plugin', 'plugin.json'), 'utf8'));
+  writeFileSync(settingsFrom, `${JSON.stringify({ agent: pj.agentName }, null, 2)}\n`, 'utf8');
+  console.log(`  restored settings.json (agent=${pj.agentName})`);
 }
 
-console.log(`\n已同步 ${payloads.length} 个角色提示词 → ${dstDir}`);
+for (const pkg of [sourcePkg, ...cachePkgs]) {
+  const agentsDir = join(pkg, 'agents');
+  mkdirSync(agentsDir, { recursive: true });
+  for (const { file, text } of payloads) {
+    writeFileSync(join(agentsDir, file), text, 'utf8');
+  }
+  console.log(`  prompts -> ${agentsDir}`);
+}
+
+// 展示字段（花名 / 标签 / 描述）只存在于源目录的这两个文件，需镜像到缓存。
+for (const pkg of cachePkgs) {
+  for (const rel of [join('.codebuddy-plugin', 'plugin.json'), 'README.md', 'settings.json']) {
+    const from = join(sourcePkg, rel);
+    if (!existsSync(from)) continue;
+    const to = join(pkg, rel);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(from, to);
+    console.log(`  meta    -> ${to}`);
+  }
+}
+
+console.log(`\n已同步 ${payloads.length} 个角色提示词到 ${1 + cachePkgs.length} 个目录。`);
+if (cachePkgs.length === 0) {
+  console.log('提示：尚未发现安装缓存目录；首次在专家中心启用 qing-dev 后，请再跑一次本脚本。');
+}
 console.log('下一步：validate_expert.py → register_expert.py，然后 git commit（不 push）。');

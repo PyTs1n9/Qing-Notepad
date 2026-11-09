@@ -95,9 +95,18 @@ P0 准入（读 MEMORY.md / topics / INDEX / decisions → `grill` → `architec
 | `docs/decisions-custom-expert-team.md` | 本文 | 是 |
 | `docs/INDEX.md` | 导航两行 | 是 |
 | `.workbuddy/skills/qing-dispatch/SKILL.md` | 改为薄适配层，指向新专家团，避免两套分派源冲突 | 否 |
+| `~/.workbuddy/plugins/cache/my-experts/qing-dev/<version>/` | **启用时的安装副本**：`installed_plugins.json` 的 `installPath` 指向它，WorkBuddy 从这个已安装插件加载角色定义 | 否 |
 
-修改提示词的正确顺序：改 `docs/agents/*.md` → `node scripts/sync-expert-agents.mjs` →
+> **启用时的读取路径（2026-11-09 核实）**：专家选择器的 `localPath` 指向注册源目录
+> （`marketplaces/my-experts/plugins/qing-dev`），而已安装插件的 `installPath` 指向缓存目录
+> （`plugins/cache/my-experts/qing-dev/1.0.0`）。两处都会被用到，且 `docs/agents/`（D 盘仓库）
+> **不参与运行时读取**，它只是编辑真源。两处内容不一致会导致「改了提示词但启用时没变化」。
+
+修改提示词的正确顺序：改 `docs/agents/*.md` → `node scripts/sync-expert-agents.mjs`
+（同时刷新注册源目录与所有缓存版本目录，并镜像展示元数据）→
 `validate_expert.py` → `register_expert.py` → `git commit`（不 push）。
+若改的是展示字段（花名 / 标签 / 描述 / 推荐提示词），这些只存在于
+`.codebuddy-plugin/plugin.json` 与 `README.md`，脚本会一并镜像到缓存目录。
 
 ## 7. 与既有文档的关系
 
