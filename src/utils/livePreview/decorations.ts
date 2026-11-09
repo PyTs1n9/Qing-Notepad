@@ -232,7 +232,13 @@ function visitNode(
     case "CodeBlock":
       addCodeBlockLines(node, state, visible, push);
       // Fenced code can be highlighted; an indented block has no info string.
-      if (node.name === "FencedCode") addCodeHighlight(node, state, visible, push);
+      // The label goes in *before* the highlight, which bails out on a block with
+      // no `CodeText` — `"```js\n```\n"` has none, and the language would
+      // otherwise vanish from exactly the blocks that show nothing else.
+      if (node.name === "FencedCode") {
+        addCodeInfoMark(node, visible, push);
+        addCodeHighlight(node, state, visible, push);
+      }
       return false;
     case "Blockquote":
       addLineClasses(state, Math.max(node.from, visible.from), Math.min(node.to, visible.to), "cm-md-quote", visible, push);
@@ -506,6 +512,25 @@ function addCodeBlockLines(
             ? "cm-md-code-block cm-md-code-last"
             : "cm-md-code-block";
     push({ kind: "line", from: doc.line(number).from, className });
+  }
+}
+
+/**
+ * The info string of a fence (`js` in ```` ```js ````) as a mark, so CSS can
+ * render it as a label instead of as the first word of the code.
+ *
+ * A mark, never a hide: the info string is the only place a language can be
+ * typed (nothing here guesses one), so it stays ordinary editable text — the
+ * class is purely visual. It also has to be emitted before the highlight pass
+ * (see the call site): `addCodeHighlight` needs a `CodeText` to work from and
+ * returns early without one, which is the case for an empty block.
+ */
+function addCodeInfoMark(node: SyntaxNode, visible: VisibleRange, push: Push): void {
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "CodeInfo" || child.to <= child.from) continue;
+    if (!contains(visible, child.from, child.to)) continue;
+    push({ kind: "mark", from: child.from, to: child.to, className: "cm-md-code-info" });
+    return;
   }
 }
 

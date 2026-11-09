@@ -169,10 +169,11 @@ const fixtures = [
     // First/last lines carry their own class so CSS can round the card, and each
     // token becomes a mark whose class is the highlighter's own (`hljs-*`) — the
     // same palette the preview renderer emits. Nothing is hidden inside a fence.
-    name: "围栏代码块：卡片首末行 + 语法高亮",
+    name: "围栏代码块：卡片首末行 + 语言标签 + 语法高亮",
     doc: "```js\nconst a = 1;\n\nconst b = 2;\n```\n",
     expect: [
       "line:0:cm-md-code-block cm-md-code-first",
+      "mark:3-5:cm-md-code-info",
       "line:6:cm-md-code-block",
       "mark:6-11:hljs-keyword",
       "mark:16-17:hljs-number",
@@ -224,6 +225,39 @@ for (const fixture of fixtures) {
       ? undefined
       : [`期望 ${JSON.stringify(fixture.expect)}`, `实际 ${JSON.stringify(actual)}`].join("\n        ");
   check(fixture.name, detail === undefined, detail);
+}
+
+section("围栏代码块：语言标签（cm-md-code-info）");
+
+{
+  const labelled = "```js\nconst a = 1;\n```\n";
+  const specs = formatted(labelled);
+  check("含语言名：产出 info mark", specs.includes("mark:3-5:cm-md-code-info"), JSON.stringify(specs));
+
+  const bare = formatted("```\ncode\n```\n");
+  check(
+    "无语言名：不产出 info mark",
+    !bare.some((spec) => spec.endsWith(":cm-md-code-info")),
+    JSON.stringify(bare),
+  );
+
+  // The label is emitted before the highlight pass on purpose: an empty body has
+  // no `CodeText`, and `addCodeHighlight` returns on exactly that.
+  const empty = formatted("```js\n```\n");
+  check("空正文：info mark 仍在", empty.includes("mark:3-5:cm-md-code-info"), JSON.stringify(empty));
+  check(
+    "空正文：没有任何 hljs 高亮",
+    !empty.some((spec) => spec.includes("hljs-")),
+    JSON.stringify(empty),
+  );
+
+  // Revealing the block (caret inside) drops hides and widgets, never marks —
+  // the label has to survive being edited, like the token colours do.
+  const state = EditorState.create({ doc: labelled, extensions: [language] });
+  ensureSyntaxTree(state, labelled.length, 5000);
+  const caretBlock = blockAtPosition(state, 8);
+  const revealed = specsFor(labelled, null, { reveal: caretBlock }).specs.map(format);
+  check("光标在块内（reveal）时 info mark 仍在", revealed.includes("mark:3-5:cm-md-code-info"), JSON.stringify(revealed));
 }
 
 // ------------------------------------------------------------------ invariants

@@ -33,6 +33,7 @@
     "verify:block-delete": "node scripts/verify-block-delete.mjs",
     "verify:markdown-commands": "node scripts/verify-markdown-commands.mjs",
     "verify:markdown-stats": "node scripts/verify-markdown-stats.mjs",
+    "verify:code-block": "node scripts/verify-code-block.mjs",
     "migrate:html-notes": "node scripts/migrate-html-notes.mjs",
     "verify:ui-polish": "node scripts/verify-ui-polish.mjs && node scripts/verify-contrast.mjs",
     "verify:webview": "node scripts/verify-webview.mjs",

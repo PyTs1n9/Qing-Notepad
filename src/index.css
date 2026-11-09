@@ -3577,16 +3577,31 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
 }
 
 /* ---------------------------------------------------------------- */
-/* Fenced code: a card, not a stripe                                  */
+/* Fenced code: one bordered card per block                           */
 /*                                                                    */
 /* A code block is painted line by line (`Decoration.line` cannot wrap */
 /* a range), so the card is assembled from its edges: every line      */
 /* carries the side borders, the first and last carry the caps. All   */
-/* rules are `.cm-line`-qualified because CodeMirror's base theme     */
-/* styles `.cm-line` at the same single-class specificity, and its    */
-/* stylesheet is injected after this file.                            */
+/* rules are `.cm-content .cm-line.X` — three classes — on purpose.   */
+/* The base theme styles `.cm-line` at two classes and its stylesheet */
+/* is injected *after* this file, so the earlier two-class rules lost */
+/* their `padding`: the code text sat 6px from the border and the     */
+/* "card" read as a tinted stripe.                                    */
+/*                                                                    */
+/* No vertical padding on the caps: `padding-top` on a `.cm-line`     */
+/* moves the text down while the gutter number stays pinned to the    */
+/* line top (see docs/decisions-typora-editor.md, M10 pitfall 3).     */
 /* ---------------------------------------------------------------- */
-.cm-line.cm-md-code-block {
+.cm-content .cm-line.cm-md-code-block {
+  /* The 3:1 non-text floor is the only reason this variable exists: the card
+     edge has to be *findable* against `--color-bg-secondary` (WCAG 1.4.11), and
+     a border token used raw sits one step off its surface — in the dark theme
+     that reads as a smudge rather than as an edge. So it is mixed with the muted
+     text colour, and the split is load-bearing: 45/55 measured 2.42–2.71:1 and
+     failed; 35/65 still fails on the light themes (2.82–2.90); 30/70 clears 3:1
+     in all four themes (3.04–3.27 by token arithmetic). Change one number and
+     re-measure — do not tune it by eye. */
+  --md-code-border: color-mix(in srgb, var(--color-border) 30%, var(--color-text-muted) 70%);
   background-color: var(--color-bg-secondary);
   /* Code is the one place a monospace face is correct; the body no longer is. */
   font-family: var(--editor-font-mono);
@@ -3595,30 +3610,65 @@ li:has(> p:first-child > .markdown-task-checkbox:checked) {
      it in step with `.markdown-code-block` or the two surfaces drift apart. */
   font-size: var(--code-font-size);
   line-height: 1.6;
-  border-left: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-right: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
+  border-left: 1px solid var(--md-code-border);
+  border-right: 1px solid var(--md-code-border);
   padding-left: 1em;
   padding-right: 1em;
 }
 
-.cm-line.cm-md-code-block.cm-md-code-first {
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-radius: 8px 8px 0 0;
-  padding-top: 0.45em;
+/* `--box-radius` (10px), not a literal: `.markdown-code-block` uses `0.65rem`
+   and these two surfaces are supposed to stay in step. */
+.cm-content .cm-line.cm-md-code-block.cm-md-code-first {
+  border-top: 1px solid var(--md-code-border);
+  border-radius: var(--box-radius) var(--box-radius) 0 0;
 }
 
-.cm-line.cm-md-code-block.cm-md-code-last {
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-radius: 0 0 8px 8px;
-  padding-bottom: 0.45em;
+.cm-content .cm-line.cm-md-code-block.cm-md-code-last {
+  border-bottom: 1px solid var(--md-code-border);
+  border-radius: 0 0 var(--box-radius) var(--box-radius);
 }
 
-.cm-line.cm-md-code-block.cm-md-code-single {
-  border-top: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 80%, transparent);
-  border-radius: 8px;
-  padding-top: 0.45em;
-  padding-bottom: 0.45em;
+.cm-content .cm-line.cm-md-code-block.cm-md-code-single {
+  border-top: 1px solid var(--md-code-border);
+  border-bottom: 1px solid var(--md-code-border);
+  border-radius: var(--box-radius);
+}
+
+/* A code block inside a quote keeps the quote's left bar.
+   `.cm-md-quote` is written before `.cm-md-code-block` and is also three
+   classes, so at equal specificity the later `border-left` won and the bar
+   disappeared on every fenced block in a quote. Four classes here, and the bar
+   colour is restated because `border-left` cannot be "added to".
+   The left cap drops to 4px: a 3px bar turning through a 10px radius leaves a
+   visible notch where the arc meets the straight edge. A heavier left edge than
+   right (3px vs 1px) is deliberate — the bar says "quote", the hairline says
+   "card"; Typora draws it the same way.
+   Text colour is restated too: the card is a surface of its own and must not
+   inherit the quote's `--color-text-secondary`, or every character the
+   highlighter did not claim (operators, plain identifiers, punctuation) comes
+   out second-class grey. */
+.cm-content .cm-line.cm-md-quote.cm-md-code-block {
+  border-left: 3px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+  padding-left: 0.9em;
+  color: var(--color-text-primary);
+}
+
+/* The language token on the opening fence. A mark, not a hide: the info string
+   stays ordinary editable text — nothing here guesses a language, so this line
+   is the only place one can be typed — and the class is what makes it read as a
+   label rather than as part of the code. */
+.cm-line.cm-md-code-block .cm-md-code-info {
+  color: var(--color-accent-text) !important;
+  font-size: 0.94em;
+}
+
+/* Same trap as the `hljs-*` palette below (M9): CodeMirror wraps the token text
+   in a span of its own and declares the colour *there*, so the mark's colour is
+   only inherited and always loses. Without this the label stays body-grey. */
+.cm-line.cm-md-code-block .cm-md-code-info span {
+  color: inherit !important;
 }
 
 /* Token colours, scoped to the block.

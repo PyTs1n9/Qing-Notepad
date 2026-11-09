@@ -39,6 +39,7 @@
 | `decisions-topbar-menus.md` | 顶栏三菜单（工具/传送门/帮助）的上线级审计与收敛结论 | 动顶栏菜单、传送门入口 | 13.0 KB |
 | `decisions-editor-menubar.md` | 笔记编辑器改为 Typora 式五菜单：37 项清单、砍项理由、命令层与快捷键 | 改编辑器菜单 / 加排版命令 | 9 KB |
 | `decisions-editor-statusbar.md` | 编辑器底部状态栏（目录 / 源码 / 时间 / 保存 / 四项统计）与 220px 目录列；统计口径与窄卡降级 | 改底栏、字数口径、目录面板 | 8 KB |
+| `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定，或改 `codeBlock.ts` 时（配 `npm run verify:code-block`） | 12.0 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
 | `decisions-window-fill.md` | 双击标题栏顶部 12px 纵向铺满（宽度不变）；外框/客户区补偿与还原语义 | 动标题栏双击、窗口几何 | 5.5 KB |

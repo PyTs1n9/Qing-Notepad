@@ -21,6 +21,7 @@ import {
 // is a no-op until a plugin calls `qing.editor.setDecorations`.
 import { pluginDecorations } from "@/utils/editorHandle";
 import { livePreview } from "@/utils/livePreview";
+import { codeBlockInteractions } from "@/utils/livePreview/codeBlock";
 import { markdownInputRules } from "@/utils/livePreview/inputRules";
 import {
   inlineWrap,
@@ -241,6 +242,9 @@ export default function MarkdownSourceEditor({
         pluginDecorations,
         livePreviewCompartment.of(latestLivePreviewRef.current ? livePreviewExtension : []),
         markdownInputRules({ insertImage: (file) => latestPasteImageRef.current?.(file) }),
+        // Not part of the preview layer: Ctrl+A scoping and "paste code as a
+        // block" have to work in 源码 view too, where `livePreview` is unmounted.
+        codeBlockInteractions(),
         fontSizeCompartment.of(
           codeMirrorTypographyTheme(latestFontSizeRef.current, latestFontFamilyRef.current),
         ),
