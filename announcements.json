@@ -1,7 +1,34 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-11-06T12:51:00Z",
+  "generatedAt": "2026-11-09T14:30:00Z",
   "items": [
+    {
+      "id": "2026-11-09-v0-9-6",
+      "kind": "update",
+      "publishedAt": "2026-11-09T14:30:00Z",
+      "startsAt": null,
+      "endsAt": null,
+      "minAppVersion": "0.7.0",
+      "maxAppVersionExclusive": null,
+      "showOnPrerelease": true,
+      "title": {
+        "zh": "v0.9.6：纯预览表格编辑、代码块卡片与侧栏全局搜索",
+        "en": "v0.9.6: in-place table editing, code block cards, sidebar search"
+      },
+      "body": {
+        "zh": "这一版的主角是编辑器：表格第一次能在渲染态里直接编辑，代码块有了自己的卡片——围栏隐藏、右下角悬停出语言选择器；侧栏也第一次有了全局搜索。排版上代码字号比正文小一档，语法配色按主题校准到对比度达标。\n\n**新增｜纯预览编辑与表格就地编辑**\n\n- 编辑器底栏新增「纯预览编辑」开关（主窗口与独立笔记窗口都有）：开启后全文始终保持渲染态，光标移动不再让段落退回源码；切到源码档自动关闭，记忆只保留到本次运行。\n- 表格可以就地编辑：双击单元格进入，`Tab` / `Shift+Tab` 左右移格，`Enter` 移到下一行同列，`Esc` 提交退出；单击可跨格拖选文本。没编辑过的格保留行内格式，编辑过的格按纯文本写回。\n- 同批并入表格列宽拖拽（双击列边界重置列宽）与链接点击跳转；顺带修掉表格解析三处错位：空单元格漏列导致整行错位、`\\|` 不解码、缺列补出幻影格。\n\n**新增｜代码块卡片**\n\n- 每个围栏代码块渲染成独立圆角卡片，``` 围栏行自动隐藏；光标进入块内时围栏回显，可以直接手改。\n- 卡片右下角悬停浮出语言选择器，从 14 门已注册语言里选一项即切换，也可清除高亮；不自动识别语言，写什么语言仍由你决定。\n- 块内 `Ctrl+A` 两段式：第一次选中本块代码正文，再按一次选全文；粘贴多行代码自动作为独立围栏块插入，不再退化成普通段落。\n\n**新增｜侧栏全局搜索**\n\n- 资源管理器标题行新增搜索键，点击后在侧栏内搜索：标题与正文实时命中，最多列出 10 篇，片段里高亮关键词；本次运行没打开过的笔记按需补读正文，不漏检。\n- 点结果以预览标签打开，面板不关闭、输入不清空，方便连续翻看；`Esc` 收起。\n\n**改进｜代码块排版与配色**\n\n- 代码字号比正文小一档（16px 正文对应 14.4px），等宽字体不再压过正文；注释改正体，中文字符不再回退宋体，不再发虚。\n- 语法配色分主题校准：暗色保持原色，浅色三主题把品牌色按三成混回墨色，字符串与数字的对比度全部过 4.5:1；注释色四主题落在 5.6–6.1。\n\n**改进｜资源管理器展开 / 折叠合并为一个按钮**\n\n- 「全部展开」「全部折叠」两键合并为一个动作式按钮，图标始终提示下一次点击会做什么；部分展开时第一次点击先全部展开、再一次全部折叠，之后两态交替。筛选状态下仍禁用并提示原因。\n\n**修复｜代码块两处观感**\n\n- 单击代码块不再透出背景：活动行的透明规则不再作用于卡片，卡片回到不透明底色，首行补一道 1px 顶高光。\n- 块内整段选中时选区色带按内容列裁剪，不再溢出卡片、压到行号槽与滚动条上。\n\n**说明**\n\n- 安装包下载完成后只保存在内存里，重启前退出应用需要重新下载（约 27 MB）。\n- 安装包做签名校验，签名对不上直接拒绝安装。\n\n更新入口在标题栏右上角、公告喇叭右侧，只在有新版本时出现：第一次点击下载，第二次点击重启安装。",
+        "en": "This release is about the editor: tables can finally be edited in place while fully rendered, fenced code blocks get their own card — fences hidden, a language picker on hover at the bottom-right corner — and the sidebar gains a global search. Type also moves: code runs one step smaller than body text and syntax colours are calibrated per theme to clear contrast.\n\n**New | Pure preview editing and in-place table editing**\n\n- A new \"pure preview editing\" toggle in the editor status bar (both the main window and the standalone note window): while on, the whole document stays rendered and no paragraph falls back to raw Markdown as the cursor moves; switching to source view turns it off, and the state lasts only for this run.\n- Tables become editable where they render: double-click a cell to edit, `Tab` / `Shift+Tab` move across, `Enter` moves down the same column, `Esc` commits and exits; a single click drags a selection across cells. Cells you did not touch keep their inline formatting; cells you edited are written back as plain text.\n- Two parallel lines ship in the same batch: draggable table column widths (double-click a column edge to reset) and clicking links to open them. Table parsing also stops mis-rendering in three places: empty cells no longer drop columns and shift the whole row, `\\|` is decoded instead of shown literally, and rows with missing columns no longer grow phantom cells.\n\n**New | Code block cards**\n\n- Every fenced code block renders as its own rounded card with the ``` fences hidden; move the cursor into the block and the fences come back for direct editing.\n- Hovering the card's bottom-right corner reveals a language picker: pick one of the 14 registered languages to switch, or clear highlighting. Languages are never auto-detected — what you write stays your call.\n- `Ctrl+A` inside a block is two-stage: the first press selects that block's code only, the second selects the whole document; pasting multi-line code inserts it as a proper fenced block instead of degrading into a plain paragraph.\n\n**New | Sidebar global search**\n\n- The explorer header gains a search button that opens an inline search in the sidebar: titles and bodies match in real time, up to 10 notes are listed, and each snippet highlights the keyword; notes never opened this run are read on demand, so nothing is silently missed.\n- Clicking a result opens it as a preview tab without closing the panel or clearing the input, so you can browse hits one after another; `Esc` collapses it.\n\n**Improved | Code block type and colour**\n\n- Code is one step smaller than body text (14.4px against 16px), so monospace no longer overshadows prose; comments drop the italic, Chinese characters no longer fall back to a serif face, and the blur is gone.\n- Syntax colours are calibrated per theme: dark keeps full brand hues, the three light themes blend them 30% into ink so strings and numbers all clear 4.5:1, and comments land between 5.6 and 6.1 across all four themes.\n\n**Improved | One button for expand / collapse**\n\n- \"Expand all\" and \"Collapse all\" merge into a single action-style button whose icon always describes what the next click will do; from a partially expanded tree the first click expands everything, the next collapses all, and the two alternate from there. It stays disabled with a reason while a filter is active.\n\n**Fixed | Two code block glitches**\n\n- Clicking into a code block no longer reveals the background: the transparent active-line rule no longer touches the card, the card returns to an opaque surface and its first row gains a 1px top highlight.\n- Selecting a whole block clips the selection band to the content column, so it no longer spills over the card onto the gutter and scrollbar.\n\n**Notes**\n\n- The installer is kept in memory only after download; quitting the app before restarting requires downloading it again (about 27 MB).\n- Installers are signature-checked; a package that fails verification is refused.\n\nThe update entry sits at the top right of the title bar, right of the announcement button. It appears only when a new version exists: first click downloads, second click restarts into the installer."
+      },
+      "dismissible": true,
+      "pinned": false,
+      "link": {
+        "url": "https://github.com/PyTs1n9/Qing-Notepad/releases/tag/v0.9.6",
+        "label": {
+          "zh": "查看发布说明",
+          "en": "Release notes"
+        }
+      }
+    },
     {
       "id": "2026-11-06-v0-9-5",
       "kind": "update",
