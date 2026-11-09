@@ -43,6 +43,7 @@
 | `decisions-code-block.md` | 代码块交互：卡片容器（三 class padding / 30:70 边框 / 零垂直 padding）、Ctrl+A 两段式块内选区、粘贴成块的判定口径（三档关键字打分）、语言不自动识别 | 动代码块渲染 / Ctrl+A 选区 / 粘贴判定，或改 `codeBlock.ts` 时（配 `npm run verify:code-block`） | 12.0 KB |
 | `decisions-file-tree.md` | 侧栏改开发工具风格文件树 + 右键菜单承载重命名/置顶/删除 | 动侧栏树、右键菜单 | 8.9 KB |
 | `decisions-sidebar-collapse.md` | 拖拽越过阈值即折叠侧栏（240/180 双档） | 动侧栏宽度 / 折叠行为 | 4.1 KB |
+| `decisions-sidebar-search.md` | 侧栏全局搜索：内联搜索态（卸载树，顺带停掉 Delete 监听）、最多 10 篇、片段高亮、**冷启动正文按需补读**（`notes[].content` 为空的事实来源）、Enter 不绑定 | 动侧栏搜索 / 结果片段 / 正文来源，或怀疑"搜不到正文"时 | 6.4 KB |
 | `decisions-window-fill.md` | 双击标题栏顶部 12px 纵向铺满（宽度不变）；外框/客户区补偿与还原语义 | 动标题栏双击、窗口几何 | 5.5 KB |
 | `decisions-glass-layering.md` | 有壁纸时主卡更透、侧栏更深的分层规则 | 动磨砂 tint 分层 | 3.7 KB |
 | `decisions-glass-blur.md` | 磨砂"滑块没反应"四轮排查的最终结论（含构建期前缀折叠） | 动 blur/saturate、或怀疑磨砂失效 | 4.2 KB |
@@ -116,6 +117,7 @@
 | 底栏 / 字数统计 / 目录列 | `decisions-editor-statusbar.md` | `decisions-typora-editor.md`（编辑器内核） |
 | 独立笔记窗口 / 多窗口同步 | `decisions-note-window.md` | `topics/ui-rules.md` + `decisions-architecture-layering.md`（子窗口不读 store） |
 | 侧栏 / 文件树 / 右键 | `decisions-file-tree.md` | `decisions-sidebar-collapse.md` + `topics/layout.md` |
+| 侧栏搜索 / 关键词高亮 | `decisions-sidebar-search.md` | `topics/ui-rules.md`（行几何、高亮类）+ `src/utils/noteSearch.ts` |
 | 笔记标签栏 / 拖拽 | `decisions-note-tabs.md` | `topics/ui-rules.md` |
 | 待办 / 子任务 / 描述 | `decisions-subtodo.md` | `topics/ui-rules.md`（横线本与行几何） |
 | 动画 / 曲线 / 滚动条 | `decisions-ui-polish.md`（D5–D7/D10） | `topics/ui-rules.md` |

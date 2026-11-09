@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronsDownUp,
   ChevronsUpDown,
@@ -6,14 +6,17 @@ import {
   FolderPlus,
   PanelLeftOpen,
   Plus,
+  Search,
   Tag,
   Trash2,
 } from "lucide-react";
 import NoteTree from "@/components/Layout/NoteTree";
 import PluginViewSections from "@/components/Layout/PluginViewSections";
+import SidebarSearchPanel from "@/components/Layout/SidebarSearchPanel";
 import ModalShell from "@/components/Layout/ModalShell";
 import { collectExplorerFolderIds } from "@/components/Layout/noteTreeModel";
 import { UNCATEGORIZED_CATEGORY_ID, useNoteStore } from "@/stores/noteStore";
+import { useTabStore } from "@/stores/tabStore";
 import { TRASH_RETENTION_FOREVER, useSettingsStore } from "@/stores/settingsStore";
 import { t, tWithParams } from "@/utils/i18n";
 import { deleteNoteToTrash } from "@/utils/noteDeletion";
@@ -75,6 +78,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [pendingRenameCategoryId, setPendingRenameCategoryId] = useState<string | null>(null);
   const [deleteConfirmNote, setDeleteConfirmNote] = useState<Note | null>(null);
   const [trashOpen, setTrashOpen] = useState(false);
+  // Inline search state. `searchActive` (open *and* typed) is what hides the
+  // tree: an empty field must still show the explorer below it.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const searchActive = searchOpen && searchText.trim().length > 0;
+
+  // Folding the sidebar away drops the search state, so expanding back never
+  // lands on a search field the user forgot about.
+  useEffect(() => {
+    if (collapsed) {
+      setSearchOpen(false);
+      setSearchText("");
+    }
+  }, [collapsed]);
 
   const allTags = Array.from(new Set(notes.flatMap((note) => note.tags)));
 
@@ -129,6 +146,15 @@ const Sidebar: React.FC<SidebarProps> = ({
     if (currentView !== "note") onViewChange("note");
   };
 
+  // Same path as a single click in the tree: a replaceable preview tab. Setting
+  // only `activeNoteId` would let App's tab-sync re-add it as a pinned tab.
+  // The panel stays open and keeps its text so the user can keep browsing hits.
+  const openNoteFromSearch = (noteId: string) => {
+    useTabStore.getState().openTab(noteId, { preview: true });
+    useNoteStore.getState().setActiveNoteId(noteId);
+    if (currentView !== "note") onViewChange("note");
+  };
+
   const confirmDeleteNote = async () => {
     if (!deleteConfirmNote) return;
     const latestNote = notes.find((note) => note.id === deleteConfirmNote.id);
@@ -148,6 +174,21 @@ const Sidebar: React.FC<SidebarProps> = ({
             {t(lang, "explorer")}
           </h2>
           <div className="flex items-center gap-0.5">
+            {/* Search lives first in the group: it opens a whole mode rather
+                than acting on the current tree selection. */}
+            <button
+              onClick={() => {
+                setSearchOpen(!searchOpen);
+                setSearchText("");
+              }}
+              className={headerActionButton}
+              title={t(lang, "sidebarSearchOpen")}
+              aria-label={t(lang, "sidebarSearchOpen")}
+              aria-pressed={searchOpen}
+              data-search-toggle
+            >
+              <Search size={14} />
+            </button>
             {/* A filter forces every branch open in NoteTree, so neither fold
                 action can change what is on screen - both stay disabled. */}
             <button
@@ -209,6 +250,19 @@ const Sidebar: React.FC<SidebarProps> = ({
             <PanelLeftOpen size={16} />
           </button>
           {renderRailDivider()}
+          {/* Expanding is the collapsed rail's only route into search, so the
+              two happen in one click: uncollapse, then open the field. */}
+          <button
+            onClick={() => {
+              onToggleCollapse();
+              setSearchOpen(true);
+            }}
+            className={`${actionBase} ${actionSecondary} ${actionCollapsed}`}
+            title={t(lang, "sidebarSearchOpen")}
+            aria-label={t(lang, "sidebarSearchOpen")}
+          >
+            <Search size={16} />
+          </button>
           {renderRailDivider()}
           <button
             onClick={() => {
@@ -238,7 +292,20 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      {!collapsed && (
+      {!collapsed && searchOpen && (
+        <SidebarSearchPanel
+          lang={lang}
+          query={searchText}
+          onQueryChange={setSearchText}
+          onExit={() => {
+            setSearchOpen(false);
+            setSearchText("");
+          }}
+          onOpenNote={openNoteFromSearch}
+        />
+      )}
+
+      {!collapsed && !searchActive && (
         <NoteTree
           lang={lang}
           onOpenNote={handleOpenNote}
@@ -255,7 +322,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {!collapsed && allTags.length > 0 && (
+      {!collapsed && !searchOpen && allTags.length > 0 && (
         <div className="px-2 mb-3">
           <div className="text-xs text-text-muted px-3 py-1 uppercase tracking-wide flex items-center gap-1">
             <Tag size={10} />

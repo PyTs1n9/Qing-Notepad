@@ -1055,6 +1055,12 @@ export type TranslationKeys = {
   helpChangelog: string;
   settingsAnnouncements: string;
   settingsAnnouncementsHint: string;
+  sidebarSearchOpen: string;
+  sidebarSearchPlaceholder: string;
+  sidebarSearchClear: string;
+  sidebarSearchTruncated: string;
+  sidebarSearchMatchCount: string;
+  sidebarSearchIndexing: string;
 };
 
 const zh: TranslationKeys = {
@@ -2105,6 +2111,12 @@ const zh: TranslationKeys = {
   helpChangelog: "更新日志",
   settingsAnnouncements: "获取更新通告",
   settingsAnnouncementsHint: "关闭后不再联网获取通告，只显示随包内容。",
+  sidebarSearchOpen: "搜索笔记",
+  sidebarSearchPlaceholder: "搜索标题或正文…",
+  sidebarSearchClear: "清空搜索",
+  sidebarSearchTruncated: "共 {total} 篇匹配，显示前 {shown} 篇",
+  sidebarSearchMatchCount: "{count} 处匹配",
+  sidebarSearchIndexing: "正在读取正文…",
 };
 
 const en: TranslationKeys = {
@@ -3159,6 +3171,12 @@ const en: TranslationKeys = {
   helpChangelog: "Changelog",
   settingsAnnouncements: "Fetch announcements",
   settingsAnnouncementsHint: "When off, no requests are made for announcements; only the copy bundled with the app is shown.",
+  sidebarSearchOpen: "Search notes",
+  sidebarSearchPlaceholder: "Search titles and text…",
+  sidebarSearchClear: "Clear search",
+  sidebarSearchTruncated: "{total} matches, showing the first {shown}",
+  sidebarSearchMatchCount: "{count} matches",
+  sidebarSearchIndexing: "Reading note bodies…",
 };
 
 const translations: Record<LangType, TranslationKeys> = { zh, en };
